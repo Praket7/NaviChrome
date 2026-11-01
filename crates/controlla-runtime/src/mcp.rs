@@ -2935,7 +2935,10 @@ fn fit_snapshot_to_budget(value: &mut Value, max_bytes: usize) -> bool {
             "next_action": "act on the returned controls; take a narrower goal-scoped snapshot for the trimmed tail"
         }),
     );
-    if let Some(completeness) = object.get_mut("completeness").and_then(Value::as_object_mut) {
+    if let Some(completeness) = object
+        .get_mut("completeness")
+        .and_then(Value::as_object_mut)
+    {
         completeness.insert("controls".into(), json!("partial"));
     }
     let coverage = object
@@ -2945,7 +2948,9 @@ fn fit_snapshot_to_budget(value: &mut Value, max_bytes: usize) -> bool {
         .to_owned();
     object.insert(
         "coverage".into(),
-        json!(format!("{coverage} (trimmed to the {max_bytes}-byte budget)")),
+        json!(format!(
+            "{coverage} (trimmed to the {max_bytes}-byte budget)"
+        )),
     );
     let mut reasons = object
         .get("incomplete_reasons")
@@ -8659,7 +8664,12 @@ mod tests {
         );
         // Trimming drops only the tail, so every kept reference still indexes
         // the returned list exactly as the snapshot issued it.
-        for (index, item) in snapshot["items"].as_array().expect("items").iter().enumerate() {
+        for (index, item) in snapshot["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .enumerate()
+        {
             assert_eq!(item["reference"], format!("tok:{index}"));
         }
     }
