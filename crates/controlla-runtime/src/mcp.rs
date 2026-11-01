@@ -2878,24 +2878,23 @@ fn fit_snapshot_to_budget(value: &mut Value, max_bytes: usize) -> bool {
         value["text"] = json!("");
         value["text_truncated"] = json!(true);
     }
-    if snapshot_serialized_bytes(value) > max_bytes {
-        if let Some(handles) = value.get_mut("frame_handles").and_then(Value::as_array_mut) {
-            if handles.len() > 8 {
-                handles.truncate(8);
-                value["frame_handles_truncated"] = json!(true);
-            }
-        }
+    if snapshot_serialized_bytes(value) > max_bytes
+        && let Some(handles) = value.get_mut("frame_handles").and_then(Value::as_array_mut)
+        && handles.len() > 8
+    {
+        handles.truncate(8);
+        value["frame_handles_truncated"] = json!(true);
     }
     // Delta payloads describe a previous snapshot; they are the first thing a
     // trimmed read can give up without losing an actionable reference.
-    if snapshot_serialized_bytes(value) > max_bytes {
-        if let Some(object) = value.as_object_mut() {
-            object.remove("history_delta");
-            if let Some(delta) = object.get_mut("delta").and_then(Value::as_object_mut) {
-                delta.insert("rebased".into(), json!([]));
-                delta.insert("removed".into(), json!([]));
-                delta.insert("upsert".into(), json!([]));
-            }
+    if snapshot_serialized_bytes(value) > max_bytes
+        && let Some(object) = value.as_object_mut()
+    {
+        object.remove("history_delta");
+        if let Some(delta) = object.get_mut("delta").and_then(Value::as_object_mut) {
+            delta.insert("rebased".into(), json!([]));
+            delta.insert("removed".into(), json!([]));
+            delta.insert("upsert".into(), json!([]));
         }
     }
     let mut returned_items = total_items;
@@ -2912,11 +2911,11 @@ fn fit_snapshot_to_budget(value: &mut Value, max_bytes: usize) -> bool {
         }
         returned_items = next;
     }
-    if snapshot_serialized_bytes(value) > max_bytes {
-        if let Some(object) = value.as_object_mut() {
-            object.remove("frame_accessibility");
-            object.remove("observation_pruning");
-        }
+    if snapshot_serialized_bytes(value) > max_bytes
+        && let Some(object) = value.as_object_mut()
+    {
+        object.remove("frame_accessibility");
+        object.remove("observation_pruning");
     }
     let Some(object) = value.as_object_mut() else {
         return true;

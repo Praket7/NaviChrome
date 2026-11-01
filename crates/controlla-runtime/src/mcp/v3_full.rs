@@ -2686,7 +2686,7 @@ impl AppV3 {
         });
         if is_click {
             receipt["effect_verified"] = json!(verified_field);
-            if verified_field == true && outcome.is_none() {
+            if verified_field && outcome.is_none() {
                 receipt["verification_basis"] = json!("inferred_postcondition");
             }
         }
