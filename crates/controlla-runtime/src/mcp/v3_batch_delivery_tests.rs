@@ -6762,16 +6762,13 @@ async fn v3_rich_editor_fast_paragraphs_and_human_pace_are_verified() {
             .unwrap()["raw_value"]
             .as_str()
             .unwrap();
-        let raw_expected = if expected.contains("\n\n") {
-            // Chromium's contenteditable innerText represents the empty
-            // block between two Enter events with one extra structural LF.
-            expected.replace("\n\n", "\n\n\n")
-        } else {
-            expected.clone()
-        };
+        // The snapshot's rich-editor readback uses the same canonical text as
+        // the guard: Chromium's extra structural LF between empty blocks is
+        // not part of what the caller typed. The raw innerText assertion below
+        // still checks that the browser kept it.
         assert_eq!(
-            observed, raw_expected,
-            "raw contenteditable innerText for {mode}"
+            observed, expected,
+            "snapshot rich-editor text for {mode}"
         );
     }
     let (_, targets) = connection.target_snapshot().await;

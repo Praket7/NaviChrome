@@ -64,7 +64,7 @@ fn select_response_budget(
         _ => (
             default_bytes,
             "default",
-            if default_bytes == DEFAULT_TARGETED_RESPONSE_BYTES {
+            if default_bytes <= DEFAULT_TARGETED_RESPONSE_BYTES {
                 "small targeted compact observation".to_owned()
             } else {
                 "broad or rich observation needs a larger context budget".to_owned()
