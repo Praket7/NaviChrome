@@ -56,7 +56,34 @@ function(q) {
   };
   const trustedText = e => e?.hasAttribute('data-requires-trusted') && (tagOf(e) === 'TEXTAREA' || tagOf(e) === 'INPUT' && ['text','search','email','url','tel'].includes(e.type));
   const richEditor = e => !!e && e.nodeType === 1 && typeof e.getAttribute === 'function' && tagOf(e) !== 'INPUT' && tagOf(e) !== 'TEXTAREA' && e.getAttribute('aria-readonly') !== 'true' && e.getAttribute('contenteditable')?.toLowerCase() !== 'false' && (e.isContentEditable === true || e.getAttribute('role') === 'textbox');
-  const editableText = e => { const text=e.innerText ?? e.textContent ?? ''; return e.textContent === '' && /^\s*$/.test(text) ? '' : text.replace(/\r\n/g,'\n').replace(/\u00a0/g,' '); };
+  // The text a person wrote in a rich editor, without the editor's decoration.
+  // Gmail keeps an inline "Tab to improve / Esc to dismiss" affordance inside
+  // the editable element, so innerText reports text the user never typed; a
+  // caller that read it back as the field's value then sent a stale expectation
+  // on the next keystroke. Skip non-editable and hidden subtrees, and keep the
+  // block line breaks innerText would have produced.
+  const NL = String.fromCharCode(10), NBSP = String.fromCharCode(160);
+  const BLOCK_TAGS = new Set(['DIV','P','LI','UL','OL','BLOCKQUOTE','PRE','H1','H2','H3','H4','H5','H6','TABLE','TR','SECTION','ARTICLE','HEADER','FOOTER','FIGURE','FIGCAPTION']);
+  const richTextOf = e => {
+    let out = '';
+    const walk = node => {
+      if (!node) return;
+      if (node.nodeType === 3) { out += String(node.nodeValue || '').split(NBSP).join(' '); return; }
+      if (node.nodeType !== 1) return;
+      const tag = String(node.tagName || '').toUpperCase();
+      if (tag === 'BR') { out += NL; return; }
+      if (tag === 'SCRIPT' || tag === 'STYLE') return;
+      if (node.getAttribute('contenteditable') === 'false' || node.getAttribute('aria-hidden') === 'true' || node.hasAttribute('hidden')) return;
+      const block = BLOCK_TAGS.has(tag);
+      if (block && out && !out.endsWith(NL)) out += NL;
+      for (const child of node.childNodes) walk(child);
+      if (block && !out.endsWith(NL)) out += NL;
+    };
+    for (const child of e.childNodes) walk(child);
+    while (out.endsWith(NL)) out = out.slice(0, -1);
+    return out;
+  };
+  const editableText = e => { const text = richTextOf(e); return /^\s*$/.test(text) ? '' : text; };
   const readable = e => {
     if (!e || composedClosest(e, '[data-masked],input[type="file"],input[type="hidden"]') || e.querySelector(protectedSelector)) return false;
     const trusted = composedClosest(e, '[data-requires-trusted]');
@@ -148,6 +175,33 @@ function(q) {
     const rect = node.getBoundingClientRect(), style = node.ownerDocument.defaultView.getComputedStyle(node);
     return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility === 'visible' && Number.parseFloat(style.opacity || '1') > 0;
   };
+  // A control inside a visible modal is the page the user is looking at. The
+  // background behind it is inert for a person, and its controls are usually
+  // far more numerous, so they must not push the dialog out of a bounded
+  // response. Return the modal's controls first and label them.
+  const modalScope = e => {
+    const modal = composedClosest(e, '[role="dialog"],[aria-modal="true"]');
+    return modal && visibleNode(modal) ? modal : null;
+  };
+  // Modal subtrees are scanned before the rest of the document. Collection is
+  // byte-bounded and stops in DOM order, so a dialog appended at the end of the
+  // page (Gmail's composer, Classroom's announcement editor) used to be cut off
+  // by the header chrome that precedes it and looked invisible to every caller.
+  // Sampling the dialog first, then skipping its nodes in the main pass, keeps
+  // the response prefix equal to what the user is actually looking at.
+  const visibleModalRoots = () => {
+    const all = Array.from(root.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(visibleNode);
+    // Keep only the outermost visible dialog: a nested dialog is inside it and
+    // would otherwise contribute the same controls twice.
+    return all.filter(modal => !all.some(other => other !== modal && other.contains(modal))).slice(0, 3);
+  };
+  const visibleModalCount = () => {
+    let count = 0;
+    for (const modal of root.querySelectorAll('[role="dialog"],[aria-modal="true"]')) {
+      if (visibleNode(modal)) count++;
+    }
+    return count;
+  };
   // Expansion can live on the control or on its listbox host. Prefer the
   // nearest explicit ARIA state, then a controlled popup that is actually
   // visible. A collapsed menu and an open one must not look identical.
@@ -181,28 +235,41 @@ function(q) {
   const maxScanNodes = Number.isSafeInteger(q.max_scan_nodes) ? Math.max(1, Math.min(65536, q.max_scan_nodes)) : 65536;
   const encoder = new TextEncoder();
   let shadow_roots_seen = 0, iframes_seen = 0, cross_origin_frames_unread = 0, same_origin_frames_read = 0, same_origin_frames_pending = 0, blank_frames_seen = 0;
-  const scopes = [{root, frame:'main', kind:'light', depth:0, owner:null}];
+  const modalRoots = visibleModalRoots();
+  const modalCovered = new WeakSet();
+  const scopes = modalRoots.map(modal => ({root: modal, frame:'main', kind:'light', depth:0, owner:null, modal:true}));
+  scopes.push({root, frame:'main', kind:'light', depth:0, owner:null, modal:false});
+  // A shadow root or iframe body reached from a modal is already covered; the
+  // main pass must not enqueue it a second time.
+  const enqueuedRoots = new Set(modalRoots);
+  const enqueue = scope => {
+    if (enqueuedRoots.size >= 32 || enqueuedRoots.has(scope.root)) return;
+    enqueuedRoots.add(scope.root);
+    scopes.push(scope);
+  };
   for (let scopeIndex = 0; scopeIndex < scopes.length; scopeIndex++) {
     const scope = scopes[scopeIndex], walker = scope.root.ownerDocument.createTreeWalker(scope.root, NodeFilter.SHOW_ELEMENT);
     let e = scope.root.nodeType === Node.ELEMENT_NODE ? scope.root : walker.nextNode();
     while (e) {
     if (scanned >= maxScanNodes) { truncated = true; truncation_reason = 'scanned_nodes_exceeded'; break; }
     scanned++;
+    if (scope.modal) modalCovered.add(e);
+    else if (modalCovered.has(e)) { e = walker.nextNode(); continue; }
     if (e.shadowRoot) {
       shadow_roots_seen++;
-      if (scopes.length < 32 && scope.depth < 8) scopes.push({root:e.shadowRoot,frame:scope.frame,kind:'shadow',depth:scope.depth+1});
+      if (scope.depth < 8) enqueue({root:e.shadowRoot,frame:scope.frame,kind:'shadow',depth:scope.depth+1,owner:null,modal:scope.modal});
       else { truncated = true; truncation_reason = truncation_reason || 'nested_scope_limit'; }
     }
     if (e.tagName === 'IFRAME') {
       iframes_seen++;
       try {
         const doc = e.contentDocument;
-        if (doc?.body && doc.location.href !== 'about:blank' && scopes.length < 32 && scope.depth < 8) { scopes.push({root:doc.body,frame:scope.frame+'/iframe['+iframes_seen+']',kind:'same_origin_frame',depth:scope.depth+1,owner:e}); same_origin_frames_read++; }
+        if (doc?.body && doc.location.href !== 'about:blank' && scope.depth < 8) { enqueue({root:doc.body,frame:scope.frame+'/iframe['+iframes_seen+']',kind:'same_origin_frame',depth:scope.depth+1,owner:e,modal:scope.modal}); same_origin_frames_read++; }
         else if (doc?.body && doc.location.href === 'about:blank') {
           const src = e.getAttribute('src');
           if (src && src !== 'about:blank' && new URL(src, location.href).origin === location.origin) same_origin_frames_pending++;
           else if (src && src !== 'about:blank') cross_origin_frames_unread++;
-          else if (doc.body.children.length && scopes.length < 32 && scope.depth < 8) { scopes.push({root:doc.body,frame:scope.frame+'/iframe['+iframes_seen+']',kind:'same_origin_blank_frame',depth:scope.depth+1,owner:e}); same_origin_frames_read++; }
+          else if (doc.body.children.length && scope.depth < 8) { enqueue({root:doc.body,frame:scope.frame+'/iframe['+iframes_seen+']',kind:'same_origin_blank_frame',depth:scope.depth+1,owner:e,modal:scope.modal}); same_origin_frames_read++; }
           else blank_frames_seen++;
         }
         else if (!doc) cross_origin_frames_unread++;
@@ -238,7 +305,8 @@ function(q) {
       const canvasHost = rich && (() => { if (paintsCanvas(e)) return true; for (let p = e.parentElement, depth = 0; p && depth < 3; p = p.parentElement, depth += 1) if (paintsCanvas(p)) return true; return false; })();
       const valueReadable = !rich || !(scope.kind === 'same_origin_blank_frame' || canvasHost);
       const feedbackRegion = e.closest('[role="alert"],[role="status"],[role="log"],[aria-live]') !== null;
-      const item = {reference:q.token+':'+items.length,tag:e.tagName.toLowerCase(),id:e.id || null,size:fileSizeOf(e),role,name:label,text:label,raw_value:value,...state,feedback_region:feedbackRegion,editable_kind:rich?'rich_text':editable?'plain_text':null,credential_input:credential,requires_user_input:credential,multiline:rich||e.tagName==='TEXTAREA'||e.getAttribute('aria-multiline')==='true',control_type:typeof e.type==='string'?e.type:null,multiple:'multiple'in e?e.multiple===true:null,min:e.getAttribute('min'),max:e.getAttribute('max'),step:e.getAttribute('step'),hover_reveals:e.getAttribute('data-hover-reveals')==='true'||e.hasAttribute('data-hover-reveals'),draggable:e.draggable===true||e.getAttribute('data-draggable')==='true',drop_target:e.getAttribute('data-drop-target')==='true'||e.getAttribute('aria-dropeffect')==='move',widget_kind:e.getAttribute('data-widget-kind'),href:e.tagName === 'A' ? e.href : null,target:e.tagName === 'A' ? e.getAttribute('target') : null,rel:e.tagName === 'A' ? e.getAttribute('rel') : null,expanded:expandedOf(e),selected:selectedOf(e,role),controls_selector:e.getAttribute('aria-controls')?.split(/\s+/).filter(Boolean).map(id=>'#'+CSS.escape(id)).join(',') || null,datetime,test_id:e.getAttribute('data-testid') || e.getAttribute('data-test') || e.getAttribute('data-qa') || null,datetime_utc_ms:exactInstant && Number.isFinite(parsedTime)?parsedTime:null,datetime_precision:exactInstant?'instant':dateOnly?'date':null,freshness_upper_bound_ms:Number.isFinite(freshnessUpperBound)?freshnessUpperBound:null,section:sectionOf(e),semantic_ancestor:semanticAncestor(e),dom_path_fingerprint:domPathFingerprint(e),rect_bucket:rectBucket(b),bounds:scope.frame==='main'?{x:b.left+e.ownerDocument.defaultView.scrollX,y:b.top+e.ownerDocument.defaultView.scrollY,width:b.width,height:b.height}:null,source_frame:scope.frame,source_frame_revision:String(e.ownerDocument.defaultView.performance.timeOrigin),source_frame_url:e.ownerDocument.location.href,source_kind:scope.kind,source_frame_owner:scope.owner?{tag:'iframe',id:scope.owner.id||null,class:typeof scope.owner.className==='string'?scope.owner.className||null:null,name:scope.owner.getAttribute('name')||null,src:scope.owner.getAttribute('src')||null}:null,hidden_editor:!state.rendered,value_readable:valueReadable};
+      const inModal = modalScope(e) !== null;
+      const item = {reference:q.token+':'+items.length,tag:e.tagName.toLowerCase(),in_modal:inModal,id:e.id || null,size:fileSizeOf(e),role,name:label,text:label,raw_value:value,...state,feedback_region:feedbackRegion,editable_kind:rich?'rich_text':editable?'plain_text':null,credential_input:credential,requires_user_input:credential,multiline:rich||e.tagName==='TEXTAREA'||e.getAttribute('aria-multiline')==='true',control_type:typeof e.type==='string'?e.type:null,multiple:'multiple'in e?e.multiple===true:null,min:e.getAttribute('min'),max:e.getAttribute('max'),step:e.getAttribute('step'),hover_reveals:e.getAttribute('data-hover-reveals')==='true'||e.hasAttribute('data-hover-reveals'),draggable:e.draggable===true||e.getAttribute('data-draggable')==='true',drop_target:e.getAttribute('data-drop-target')==='true'||e.getAttribute('aria-dropeffect')==='move',widget_kind:e.getAttribute('data-widget-kind'),href:e.tagName === 'A' ? e.href : null,target:e.tagName === 'A' ? e.getAttribute('target') : null,rel:e.tagName === 'A' ? e.getAttribute('rel') : null,expanded:expandedOf(e),selected:selectedOf(e,role),controls_selector:e.getAttribute('aria-controls')?.split(/\s+/).filter(Boolean).map(id=>'#'+CSS.escape(id)).join(',') || null,datetime,test_id:e.getAttribute('data-testid') || e.getAttribute('data-test') || e.getAttribute('data-qa') || null,datetime_utc_ms:exactInstant && Number.isFinite(parsedTime)?parsedTime:null,datetime_precision:exactInstant?'instant':dateOnly?'date':null,freshness_upper_bound_ms:Number.isFinite(freshnessUpperBound)?freshnessUpperBound:null,section:sectionOf(e),semantic_ancestor:semanticAncestor(e),dom_path_fingerprint:domPathFingerprint(e),rect_bucket:rectBucket(b),bounds:scope.frame==='main'?{x:b.left+e.ownerDocument.defaultView.scrollX,y:b.top+e.ownerDocument.defaultView.scrollY,width:b.width,height:b.height}:null,source_frame:scope.frame,source_frame_revision:String(e.ownerDocument.defaultView.performance.timeOrigin),source_frame_url:e.ownerDocument.location.href,source_kind:scope.kind,source_frame_owner:scope.owner?{tag:'iframe',id:scope.owner.id||null,class:typeof scope.owner.className==='string'?scope.owner.className||null:null,name:scope.owner.getAttribute('name')||null,src:scope.owner.getAttribute('src')||null}:null,hidden_editor:!state.rendered,value_readable:valueReadable};
       // Remember the semantic signature on the retained node. Framework
       // rerenders replace the element between snapshot and action; the old node
       // still carries this identity, so the background action can rebind to the
@@ -351,6 +419,21 @@ function(q) {
     nodes.splice(0,nodes.length,...ranked.map(entry=>entry.node));
     for (let i=0;i<items.length;i++) items[i].reference=q.token+':'+i;
   }
+  // Keep a modal's controls at the front of an unranked collection. The
+  // response byte budget keeps a prefix, so without this a newly opened dialog
+  // (always appended later in DOM order) was trimmed away and looked invisible.
+  const modalCount = visibleModalCount();
+  let modalFirst = false;
+  const modalItems = items.reduce((count, item) => count + (item.in_modal === true ? 1 : 0), 0);
+  if (!q.goal && modalItems > 0 && modalItems < items.length) {
+    const order = items
+      .map((item, index) => ({item, node: nodes[index], index}))
+      .sort((a, b) => (b.item.in_modal === true) - (a.item.in_modal === true) || a.index - b.index);
+    items.splice(0, items.length, ...order.map(entry => entry.item));
+    nodes.splice(0, nodes.length, ...order.map(entry => entry.node));
+    for (let i = 0; i < items.length; i++) items[i].reference = q.token + ':' + i;
+    modalFirst = true;
+  }
   let text='', textScanned=0, text_truncated=false;
   const maxTextNodes = q.max_text_chars > 0 ? (q.goal ? Math.min(maxScanNodes, 4096) : 65536) : 0;
   const textScopes = scopes.slice();
@@ -422,5 +505,5 @@ function(q) {
   const scope_complete = firstPartyHint ? first_party_complete : q.goal ? !truncated && !early_stopped && scope_frames_complete : complete;
   const target_uniqueness = scope_complete ? 'scope_complete' : 'unverified';
   for (const item of items) item.target_uniqueness = target_uniqueness;
-  return {nodes,items,raw,name,presentation,visible:e=>presentation(e).rendered,public:{interaction_epoch:interactionEpoch(),url:location.href,title:document.title,ready_state:document.readyState,items,text:text.slice(0,q.max_text_chars),text_requested,text_truncated,truncated:!complete,complete,global_complete:complete,completeness:{controls:controls_complete?'complete':'partial',text:text_complete?'complete':'partial',frames:frames_complete?'complete':'partial'},incomplete_reasons,goal_satisfied,goal_score:goal_satisfied?goal_score:null,scope_complete,coverage,coverage_scope:q.goal?'ranked_target':q.href_hint ? 'matching_first_party_links' : 'all_reachable_controls',first_party_complete,scanned_nodes:Math.min(scanned,maxScanNodes),scanned_text_nodes:textScanned,search_budget_exhausted:truncation_reason==='scanned_nodes_exceeded',omitted_by_limit,omitted_oversized,shadow_roots_seen,iframes_seen,same_origin_frames_read,same_origin_frames_pending,blank_frames_seen,cross_origin_frames_unread,cross_origin_frames_skipped,truncation_reason:truncation_reason || (text_truncated ? 'text_truncated' : cross_origin_frames_unread ? 'cross_origin_frames_unread' : same_origin_frames_pending ? 'same_origin_frames_pending' : null),total_candidates:items.length+omitted_by_limit}};
+  return {nodes,items,raw,name,presentation,visible:e=>presentation(e).rendered,public:{interaction_epoch:interactionEpoch(),url:location.href,title:document.title,ready_state:document.readyState,items,modal_count:modalCount,modal_items:modalItems,modal_first:modalFirst,text:text.slice(0,q.max_text_chars),text_requested,text_truncated,truncated:!complete,complete,global_complete:complete,completeness:{controls:controls_complete?'complete':'partial',text:text_complete?'complete':'partial',frames:frames_complete?'complete':'partial'},incomplete_reasons,goal_satisfied,goal_score:goal_satisfied?goal_score:null,scope_complete,coverage,coverage_scope:q.goal?'ranked_target':q.href_hint ? 'matching_first_party_links' : 'all_reachable_controls',first_party_complete,scanned_nodes:Math.min(scanned,maxScanNodes),scanned_text_nodes:textScanned,search_budget_exhausted:truncation_reason==='scanned_nodes_exceeded',omitted_by_limit,omitted_oversized,shadow_roots_seen,iframes_seen,same_origin_frames_read,same_origin_frames_pending,blank_frames_seen,cross_origin_frames_unread,cross_origin_frames_skipped,truncation_reason:truncation_reason || (text_truncated ? 'text_truncated' : cross_origin_frames_unread ? 'cross_origin_frames_unread' : same_origin_frames_pending ? 'same_origin_frames_pending' : null),total_candidates:items.length+omitted_by_limit}};
 }

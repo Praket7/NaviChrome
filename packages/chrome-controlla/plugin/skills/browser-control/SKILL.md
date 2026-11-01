@@ -15,6 +15,24 @@ Rule: visible target, act; otherwise snapshot once; verify when no receipt
 proves the outcome. Start a bounded goal with `browser(action="task")` and
 `task_program`.
 
+## Speed rules
+
+Every extra tool call costs a model turn. Collapse deterministic work.
+
+- Open the exact destination, not a homepage. One `open` with
+  `ready_when: {kind: "document_committed"}`.
+- One targeted `snapshot` with `goal` or `href_hint` beats a broad read. The
+  targeted default is 32 KiB; do not pass `max_bytes` unless it still overflows.
+- A page that rerenders after each keystroke (Gmail, Forms, Docs) invalidates
+  refs. Use one `workflow` with `find` + `fill`/`type`, or re-snapshot once
+  between fields. A unique readable match is accepted even when cross-origin
+  frames leave `scope_complete` false.
+- Upload in one call: `artifact_register`, then one `workflow` upload step.
+  `account_marker` reads visible text, `aria-label`, `title`, and `alt`, so an
+  icon button is valid evidence.
+- A timed-out `open` can leave a usable tab. Rediscover that tab before
+  retrying; never create a duplicate.
+
 ## Execution contract
 
 Controlla binds the tab and chooses backend, frame, OOPIF session, shadow root,

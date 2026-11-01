@@ -80,7 +80,60 @@ export const TRANSACTION_GUARD = `function(expectedKind,expectedValue,expectedAn
   const trusted=e.closest('[data-requires-trusted]');
   if(!rich&&!plain)return {ok:false,reason:'not_editable'};
   if(e.matches(':disabled,[aria-disabled="true"]')||e.readOnly||e.getAttribute('aria-readonly')==='true'||e.getAttribute('contenteditable')?.toLowerCase()==='false'||e.closest('[data-masked]')||(trusted&&trusted!==e))return {ok:false,reason:'blocked'};
-  const read=()=>{const raw=rich?(e.innerText??e.textContent??'').replace(/\\r\\n/g,'\\n').replace(/\\u00a0/g,' '):e.value;return rich?(/^\\s*$/.test(raw)?'':normalize?raw.replace(/\\n{2,}/g,b=>'\\n'.repeat(Math.ceil(b.length/2))):raw):raw};
+  const NL=String.fromCharCode(10),NB=String.fromCharCode(160);
+  const BLOCKS=new Set(['DIV','P','LI','UL','OL','BLOCKQUOTE','PRE','H1','H2','H3','H4','H5','H6','TABLE','TR','SECTION','ARTICLE','HEADER','FOOTER','FIGURE','FIGCAPTION']);
+  // Read the text the user wrote, not the editor's decoration. Gmail keeps an
+  // inline "Tab to improve / Esc to dismiss" affordance inside the editable
+  // element; innerText counts it, so the first readback after a keystroke
+  // looked like a conflicting edit and the whole transaction stopped as
+  // unknown. Skip non-editable and hidden subtrees, and give block boundaries
+  // the line break innerText would have produced.
+  const userText=n=>{
+    let out='';
+    const walk=m=>{
+      if(!m)return;
+      if(m.nodeType===3){out+=String(m.nodeValue||'').split(NB).join(' ');return;}
+      if(m.nodeType!==1)return;
+      const tag=String(m.tagName||'').toUpperCase();
+      if(tag==='BR'){out+=NL;return;}
+      if(tag==='SCRIPT'||tag==='STYLE')return;
+      if(m.getAttribute('contenteditable')==='false'||m.getAttribute('aria-hidden')==='true'||m.hasAttribute('hidden'))return;
+      const block=BLOCKS.has(tag);
+      if(block&&out&&!out.endsWith(NL))out+=NL;
+      for(const child of m.childNodes)walk(child);
+      if(block&&!out.endsWith(NL))out+=NL;
+    };
+    for(const child of n.childNodes)walk(child);
+    while(out.endsWith(NL))out=out.slice(0,-1);
+    return out;
+  };
+  // One canonical readback, whatever the caller's newline policy. Returning a
+  // rewritten value here made the guard disagree with the snapshot: a caller
+  // reads the page's paragraphs, passes them back as the expected value, and
+  // the guard halved the readback's blank line away and rejected the field as
+  // stale. The policy now only widens matching (variants); it never rewrites
+  // what is read.
+  // For an append the meaningful pre-state is the text before the caret. Rich
+  // editors paint suggestions after the caret (Gmail's "Tab to improve, Esc to
+  // dismiss"), and including them made the readback change on its own between
+  // two otherwise identical reads: the caller's expected value then no longer
+  // matched and the append refused as stale.
+  const caretText=()=>{
+    const sel=e.ownerDocument.getSelection();
+    if(!sel||!sel.anchorNode||!e.contains(sel.anchorNode))return null;
+    try{
+      const r=e.ownerDocument.createRange();
+      r.setStart(e,0);
+      r.setEnd(sel.anchorNode,sel.anchorOffset);
+      return userText(r.cloneContents());
+    }catch(_){return null}
+  };
+  const read=()=>{
+    if(!rich)return e.value;
+    const scoped=operation==='append'?caretText():null;
+    const raw=scoped!=null?scoped:userText(e);
+    return /^\\s*$/.test(raw)?'':raw;
+  };
   let value=read();
   // Visibility travels with every rejection: a chunk dispatched to a tab that
   // just went to the background is queued by Chrome rather than applied, and
@@ -89,7 +142,34 @@ export const TRANSACTION_GUARD = `function(expectedKind,expectedValue,expectedAn
   // A canvas editor's editable element does not hold the document text, so its
   // value is not evidence of anything. Only visibility, focus, and liveness are
   // read from it.
-  const expectedOk=unreadable===true||expectedKind==='unchecked'||expectedKind==='contains'?expectedKind==='contains'?value.includes(expectedValue):true:expectedKind==='suffix'?value.endsWith(expectedValue):value===(rich&&/^\\s*$/.test(expectedValue)?'':expectedValue);
+  // A rich editor adds a trailing line break for its empty last block, and the
+  // decoration it renders between two reads can differ. Compare the text that
+  // carries meaning: trailing whitespace is not a conflicting edit, while any
+  // other difference still stops the transaction. Both spellings of a
+  // paragraph break (one newline, or the doubled form some editors produce)
+  // are accepted, because the caller may hold either.
+  const forms=s=>{
+    const t=String(s??'');
+    const list=[t];
+    if(normalize){const halved=t.replace(/\\n{2,}/g,b=>NL.repeat(Math.ceil(b.length/2)));if(halved!==t)list.push(halved);}
+    return rich?list.map(x=>x.replace(/[\\s\\u00a0]+$/,'')):list;
+  };
+  const agrees=(a,b,test)=>forms(a).some(x=>forms(b).some(y=>test(x,y)));
+  const exactOk=unreadable===true||expectedKind==='unchecked'||expectedKind==='contains'?expectedKind==='contains'?agrees(value,expectedValue,(x,y)=>x.includes(y)):true:expectedKind==='suffix'?agrees(value,expectedValue,(x,y)=>x.endsWith(y)):agrees(value,rich&&/^\\s*$/.test(expectedValue)?'':expectedValue,(x,y)=>x===y);
+  // Appending to a rich editor: an editor may render decoration at the caret
+  // that the caller never typed (Gmail's inline writing hint, a ghost
+  // suggestion, a trailing empty block). The prior text is still provably the
+  // text the caller saw when everything it supplied is a prefix of what the
+  // field now holds, so the append keeps its anchor instead of refusing as
+  // stale. Anything else is still a conflicting edit.
+  // Either side may carry the decoration: it can appear after the read and be
+  // gone by the next one, so a prefix in either direction is the strongest
+  // claim about the caller's text that survives the editor's own churn.
+  // An empty expectation or an empty field is not an anchor: the exact path
+  // above already accepts a genuinely empty editor. Prefix tolerance only
+  // widens a match between two real values.
+  const appendPrefixOk=rich&&operation==='append'&&value!==''&&String(expectedValue??'')!==''&&agrees(value,expectedValue,(x,y)=>x.startsWith(y)||y.startsWith(x));
+  const expectedOk=exactOk||appendPrefixOk;
   if(!expectedOk)return {ok:false,reason:'stale_value',value,length:value.length,rich,hidden:hiddenNow,focused:e.ownerDocument.activeElement===e};
   if(prepare){
     e.focus();

@@ -458,7 +458,7 @@ pub fn parse_observation(
 fn account_marker_script(marker: &Option<(String, String)>) -> String {
     let marker = serde_json::to_string(marker).expect("account marker serializes");
     format!(
-        "(()=>{{const m={marker};if(!m)return false;const matches=Array.from(document.querySelectorAll(m[0])).filter(e=>{{if(!e.isConnected||e.getClientRects().length===0)return false;for(let n=e;n;n=n.parentElement){{const s=getComputedStyle(n);if(s.display==='none'||s.visibility!=='visible'||Number.parseFloat(s.opacity||'1')<=0||n.hasAttribute('hidden')||n.hasAttribute('inert'))return false}}return true}});const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();return matches.length===1&&norm(matches[0].innerText||matches[0].getAttribute('content'))===norm(m[1])}})()"
+        "(()=>{{const m={marker};if(!m)return false;const matches=Array.from(document.querySelectorAll(m[0])).filter(e=>{{if(!e.isConnected||e.getClientRects().length===0)return false;for(let n=e;n;n=n.parentElement){{const s=getComputedStyle(n);if(s.display==='none'||s.visibility!=='visible'||Number.parseFloat(s.opacity||'1')<=0||n.hasAttribute('hidden')||n.hasAttribute('inert'))return false}}return true}});const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();const label=e=>norm(e.innerText||e.getAttribute('content')||e.getAttribute('aria-label')||e.getAttribute('title')||e.getAttribute('alt'));return matches.length===1&&label(matches[0])===norm(m[1])}})()"
     )
 }
 
@@ -1343,6 +1343,8 @@ mod tests {
             assert!(expression.contains("visibility!=='visible'"));
             assert!(expression.contains("Number.parseFloat(s.opacity||'1')<=0"));
             assert!(expression.contains("n=n.parentElement"));
+            // Icon buttons carry their account identity in aria-label, not innerText.
+            assert!(expression.contains("getAttribute('aria-label')"));
         }
     }
 

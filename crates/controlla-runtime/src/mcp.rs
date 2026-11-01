@@ -1508,7 +1508,7 @@ async fn capture_shared_snapshot(
                 reasons.push(json!("frame_handles_truncated"));
             }
         }
-        ensure_snapshot_byte_budget(&value, args.max_bytes)?;
+        fit_snapshot_to_budget(&mut value, args.max_bytes);
         Ok((value, interaction_epoch))
     }
     .await;
@@ -2844,15 +2844,122 @@ fn public_frame_handles(handles: &[controlla_browser::FrameHandle]) -> Result<Va
     Ok(values)
 }
 
-fn ensure_snapshot_byte_budget(value: &Value, max_bytes: usize) -> Result<(), String> {
-    if serde_json::to_vec(value)
-        .map_err(|error| error.to_string())?
-        .len()
-        > max_bytes
-    {
-        return Err("snapshot exceeded byte budget; reduce text/items".into());
+fn snapshot_serialized_bytes(value: &Value) -> usize {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+}
+
+/// Keep a snapshot inside the caller's byte budget without failing the read.
+///
+/// A snapshot that overran its budget used to return an error, so the caller
+/// had to guess a smaller `max_items` or `max_text_chars` and pay for another
+/// round trip before it could act. Controls are what the caller acts on, so the
+/// page text goes first, coverage metadata next, and finally the tail of the
+/// item list. The receipt stays honest: it is marked incomplete and names the
+/// clamped budget, so a trimmed read is never mistaken for a complete one.
+///
+/// Returns true when the value was trimmed.
+fn fit_snapshot_to_budget(value: &mut Value, max_bytes: usize) -> bool {
+    let max_bytes = max_bytes.max(1024);
+    if snapshot_serialized_bytes(value) <= max_bytes {
+        return false;
     }
-    Ok(())
+    let total_items = value
+        .get("items")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let dropped_text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.is_empty());
+    if dropped_text {
+        value["text"] = json!("");
+        value["text_truncated"] = json!(true);
+    }
+    if snapshot_serialized_bytes(value) > max_bytes {
+        if let Some(handles) = value.get_mut("frame_handles").and_then(Value::as_array_mut) {
+            if handles.len() > 8 {
+                handles.truncate(8);
+                value["frame_handles_truncated"] = json!(true);
+            }
+        }
+    }
+    // Delta payloads describe a previous snapshot; they are the first thing a
+    // trimmed read can give up without losing an actionable reference.
+    if snapshot_serialized_bytes(value) > max_bytes {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("history_delta");
+            if let Some(delta) = object.get_mut("delta").and_then(Value::as_object_mut) {
+                delta.insert("rebased".into(), json!([]));
+                delta.insert("removed".into(), json!([]));
+                delta.insert("upsert".into(), json!([]));
+            }
+        }
+    }
+    let mut returned_items = total_items;
+    while returned_items > 0 && snapshot_serialized_bytes(value) > max_bytes {
+        // Halve first so a large page settles in a few serializations, then
+        // drop one item at a time near the boundary.
+        let next = if returned_items > 16 {
+            returned_items / 2
+        } else {
+            returned_items - 1
+        };
+        if let Some(items) = value.get_mut("items").and_then(Value::as_array_mut) {
+            items.truncate(next);
+        }
+        returned_items = next;
+    }
+    if snapshot_serialized_bytes(value) > max_bytes {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("frame_accessibility");
+            object.remove("observation_pruning");
+        }
+    }
+    let Some(object) = value.as_object_mut() else {
+        return true;
+    };
+    object.insert("complete".into(), json!(false));
+    object.insert("global_complete".into(), json!(false));
+    object.insert("scope_complete".into(), json!(false));
+    object.insert("truncated".into(), json!(true));
+    object.insert(
+        "budget_clamped".into(),
+        json!({
+            "max_bytes": max_bytes,
+            "total_items": total_items,
+            "returned_items": returned_items,
+            "page_text_dropped": dropped_text,
+            "next_action": "act on the returned controls; take a narrower goal-scoped snapshot for the trimmed tail"
+        }),
+    );
+    if let Some(completeness) = object.get_mut("completeness").and_then(Value::as_object_mut) {
+        completeness.insert("controls".into(), json!("partial"));
+    }
+    let coverage = object
+        .get("coverage")
+        .and_then(Value::as_str)
+        .unwrap_or("partial")
+        .to_owned();
+    object.insert(
+        "coverage".into(),
+        json!(format!("{coverage} (trimmed to the {max_bytes}-byte budget)")),
+    );
+    let mut reasons = object
+        .get("incomplete_reasons")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if !reasons
+        .iter()
+        .any(|reason| reason.as_str() == Some("byte_budget_clamped"))
+    {
+        reasons.push(json!("byte_budget_clamped"));
+    }
+    object.insert("incomplete_reasons".into(), json!(reasons));
+    true
 }
 
 /// Bind the existing single-use snapshot token and live root-frame identity to the
@@ -8497,8 +8604,8 @@ mod tests {
         assert_eq!(public[1]["session_id"], Value::Null);
         assert_eq!(public[1]["transform_revision"], Value::Null);
         assert_eq!(public[1]["transform_state"], "unmeasured");
-        let snapshot = json!({"items":[],"frame_handles":public});
-        super::ensure_snapshot_byte_budget(&snapshot, 4096).unwrap();
+        let mut snapshot = json!({"items":[],"frame_handles":public});
+        assert!(!super::fit_snapshot_to_budget(&mut snapshot, 4096));
         let many = (0..256)
             .map(|index| controlla_browser::FrameHandle {
                 target_id: Some("tab".to_owned()),
@@ -8511,9 +8618,50 @@ mod tests {
                 accessibility_state: "not_probed".to_owned(),
             })
             .collect::<Vec<_>>();
-        let oversized =
+        let mut oversized =
             json!({"items":[],"frame_handles":super::public_frame_handles(&many).unwrap()});
-        assert!(super::ensure_snapshot_byte_budget(&oversized, 4096).is_err());
+        assert!(super::fit_snapshot_to_budget(&mut oversized, 4096));
+    }
+
+    #[test]
+    fn oversized_snapshot_is_trimmed_instead_of_failing() {
+        let items: Vec<Value> = (0..40)
+            .map(|index| {
+                json!({"reference":format!("tok:{index}"),"role":"button","name":format!("Control {index}"),"text":"x".repeat(200)})
+            })
+            .collect();
+        let mut snapshot = json!({
+            "items":items,
+            "text":"y".repeat(2_000),
+            "complete":true,
+            "global_complete":true,
+            "scope_complete":true,
+            "completeness":{"controls":"complete","text":"complete","frames":"complete"},
+            "coverage":"visible controls",
+            "incomplete_reasons":[],
+        });
+        assert!(super::fit_snapshot_to_budget(&mut snapshot, 4_096));
+        assert!(super::snapshot_serialized_bytes(&snapshot) <= 4_096);
+        assert_eq!(snapshot["complete"], false);
+        assert_eq!(snapshot["text"], "");
+        assert_eq!(snapshot["text_truncated"], true);
+        assert_eq!(snapshot["completeness"]["controls"], "partial");
+        assert_eq!(snapshot["budget_clamped"]["total_items"], 40);
+        let returned = snapshot["items"].as_array().expect("items").len();
+        assert!(returned < 40, "the tail is dropped to fit the budget");
+        assert_eq!(snapshot["budget_clamped"]["returned_items"], returned);
+        assert!(
+            snapshot["incomplete_reasons"]
+                .as_array()
+                .expect("reasons")
+                .iter()
+                .any(|reason| reason == "byte_budget_clamped")
+        );
+        // Trimming drops only the tail, so every kept reference still indexes
+        // the returned list exactly as the snapshot issued it.
+        for (index, item) in snapshot["items"].as_array().expect("items").iter().enumerate() {
+            assert_eq!(item["reference"], format!("tok:{index}"));
+        }
     }
 
     #[test]

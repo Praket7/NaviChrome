@@ -168,6 +168,11 @@ function(index, action, expected, next, key, outcomeKind) {
         .filter(node => visible(node) && node.querySelector('[role="option"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]'));
       const visibleOptions = () => Array.from(document.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]'))
         .filter(visible);
+      // A modal (Classroom's composer, a settings sheet) is a visible effect of
+      // the click even though it exposes no options, so it is not part of the
+      // expansion count. Track it separately and only when it appears.
+      const dialogCount = () => Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(visible).length;
+      const dialogsBefore = dialogCount();
       const popupsBefore = visiblePopups().length;
       // Custom selects (Google Forms, Material menus) often portal their
       // options into a plain div with no listbox/menu role, or leave the
@@ -259,21 +264,26 @@ function(index, action, expected, next, key, outcomeKind) {
         // 900 ms generic-change budget made every dialog/button click feel
         // synchronous even though `ok` was already known. Declared selection
         // and expansion outcomes keep the bounded settle window.
+        // An undeclared outcome never waits here: the runtime only polls for a
+        // late dialog when the click produced no other observable change, so a
+        // click that already has evidence stays fast.
         const budget = wantsSelection || wantsExpansion ? 2600 : 0;
         const finish = () => {
           if (selectedState()) selectedSeen = true;
           const expanded = expandedState(), selected = selectedSeen, focused = focusedState();
+          const dialogOpened = dialogCount() > dialogsBefore;
           const changed = expanded !== expandedBefore || selected !== selectedBefore || focused !== focusedBefore;
           const elapsed = Date.now() - started;
           // A selection is only proven once the collapsed control (or the
           // option still in the list) shows the chosen name. A menu closing
           // first is not the postcondition; keep observing for it.
-          const settled = wantsSelection ? selected : changed;
+          const settled = wantsSelection ? selected : changed || dialogOpened;
           if (!settled && elapsed < budget) { setTimeout(finish, 40); return; }
           if (observer) observer.disconnect();
           resolve({ ok: eventSeen, dispatched, event_seen: eventSeen, rebound,
             expanded_after: expanded, selected_after: selected, focused_after: focused,
             expanded_before: expandedBefore, selected_before: selectedBefore, focused_before: focusedBefore,
+            dialog_opened: dialogOpened, dialogs_before: dialogsBefore,
             transport: 'dom_activation', trusted_input: false });
         };
         setTimeout(finish, 40);

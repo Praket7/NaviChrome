@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 const MAX_WORKFLOW_STEPS: usize = 20;
 const DEFAULT_RECEIPT_RESPONSE_BYTES: usize = 2 * 1024;
 const MAX_RECEIPT_RESPONSE_BYTES: usize = 1024 * 1024;
-const DEFAULT_TARGETED_RESPONSE_BYTES: usize = 12 * 1024;
+const DEFAULT_TARGETED_RESPONSE_BYTES: usize = 32 * 1024;
 const DEFAULT_BROAD_RESPONSE_BYTES: usize = 100_000;
 
 fn snapshot_collection_budget(response_bytes: usize, text_chars: usize) -> usize {
@@ -1511,7 +1511,17 @@ async fn resolve_reference(
         .get_mut(&tab_key(session_id, tab_id))
         .ok_or_else(|| invalid("reference is stale or unknown; take a fresh browser_snapshot"))?;
     if let Some(legacy) = state.short_to_legacy.get(reference) {
-        return Ok(legacy.clone());
+        // The cache maps @cN to a snapshot-scoped token:index pair. A later
+        // snapshot refreshes snapshot_id; returning the old pair then makes a
+        // valid control look stale and costs the caller another full snapshot.
+        // Only reuse the cache entry while it belongs to the current snapshot.
+        if legacy
+            .rsplit_once(':')
+            .is_some_and(|(token, _)| token == state.snapshot_id)
+        {
+            return Ok(legacy.clone());
+        }
+        state.short_to_legacy.remove(reference);
     }
     let expected = state
         .identities
@@ -3740,9 +3750,9 @@ mod tests {
         assert_eq!(snapshot_collection_budget(12 * 1024, 0), 12 * 1024);
         assert_eq!(snapshot_collection_budget(4096, 6000), 40_096);
         assert_eq!(snapshot_collection_budget(1_048_576, 6000), 100_000);
-        assert_eq!(default_snapshot_response_bytes(true), 12 * 1024);
+        assert_eq!(default_snapshot_response_bytes(true), 32 * 1024);
         assert_eq!(default_snapshot_response_bytes(false), 100_000);
-        let items = (0..80)
+        let items = (0..160)
             .map(|index| json!({"reference":format!("@c{index}"),"role":"button","name":format!("Open report {index}"),"rendered":true,"in_viewport":true,"actionable":true,"text":"x".repeat(256)}))
             .collect::<Vec<_>>();
         let mut snapshot = json!({
@@ -3752,7 +3762,7 @@ mod tests {
             "observation":{"mode":"semantic_compact","reason":"default budget fixture","bytes":0}
         });
         let bytes = bound_snapshot_response(&mut snapshot, DEFAULT_TARGETED_RESPONSE_BYTES);
-        assert!(bytes <= 12 * 1024);
+        assert!(bytes <= 32 * 1024);
         assert_eq!(snapshot["truncated"], true);
         assert_eq!(snapshot["scope_complete"], false);
         let first = &snapshot["items"][0];
@@ -3760,7 +3770,7 @@ mod tests {
         assert_eq!(first["role"], "button");
         assert_eq!(first["name"], "Open report 0");
         assert_eq!(first["actionable"], true);
-        assert_eq!(snapshot["count"], 80);
+        assert_eq!(snapshot["count"], 160);
         assert_eq!(snapshot["observation"]["bytes"], json!(bytes));
         assert_eq!(snapshot["response_budget"]["reason"], "test bounded response");
     }

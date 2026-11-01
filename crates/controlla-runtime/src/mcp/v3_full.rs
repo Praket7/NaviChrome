@@ -2428,8 +2428,19 @@ impl AppV3 {
             return Err(invalid("session is not owned by this server principal"));
         }
         let snapshot = live.snapshots.get(tab_id).cloned().ok_or_else(|| invalid("take a fresh snapshot"))?;
+        // A workflow owns one snapshot for its whole run. The thread-local
+        // allowance is unreliable across async hops, so also accept the lease
+        // owner that the VM set on this call. Without this, the second action
+        // after any click reports stale_reference and the caller is forced into
+        // a full snapshot round trip per field.
+        let workflow_owned = match args.client_id.as_deref() {
+            Some(owner) => self.workflow_lease_owners.lock().await.contains(owner),
+            None => false,
+        };
+        let snapshot_reusable = super::internal_workflow_snapshot_allowed(&snapshot.token)
+            || workflow_owned;
         if token != snapshot.token || index >= snapshot.count
-            || snapshot.consumed && !super::internal_workflow_snapshot_allowed(&snapshot.token) {
+            || snapshot.consumed && !snapshot_reusable {
             return Ok(json!({
                 "status":"not_dispatched","verified":false,"effect_verified":false,
                 "action":action,"outcome":json!(outcome),
@@ -2470,7 +2481,22 @@ impl AppV3 {
                 Ok(value) => value,
                 Err(_) => return Ok(background_dispatch_unknown_receipt(action, outcome, "background_reply_invalid", false)),
             },
-            Err(_) => return Ok(background_dispatch_unknown_receipt(action, outcome, "background_delivery_uncertain", false)),
+            Err(error) => {
+                // A CDP object ID dies when the SPA replaces the node even though
+                // the document identity is unchanged. That is a provable
+                // non-delivery, not an unknown write: say so, so the caller takes
+                // one fresh snapshot instead of reconciling a click that never
+                // happened.
+                let text = error.to_string();
+                if text.contains("Could not find object")
+                    || text.contains("Execution context was destroyed")
+                    || text.contains("Cannot find context")
+                    || text.contains("does not belong to the target")
+                {
+                    return Ok(background_stale_reference_receipt(action, outcome));
+                }
+                return Ok(background_dispatch_unknown_receipt(action, outcome, "background_delivery_uncertain", false));
+            }
         };
         let result = result.get("value").cloned().unwrap_or(result);
         let dispatched = result["dispatched"] == true;
@@ -2540,11 +2566,36 @@ impl AppV3 {
             }
             _ => false,
         };
+        // An undeclared click has no postcondition to check. Its own state
+        // change is the first evidence; only when that is absent is it worth
+        // waiting a bounded moment for a dialog that mounts after the handler.
+        // A dialog that was already open is not this click's effect, so the
+        // poll is skipped when one existed before dispatch.
+        let is_click = matches!(action, "click" | "double_click" | "context_click");
+        let document_unchanged = after.as_ref().is_ok_and(|current| before == *current);
+        let mut inferred_effect = background_click_effect_observed(&result);
+        if is_click
+            && outcome.is_none()
+            && document_unchanged
+            && !inferred_effect
+            && result["dialogs_before"].as_u64() == Some(0)
+        {
+            inferred_effect = background_selector_state_polled(
+                connection,
+                live.registry()?,
+                &live.handle,
+                tab_id,
+                "[role=\"dialog\"],[aria-modal=\"true\"]",
+                "visible",
+                Some(600),
+            )
+            .await;
+        }
         // Outcome verification takes the same session lock. Release it before
         // probing the page or the action waits on itself until its deadline.
         drop(live);
         let after_ref = after.as_ref().ok();
-        let same_document = after_ref.is_some_and(|current| before == *current);
+        let same_document = document_unchanged;
         let verified = match outcome {
             Some(BrowserClickOutcome::Navigation { url }) => navigation_verified
                 || after_ref.is_some_and(|current| background_navigation_matches(&before, current, url.as_deref())),
@@ -2562,13 +2613,17 @@ impl AppV3 {
                 Some(BrowserClickOutcome::Selected { selector: None }) => result["selected_after"] == true,
                 Some(BrowserClickOutcome::Focused) => result["focused_after"] == true,
                 Some(_) => false,
+                // An undeclared click is verified by an observed state change,
+                // not by the event alone: a modal, focus, or an expanded or
+                // selected control. This removes the verify round trip for
+                // ordinary buttons without claiming an unobserved effect.
+                None if is_click => inferred_effect,
                 None => background_dom_readback_verified(action, &result),
             },
             _ => false,
         };
         let (verification, outcome_reason) =
             click_verification_receipt(outcome, &result, &before, after_ref, verified);
-        let is_click = matches!(action, "click" | "double_click" | "context_click");
         let (status, verified_field, reason_code, next_action) = if is_click {
             match (outcome, verified) {
                 (Some(_), true) => ("verified", true, Value::Null, Value::Null),
@@ -2578,6 +2633,7 @@ impl AppV3 {
                     outcome_reason,
                     json!("inspect_current_state_once_before_retrying"),
                 ),
+                (None, true) => ("verified", true, Value::Null, Value::Null),
                 (None, _) => (
                     "dispatched_unverified",
                     false,
@@ -2597,7 +2653,19 @@ impl AppV3 {
         };
         let mut verification = verification;
         if is_click && outcome.is_none() {
-            verification["reason_code"] = json!("outcome_not_declared");
+            verification["basis"] = json!(if verified {
+                "inferred_postcondition"
+            } else {
+                "event_only"
+            });
+            verification["reason_code"] = if verified {
+                Value::Null
+            } else {
+                json!("outcome_not_declared")
+            };
+            if verified {
+                verification["observed"]["inferred_postcondition"] = json!(true);
+            }
         }
         let mut receipt = json!({
             "status":status,
@@ -2618,6 +2686,9 @@ impl AppV3 {
         });
         if is_click {
             receipt["effect_verified"] = json!(verified_field);
+            if verified_field == true && outcome.is_none() {
+                receipt["verification_basis"] = json!("inferred_postcondition");
+            }
         }
         Ok(receipt)
     }
@@ -2793,15 +2864,9 @@ impl AppV3 {
             return Err(invalid("guarded cold open requires a fresh host inventory"));
         }
         let (pair_result, pair_elapsed_us) =
-            controlla_browser::scheduler::telemetry::measure_attach(self.core.browser_session(
-                Parameters(BrowserSessionArgs {
-                    action: "pair_shared".into(),
-                    provider: Some("shared_extension".into()),
-                    session_id: None,
-                    target_ids: Some(target_ids),
-                    host_id,
-                }),
-            ))
+            controlla_browser::scheduler::telemetry::measure_attach(
+                self.pair_shared_with_settle_retry(target_ids, host_id),
+            )
             .await;
         controlla_browser::scheduler::telemetry::record_phase(
             controlla_browser::scheduler::telemetry::OperationPhase::Pair,
@@ -2859,6 +2924,52 @@ impl AppV3 {
                 Err(error)
             }
         }
+    }
+
+    /// Pair the selected tabs, tolerating a document that is still settling.
+    ///
+    /// The extension refuses to attach a tab whose discovery receipt no longer
+    /// matches, and it requires `status == complete`. A tab this process just
+    /// created can still be finishing its navigation, which used to fail the
+    /// whole open and force the caller to rediscover by hand. Each attempt
+    /// re-reads the native inventory inside `pair_shared`, so the retry can only
+    /// ever attach the exact same, fully loaded document.
+    async fn pair_shared_with_settle_retry(
+        &self,
+        target_ids: Vec<String>,
+        host_id: Option<String>,
+    ) -> Result<Json<Value>, rmcp::ErrorData> {
+        let mut last_error = None;
+        for attempt in 0..3u64 {
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+            }
+            let result = self
+                .core
+                .browser_session(Parameters(BrowserSessionArgs {
+                    action: "pair_shared".into(),
+                    provider: Some("shared_extension".into()),
+                    session_id: None,
+                    target_ids: Some(target_ids.clone()),
+                    host_id: host_id.clone(),
+                }))
+                .await;
+            match result {
+                Ok(json) => return Ok(json),
+                Err(error) => {
+                    let message = error.to_string();
+                    let retryable = message.contains("changed during pairing")
+                        || message.contains("navigated during pairing")
+                        || message.contains("no fresh tab inventory")
+                        || message.contains("native host changed since discovery");
+                    if !retryable {
+                        return Err(error);
+                    }
+                    last_error = Some(error);
+                }
+            }
+        }
+        Err(last_error.expect("a retryable pairing failure was recorded"))
     }
 
     async fn reuse_existing_session(
@@ -2925,14 +3036,7 @@ impl AppV3 {
             target_ids.push(anchor.clone());
         }
         let Json(pair) = self
-            .core
-            .browser_session(Parameters(BrowserSessionArgs {
-                action: "pair_shared".into(),
-                provider: Some("shared_extension".into()),
-                session_id: None,
-                target_ids: Some(target_ids),
-                host_id: Some(host_id),
-            }))
+            .pair_shared_with_settle_retry(target_ids, Some(host_id))
             .await?;
         let session_id = pair["session_id"]
             .as_str()
@@ -2969,6 +3073,26 @@ impl AppV3 {
         }
         Ok(Some((session_id, candidate, anchor)))
     }
+}
+
+/// True when a click changed observable page state without a declared
+/// postcondition. A modal that appeared, or a control that became focused,
+/// expanded, or selected, is the effect of this click; event delivery alone is
+/// not. This keeps an ordinary button click from costing a follow-up verify.
+fn background_click_effect_observed(result: &Value) -> bool {
+    let changed = |field: &str| {
+        let before = result
+            .get(format!("{field}_before"))
+            .filter(|value| !value.is_null());
+        let after = result
+            .get(format!("{field}_after"))
+            .filter(|value| !value.is_null());
+        before.is_some() && after.is_some() && before != after
+    };
+    result["dialog_opened"] == true
+        || changed("focused")
+        || changed("expanded")
+        || changed("selected")
 }
 
 fn background_dom_readback_verified(action: &str, result: &Value) -> bool {
@@ -3087,6 +3211,27 @@ fn click_verification_receipt(
         }),
         reason,
     )
+}
+
+fn background_stale_reference_receipt(action: &str, outcome: Option<&BrowserClickOutcome>) -> Value {
+    json!({
+        "status":"not_dispatched",
+        "verified":false,
+        "effect_verified":false,
+        "action":action,
+        "outcome":json!(outcome),
+        "reason_code":"stale_reference",
+        "dispatch_acknowledged":false,
+        "dispatch_may_have_occurred":false,
+        "replay_safe":true,
+        "next_action":"take one fresh snapshot, reacquire the same name and role, and retry once",
+        "verification":{
+            "status":"not_dispatched",
+            "basis":click_outcome_basis(outcome),
+            "reason_code":"stale_reference",
+            "observed":{"document_changed":false}
+        }
+    })
 }
 
 fn background_dispatch_unknown_receipt(
@@ -12910,9 +13055,13 @@ async fn shared_browser_download_lifecycle(
 }
 
 fn workflow_find_reference(found: &Value) -> Result<String, rmcp::ErrorData> {
-    if found["scope_complete"] != true || found["ambiguous"] == true {
+    // A page with cross-origin frames (Gmail, Docs, most Google surfaces) is
+    // never scope-complete, yet a unique match in the readable root document is
+    // still an exact target. Require ambiguity to be cleared and the match to be
+    // unique; do not reject solely because unread frames exist elsewhere.
+    if found["ambiguous"] == true {
         return Err(invalid(
-            "workflow find scope is incomplete or ambiguous; inspect the relevant frame or use an exact root-document match",
+            "workflow find was ambiguous; inspect the relevant frame or use an exact root-document match",
         ));
     }
     let matches = found["matches"]
@@ -20820,6 +20969,23 @@ impl AppV3 {
         variables: &std::collections::BTreeMap<String, String>,
     ) -> Result<(Value, Option<(String, String)>), rmcp::ErrorData> {
         let vars = variables;
+        // authorize the retained snapshot for this step: a workflow may act
+        // repeatedly from one observation, and the token was created inside
+        // find/snapshot rather than through the workflow's own snapshot path.
+        if let Some(live) = self
+            .core
+            .legacy
+            .shared_sessions
+            .lock()
+            .await
+            .get(&args.session_id)
+            .cloned()
+        {
+            let live = live.lock().await;
+            if let Some(snapshot) = live.snapshots.get(&args.chrome_tab_id) {
+                super::super::authorize_internal_workflow_snapshot(&snapshot.token);
+            }
+        }
         let collections = &mut state.collections;
         let selected = &mut state.selected;
         let mut coverage_complete = state.coverage_complete;
@@ -21725,12 +21891,19 @@ impl AppV3 {
                         },
                     )
                     .await?;
-                    if refreshed["scope_complete"] != true {
+                    found = find_impl(&self.core, &find_args).await?;
+                    // Cross-origin frames (Gmail, Docs, Classroom) keep a page
+                    // from being globally scope-complete even when the readable
+                    // root document holds one exact match. Only refuse when the
+                    // refresh still failed to produce a unique target; otherwise
+                    // every field after the first would need a manual snapshot.
+                    if refreshed["scope_complete"] != true
+                        && controlla_runtime::semantic_state::workflow_find_needs_refresh(&found)
+                    {
                         return Err(invalid(
                             "targeted semantic refresh was incomplete; inspect a fresh full snapshot before acting",
                         ));
                     }
-                    found = find_impl(&self.core, &find_args).await?;
                 }
                 controlla_browser::scheduler::telemetry::record_phase(
                     controlla_browser::scheduler::telemetry::OperationPhase::Grounding,

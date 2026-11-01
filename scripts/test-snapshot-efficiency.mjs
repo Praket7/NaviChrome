@@ -63,6 +63,31 @@ test('ranked eviction leaves one candidate whose reference indexes the retained 
   assert.equal(result.nodeCount, 1);
 });
 
+test('a visible modal keeps its controls ahead of the background controls', async () => {
+  // A response budget keeps a prefix of the item list. Classroom appends its
+  // announcement composer as a modal near the end of the DOM, so without
+  // modal-first ordering the composer was trimmed away and looked invisible.
+  const result = await collect(
+    '<button>Background one</button><button>Background two</button>' +
+    '<div role="dialog"><button>Announce something</button><button>Post</button></div>',
+  );
+  assert.deepEqual(result.items.map((item) => item.name), [
+    'Announce something',
+    'Post',
+    'Background one',
+    'Background two',
+  ]);
+  assert.deepEqual(result.items.map((item) => item.in_modal), [true, true, false, false]);
+  assert.equal(result.result.modal_first, true);
+  assert.equal(result.result.modal_items, 2);
+  assert.equal(result.result.modal_count, 1);
+  assert.deepEqual(
+    result.items.map((item) => item.reference),
+    result.items.map((_, index) => `test:${index}`),
+  );
+  assert.equal(result.nodeCount, result.items.length);
+});
+
 test('goal href filtering retains matching links and reports an incomplete bounded scan', async () => {
   const result = await collect('<a href="/other">Other</a><a href="/target">Target</a><button>Later</button>', {
     goal: { href_hint: '/target', exhaustive: true }, max_scan_nodes: 3,

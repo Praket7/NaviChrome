@@ -41,6 +41,11 @@ fn main() {
         .collect::<BTreeSet<_>>();
     let allowed_non_runtime_files = [
         "README.md",
+        // Developer-only recovery page: served from disk so it can reload a
+        // stale worker, and deliberately excluded from the build identity so
+        // editing it never changes what the runtime must match.
+        "dev-reload.html",
+        "dev-reload.js",
         "test-background.cjs",
         "test-observation.mjs",
         "test-p0-resources.mjs",

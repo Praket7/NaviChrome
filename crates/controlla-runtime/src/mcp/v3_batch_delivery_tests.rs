@@ -6,6 +6,7 @@ use super::{
     V3WorkflowStep, action_timeout_receipt, append_shared_download_chunk,
     artifact_registration_scope, background_dom_readback_verified,
     background_navigation_matches, background_pointer_refusal,
+    background_stale_reference_receipt,
     background_presentation_evidence,
     bound_v3_workflow_response, browser_click_outcome_for_observed_target,
     can_parallelize_research, cdp_character_events, choose_newest_with_bounds,
@@ -4243,15 +4244,26 @@ fn workflow_compiles_only_adjacent_bounded_fill_runs_into_one_program() {
 }
 
 #[test]
+fn stale_cdp_object_is_a_non_delivery_not_an_unknown_click() {
+    let receipt = background_stale_reference_receipt("click", None);
+    assert_eq!(receipt["status"], "not_dispatched");
+    assert_eq!(receipt["reason_code"], "stale_reference");
+    assert_eq!(receipt["dispatch_may_have_occurred"], false);
+    assert_eq!(receipt["replay_safe"], true);
+}
+
+#[test]
 fn workflow_find_rejects_ambiguous_targets() {
     let ambiguous = json!({"matches":[{"reference":"@c1"},{"reference":"@c2"}]});
     assert!(workflow_find_reference(&ambiguous).is_err());
     let unique =
         json!({"matches":[{"reference":"@c1"}],"scope_complete":true,"ambiguous":false});
     assert_eq!(workflow_find_reference(&unique).unwrap(), "@c1");
+    // Cross-origin frames keep scope_complete false on Google surfaces; a
+    // unique readable match is still exact enough to act on.
     let incomplete =
         json!({"matches":[{"reference":"@c1"}],"scope_complete":false,"ambiguous":false});
-    assert!(workflow_find_reference(&incomplete).is_err());
+    assert_eq!(workflow_find_reference(&incomplete).unwrap(), "@c1");
     let uncertain =
         json!({"matches":[{"reference":"@c1"}],"scope_complete":true,"ambiguous":true});
     assert!(workflow_find_reference(&uncertain).is_err());

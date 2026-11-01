@@ -2832,7 +2832,10 @@ async function nativePageIdentity(tabId, settled = false, allowLoading = false) 
   // tab stays fast because dispatch revalidates identity; initial pairing waits.
   const alreadyPaired = settled || pairedTabDocumentIds.has(tabId);
   let candidate, stableReads = 0, last;
-  for (let attempt = 0; attempt < 300; attempt++) {
+  // Slow Google surfaces can redirect several times before the document ID
+  // settles. Allow up to 10s instead of failing at 3s and leaving an orphan
+  // tab behind; the caller re-reads identity after attachment anyway.
+  for (let attempt = 0; attempt < 1000; attempt++) {
     const [tab, frame] = await Promise.all([chrome.tabs.get(tabId).catch(() => undefined), chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => undefined)]);
     if (!frame?.documentId || (!allowLoading && tab?.status !== "complete")) { candidate = undefined; stableReads = 0; }
     else {
@@ -2843,7 +2846,10 @@ async function nativePageIdentity(tabId, settled = false, allowLoading = false) 
     }
     await new Promise(resolve => setTimeout(resolve, 10));
   }
-  throw new Error("Navigation did not expose a stable document identity within 3000 ms.");
+  // A tab that is still loading but already exposes a document identity is
+  // usable: attachment revalidates it, and readiness is awaited separately.
+  if (allowLoading && last) return last;
+  throw new Error("Navigation did not expose a stable document identity within 10000 ms.");
 }
 async function waitForTabDOMContentLoaded(tabId, afterDocumentId) {
   const currentDocumentReady = async () => {
