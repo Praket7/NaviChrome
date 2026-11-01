@@ -3563,6 +3563,7 @@ fn compact_step_never_exceeds_640_bytes_when_retained_evidence_overflows() {
 fn compact_click_keeps_declared_effect_and_observed_proof() {
     let receipt = json!({
         "status":"verified","kind":"click","action":"click","verified":true,
+        "reference":"@c9",
         "outcome":{"kind":"selected","selector":null},
         "effect_verified":true,"replay_safe":false,"dispatch_acknowledged":true,
         "verification":{"status":"verified","outcome":{"kind":"selected","selector":null},
@@ -3585,6 +3586,7 @@ fn compact_click_keeps_declared_effect_and_observed_proof() {
     assert_eq!(compacted["outcome"]["kind"], "selected", "{compacted}");
     assert_eq!(compacted["verified"], true, "{compacted}");
     assert_eq!(compacted["effect_verified"], true, "{compacted}");
+    assert_eq!(compacted["reference"], "@c9", "{compacted}");
     assert_eq!(
         compacted["verification"]["observed"]["selected"][1],
         true,

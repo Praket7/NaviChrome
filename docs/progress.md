@@ -19,7 +19,8 @@ lifecycles omit null fields so the lifecycle and source identity both fit the
 receipts still lost the observer, expected predicate, observed proof,
 postcondition, and predicate when the generic digest fallback ran; those facts
 now survive as bounded fields, and the hard fallback keeps them while they fit
-the fixed wire budget. The stale bin-test assertions for retained process
+the fixed wire budget. The same fallback now retains the clicked semantic
+reference, so a compact click receipt still names the control it acted on. The stale bin-test assertions for retained process
 leases now check contention through a separate coordinator, which is what a
 real second process sees.
 
