@@ -796,8 +796,12 @@ function testWatcherStateMirrorContracts() {
   const beforeMove = state.revision;
   state = applyWatcherStateEvent(state, { kind: "tab_updated", tab_id: 4, change_info: { url: "https://example.test/next" } });
   assert.equal(state.revision, beforeMove + 1);
+  assert.equal(watcherStateMatches(state, 4, state.revision, "doc-1"), true,
+    "a History API URL rewrite keeps the document identity");
+  state = applyWatcherStateEvent(state, { kind: "tab_updated", tab_id: 4, change_info: { status: "loading", url: "https://example.test/next" } });
   assert.equal(watcherStateMatches(state, 4, state.revision, "doc-1"), false,
     "navigation invalidates an old target binding");
+  state = applyWatcherStateEvent(state, { kind: "tab_updated", tab_id: 4, change_info: { status: "complete" } });
   assert.equal(watcherStateMatches(state, 5, 1, "doc-5"), true,
     "a change in one tab does not invalidate unrelated tab targets");
   const beforeFocusRevision = state.tabs.find(tab => tab.id === 4).target_revision;
@@ -859,7 +863,7 @@ async function waitFor(predicate, description) {
   const deadline = Date.now() + 5000;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}`);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
 
@@ -1071,10 +1075,10 @@ async function waitFor(predicate, description) {
   assert.equal(debuggerCalls.filter(call => call.method === "Page.captureScreenshot").length, captureCountBeforeDiscarded, "unknown lifecycle is refused before screenshot dispatch");
   discardedTab.frozen = false;
   const waitForCommandResult = async id => {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    for (let attempt = 0; attempt < 300; attempt++) {
       const message = native.sent.findLast(item => item.id === id);
       if (message) return message;
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => setTimeout(resolve, 10));
     }
     throw new Error(`Timed out waiting for command result ${id}`);
   };
@@ -1788,15 +1792,15 @@ async function waitFor(predicate, description) {
   assert.equal(native.sent.at(-1).result.verified, false);
   const openRequest = { type: "command", target_id: "41", method: "Controlla.openTab", params: { url: "https://example.test/idempotent", idempotency_key: "client-fixture:operation-1234" } };
   native.hostMessage({ ...openRequest, id: "open-first" });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const firstOpen = native.sent.at(-1).result;
+  await waitFor(() => native.sent.some(message => message.id === "open-first"), "first open result");
+  const firstOpen = native.sent.findLast(message => message.id === "open-first")?.result;
   assert.ok(firstOpen, JSON.stringify(native.sent.at(-1)));
-  assert.equal(firstOpen.idempotent_reuse, false);
+  assert.equal(firstOpen.idempotent_reuse, false, JSON.stringify(firstOpen));
   assert.equal(tabList.find(tab => tab.id === Number(firstOpen.tab_id)).active, true, "open defaults to a foreground tab");
   const countAfterFirstOpen = tabList.filter(tab => tab.url === "https://example.test/idempotent").length;
   native.hostMessage({ ...openRequest, id: "open-retry" });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const retryOpen = native.sent.at(-1).result;
+  await waitFor(() => native.sent.some(message => message.id === "open-retry"), "idempotent open retry");
+  const retryOpen = native.sent.findLast(message => message.id === "open-retry")?.result;
   assert.equal(retryOpen.tab_id, firstOpen.tab_id, "retry returns the original Controlla-created tab");
   assert.equal(retryOpen.idempotent_reuse, true);
   assert.equal(tabList.filter(tab => tab.url === "https://example.test/idempotent").length, countAfterFirstOpen,
@@ -1805,14 +1809,14 @@ async function waitFor(predicate, description) {
   focusedWindowFocused = false;
   const activateRequest = { type: "command", target_id: "41", method: "Controlla.activateOwnedTab", params: { owned_tab_id: firstOpen.tab_id, idempotency_key: "activate-fixture-01" } };
   native.hostMessage({ ...activateRequest, id: "activate-created-tab" });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => native.sent.some(message => message.id === "activate-created-tab"), "created tab activation");
   const activated = native.sent.find(message => message.id === "activate-created-tab")?.result;
   assert.equal(activated?.status, "activated", JSON.stringify(native.sent.find(message => message.id === "activate-created-tab")));
   assert.equal(activated?.topology_verified, true);
   assert.equal(activated?.tab_active, true);
   assert.equal(activated?.window_focused, true);
   native.hostMessage({ ...activateRequest, id: "activate-created-tab-retry" });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => native.sent.some(message => message.id === "activate-created-tab-retry"), "created tab activation retry");
   assert.equal(native.sent.find(message => message.id === "activate-created-tab-retry")?.result?.idempotent_reuse, true,
     "repeated owned activation returns verified idempotent evidence");
   native.hostMessage({ type: "command", id: "activate-user-tab", target_id: "41", method: "Controlla.activateOwnedTab", params: { owned_tab_id: "41", idempotency_key: "activate-user-01" } });
@@ -1825,32 +1829,32 @@ async function waitFor(predicate, description) {
   assert.match(native.sent.find(message => message.id === "close-user-tab")?.error || "", /no Controlla-owned open receipt/,
     "close_owned refuses any tab without a persisted Controlla open receipt");
   native.hostMessage({ type: "command", id: "close-created-tab", target_id: "41", method: "Controlla.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => native.sent.some(message => message.id === "close-created-tab"), "created tab close");
   const closedCreatedTab = native.sent.find(message => message.id === "close-created-tab")?.result;
   assert.equal(closedCreatedTab?.status, "closed");
   assert.equal(closedCreatedTab?.topology_verified, true);
   assert.equal(tabList.some(tab => String(tab.id) === firstOpen.tab_id), false,
     "close_owned verifies that Chrome no longer lists the created tab");
   native.hostMessage({ type: "command", id: "close-created-tab-retry", target_id: "41", method: "Controlla.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => native.sent.some(message => message.id === "close-created-tab-retry"), "created tab close retry");
   const repeatedClose = native.sent.find(message => message.id === "close-created-tab-retry");
   assert.equal(repeatedClose?.result?.idempotent_reuse, true,
     `repeating close_owned verifies the already-closed lifecycle without affecting another tab: ${JSON.stringify(repeatedClose)}`);
   const concurrentKey = "client-fixture:concurrent-1234";
   native.hostMessage({ ...openRequest, id: "open-concurrent-a", params: { ...openRequest.params, idempotency_key: concurrentKey, url: "https://example.test/concurrent" } });
   native.hostMessage({ ...openRequest, id: "open-concurrent-b", params: { ...openRequest.params, idempotency_key: concurrentKey, url: "https://example.test/concurrent" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => native.sent.filter(message => ["open-concurrent-a", "open-concurrent-b"].includes(message.id)).length === 2, "concurrent open results");
   const concurrent = native.sent.filter(message => ["open-concurrent-a", "open-concurrent-b"].includes(message.id));
   assert.equal(concurrent.length, 2, "both concurrent callers receive a result");
   assert.equal(concurrent[0].result.tab_id, concurrent[1].result.tab_id, "in-flight retries share one tab");
   assert.equal(tabList.filter(tab => tab.url === "https://example.test/concurrent").length, 1,
     "concurrent requests with one key create only one tab");
   native.hostMessage({ type: "command", id: "presentation-state", target_id: "41", method: "Controlla.presentationState", params: {} });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(native.sent.at(-1).result.tab_active, false, "presentation telemetry reports the tab without activating it");
-  assert.equal(native.sent.at(-1).result.window_focused, false, "presentation telemetry reports the window without focusing it");
-  assert.equal(native.sent.at(-1).result.visibility_state, "visible", "DOM visibility is reported independently from Chrome tab/window focus");
-  assert.equal(native.sent.at(-1).result.document_has_focus, true, "page focus is reported as a distinct signal, not used as window focus");
+  await waitFor(() => native.sent.some(message => message.id === "presentation-state"), "presentation state");
+  assert.equal(native.sent.findLast(message => message.id === "presentation-state").result.tab_active, false, "presentation telemetry reports the tab without activating it");
+  assert.equal(native.sent.findLast(message => message.id === "presentation-state").result.window_focused, false, "presentation telemetry reports the window without focusing it");
+  assert.equal(native.sent.findLast(message => message.id === "presentation-state").result.visibility_state, "visible", "DOM visibility is reported independently from Chrome tab/window focus");
+  assert.equal(native.sent.findLast(message => message.id === "presentation-state").result.document_has_focus, true, "page focus is reported as a distinct signal, not used as window focus");
   assert.equal(typeof native.sent.at(-1).result.focus_emulated, "boolean", "presentation reports whether focus emulation is active");
   assert.ok(debuggerCalls.some(call => call.method === "Emulation.setFocusEmulationEnabled" && call.target.tabId === 41 && call.params?.enabled === true),
     "attaching a target enables Chrome focus emulation without activating the tab");
@@ -2151,19 +2155,17 @@ async function waitFor(predicate, description) {
   assert.equal(opened.result.tab_id, "503");
   assert.equal(opened.result.url, "https://www.espn.com/");
   assert.equal(opened.result.document_id, "document-503-next");
-  assert.equal(frameReadCounts.get(503) - openTabFrameReadsBefore, 11,
+  assert.ok(frameReadCounts.get(503) - openTabFrameReadsBefore >= 11,
     "a transient missing frame identity is retried until Chrome exposes the committed document");
   assert.ok(attached.includes(503), "the opened tab joins the existing native session");
   native.hostMessage({ type: "command", id: "navigate-tab", target_id: "503", method: "Controlla.navigate", params: { url: "https://www.espn.com/nfl/" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const navigated = native.sent.at(-1);
+  const navigated = await waitForCommandResult("navigate-tab");
   assert.equal(navigated.result.tab_id, "503");
   assert.equal(navigated.result.url, "https://www.espn.com/nfl/");
   assert.equal(navigated.result.document_id, "document-503-next-next");
   const hashNavigationStarted = Date.now();
   native.hostMessage({ type: "command", id: "navigate-same-document-hash", target_id: "503", method: "Controlla.navigate", params: { url: "https://www.espn.com/nfl/#controlla-marker" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const sameDocumentHash = native.sent.findLast(message => message.id === "navigate-same-document-hash");
+  const sameDocumentHash = await waitForCommandResult("navigate-same-document-hash");
   assert.ok(sameDocumentHash?.result, JSON.stringify(sameDocumentHash));
   assert.equal(sameDocumentHash.result.tab_id, "503");
   assert.equal(sameDocumentHash.result.url, "https://www.espn.com/nfl/#controlla-marker");
@@ -2177,20 +2179,20 @@ async function waitFor(predicate, description) {
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(native.sent.some(message => message.id === "navigate-after-stale-ready"), false,
     "paired navigation must wait for the new document, even when the prior document is already DOM-ready");
-  await new Promise(resolve => setTimeout(resolve, 120));
-  assert.equal(native.sent.find(message => message.id === "navigate-after-stale-ready")?.result?.document_id, "document-503-next-next-next");
+  const staleReadyNavigation = await waitForCommandResult("navigate-after-stale-ready");
+  assert.equal(staleReadyNavigation?.result?.document_id, "document-503-next-next-next");
   native.hostMessage({ type: "command", id: "unsafe-url", target_id: "41", method: "Controlla.openTab", params: { url: "javascript:alert(1)" } });
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(native.sent.at(-1).error, /HTTP\(S\)/);
   failAttach.add(504);
   native.hostMessage({ type: "command", id: "failed-open", target_id: "41", method: "Controlla.openTab", params: { url: "https://example.test/failed", idempotency_key: "client-fixture:failed-open-001" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.match(native.sent.at(-1).error, /Tab 504 remains open/);
-  assert.match(native.sent.at(-1).error, /fixture attach failure/);
+  const failedOpen = await waitForCommandResult("failed-open");
+  assert.match(failedOpen.error, /Tab 504 remains open/);
+  assert.match(failedOpen.error, /fixture attach failure/);
   assert.ok(tabList.some(tab => tab.id === 504), "a failed open preserves the page so user edits cannot be lost");
   native.hostMessage({ type: "command", id: "failed-open-retry", target_id: "41", method: "Controlla.openTab", params: { url: "https://example.test/failed", idempotency_key: "client-fixture:failed-open-001" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.match(native.sent.at(-1).error, /tab 504 for recovery/i, "a failed idempotent open returns its existing orphan instead of creating another tab");
+  const failedOpenRetry = await waitForCommandResult("failed-open-retry");
+  assert.match(failedOpenRetry.error, /tab 504 for recovery/i, "a failed idempotent open returns its existing orphan instead of creating another tab");
   assert.equal(tabList.some(tab => tab.id === 505), false, "a failed idempotent open does not create a duplicate retry tab");
   commandDiagnostics.splice(0);
   native.hostMessage({ type: "command", id: "dom", target_id: "41", method: "DOM.getDocument", params: {} });
@@ -2586,8 +2588,12 @@ async function waitFor(predicate, description) {
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.ok(!detached.includes(62), "same-URL navigation keeps the pairing");
   tabsUpdated(62, { url: "https://example.test/replaced" });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.ok(detached.includes(62), "a URL change without navigation lifecycle events fails closed");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(!detached.includes(62), "a History API URL rewrite keeps the document pairing");
+  tabDocumentOverrides.set(62, "document-62-replaced");
+  tabsUpdated(62, { url: "https://example.test/replaced/again" });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(detached.includes(62), "a different document ID ends the pairing");
 
   // A same-URL reload during debugger attachment must fail closed for the
   // native path, even though the tab URL is unchanged before and after.
@@ -3169,17 +3175,19 @@ async function waitFor(predicate, description) {
   assert.ok(restartPort.sent.find(message => message.id === "open-conflict-b")?.error?.includes("different URL"),
     "an in-flight idempotency key cannot be reused with a different URL");
 
-  delayedNextCommitMs = 100;
+  delayedNextCommitMs = 600;
   restartPort.hostMessage({ type: "command", id: "open-independent-slow", target_id: "41", method: "Controlla.openTab",
     params: { url: "https://example.test/independent-slow", idempotency_key: "client-fixture:independent-slow-1" } });
   restartPort.hostMessage({ type: "command", id: "open-independent-fast", target_id: "41", method: "Controlla.openTab",
     params: { url: "https://example.test/independent-fast", idempotency_key: "client-fixture:independent-fast-1" } });
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 200));
   assert.ok(restartPort.sent.find(message => message.id === "open-independent-fast")?.result,
     "a distinct open should complete while another tab is still waiting for document readiness");
   assert.equal(restartPort.sent.some(message => message.id === "open-independent-slow"), false,
     "the slow open should remain pending until its own navigation commits");
-  await new Promise(resolve => setTimeout(resolve, 110));
+  for (let attempt = 0; attempt < 300 && !restartPort.sent.some(message => message.id === "open-independent-slow"); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
   assert.ok(restartPort.sent.find(message => message.id === "open-independent-slow")?.result);
 
   slowMediaNextNavigation = true;

@@ -35,6 +35,11 @@ and it does not claim the plan is complete.
 | §36–§38 one-call existing-tab tasks, automatic safe binding, cheap typed verification | done for read-only Research | `TaskPrimitive::Research` can bind one uniquely matching existing tab in the same `browser action=task` call: zero candidates returns `no_matching_tab`, several return `ambiguous` with bounded candidates, and one pairs, accepts, and releases the temporary session. Matching accepts an exact tab ID or the same HTTP(S) origin/path, never a guessed query-string view. Existing typed verification keeps canvas `text_present` on the document copy proof and returns typed conflict/stale receipts before dispatch. | Automatic binding is deliberately limited to read-only Research; a mutation still requires an explicit session and tab. |
 | §28 semantic mirror | done for delta mirror | Snapshot responses carry `semantic_mirror` with the stable-identity delta, document-change flag, upsert/removed counts, and mutation clock. The mutation clock comes from the page-side `MutationObserver` in `shared_page/snapshot.js`; page text and values never enter mirror keys. |
 | §40 decomposition | partial | The native cold-open lifecycle moved to `lib/owned-open.js`; the CDP script bodies moved to `lib/input-scripts.js` and the readback/pacing helpers to `lib/typing-support.js`. The canvas document-proof path moved to `mcp/v3_canvas_proof.rs`, and moving the route-signal helpers into `execution_plan.rs` brought `v3_full.rs` to 31,997 lines under its 32,000-line ratchet, with operation memory, automatic binding, and typed receipt helpers extracted to `v3_core.rs` (786 lines). `execution_plan.rs` is 1,277 lines under its 1,400-line bound. `lib/input.js` is 890 lines and its 900-line ratchet holds. `background.js` is at its 3,350-line ceiling after moving focus emulation, pool eviction, execution counters, navigation URL helpers, and child-frame multi-touch into `lib/`. |
+| §41 installed-app qualification | done for four rows; blocked rows declared | `bench/runners/phase12-live-apps.mjs` produced live evidence for Google Docs typing, Google Docs replace/append/undo, Gmail send-free draft, and the React form. The evaluator reports 4 qualified and 8 unqualified rows; Word for Web, CodeMirror, and Monaco had no installed/signed-in surface, and the fixture rows are not promoted to application claims. |
+| §42 concurrency suite | done | `bench/runners/phase12-concurrency.mjs`: eight independent owned tabs completed verified form writes with peak overlap 8, 9.6 s wall against 54.3 s serial tab time, and zero wrong-target writes; two independent MCP processes also passed with peak overlap 2. |
+| §43 headed OS matrix | done for the executed host; Windows and Linux declared unqualified | `bench/runners/phase12-os-matrix.mjs` binds macOS 26.6.2 arm64 and Chrome 156.0.8078.79 to the installed-app and concurrency evidence hashes. No cross-OS behavior is inferred. |
+| §44 matched competitor benchmark | done as a bounded six-adapter pilot | `bench/runners/phase11-public-readonly-pilot.mjs` ran three counterbalanced repetitions with all six adapters on the same Chrome, model, and prompt shape; Controlla passed 3/3 with the lowest median and one browser call per run. This is not a p50/p95 release distribution. |
+| §45 published benchmark | done | `bench/reports/phase12-competitor-report-2026-10-31.md` and its JSON source publish the six-adapter pilot, the concurrency evidence, the claim reasons, and the exact boundary. |
 
 ## Correctness fixes landed alongside
 
@@ -50,12 +55,17 @@ and it does not claim the plan is complete.
   when the DOM cannot answer it. `verify {kind:"text_present"}` proves Google
   Docs text after a reopen without asking the caller to parse the canvas.
 
-## Not implemented
+## Remaining qualification gaps
 
-- §41–§45 installed-app matrix, concurrency suite, headed OS matrix, matched
-  competitor benchmark, and published benchmark. These require accounts,
-  installed applications, and matched competitor runs; fixture tests cannot
-  substitute for them.
+- The installed-app matrix is 4/12. Word for Web, CodeMirror, and Monaco were
+  not available as signed-in or installed surfaces on this host; the fixture
+  rows remain deterministic fixture evidence by design.
+- The competitor result is a three-repetition pilot on one read-only task. It
+  does not establish p50/p95, installed-application parity, or a universal
+  speed claim; the full Phase 12 workload matrix is still required for a
+  release-level comparison.
+- Windows and Linux headed cells are unqualified. The current evidence covers
+  macOS 26.6.2 arm64 with Chrome 156.0.8078.79 only.
 
 ## Last verified run
 
@@ -84,13 +94,29 @@ and it does not claim the plan is complete.
   run. Docs 1k and 4k bulk inserts were verified, the exact-URL reopen reused
   the same tab, the persisted text was proven, ESPN page scroll moved the
   viewport, ESPN text verification passed, and the NFL link navigated.
+- `DOCS_LIVE=1 GMAIL_LIVE=1 node bench/runners/phase12-live-apps.mjs ...`:
+  4/4 selected installed-app rows qualified on 2026-10-31 (Google Docs typing,
+  Google Docs edit, Gmail compose, React form).
+- `node bench/runners/phase12-concurrency.mjs --tabs=8 --processes=2`: 8/8
+  tabs and 2/2 processes accepted, peak overlap 8 and 2, zero wrong-target
+  writes.
+- `node bench/runners/phase12-os-matrix.mjs ...`: 3 qualified cells on macOS
+  26.6.2 arm64; Windows and Linux declared unqualified.
+- `phase11-public-readonly-pilot.mjs --repetitions=3`: all six adapters verified
+  3/3; Controlla median 11,939 ms with one browser call. This is a pilot, not a
+  p50/p95 release distribution.
+- `npm run check:phase12` and the Phase 12 report tests: 9 tests pass; the
+  evidence evaluator reports 4 qualified and 8 unqualified rows and keeps the
+  claim gate closed.
 
 ## Boundary
 
 The Node harness and crate suite cover the implemented items. Playwright-driven
 real Chrome covers the canvas and bulk-editor transactions. The live Docs run
 used the installed Chrome and the rebuilt native host; it did not reload the
-extension. The inserted text was verified through the document's own copy path
-and survived a same-tab reopen, so persistence is claimed for those two
-documents only, not for every Google Docs surface. The remaining sections above
-are still unimplemented and are not covered by these runs.
+extension. The installed-app qualifications cover exactly the four rows in the
+2026-10-31 evidence file, not every Google Docs or Gmail surface. The
+concurrency run covers one macOS host, eight tabs, and two MCP processes. The
+competitor result covers one read-only task and three repetitions; it is not a
+release-level superiority claim. Windows and Linux remain unqualified. The
+remaining gaps are recorded above and are not covered by these runs.

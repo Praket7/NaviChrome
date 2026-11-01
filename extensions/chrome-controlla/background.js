@@ -261,7 +261,8 @@ function applyWatcherStateEvent(previous, event) {
         if (Number.isSafeInteger(info.groupId) && info.groupId >= 0) next.group_id = info.groupId;
         else delete next.group_id;
       }
-      if (Object.prototype.hasOwnProperty.call(info, "url")) delete next.document_id;
+      // URL-only updates are History API rewrites; only loading means navigation.
+      if (info.status === "loading") delete next.document_id;
       tabs.set(event.tab_id, identityChanged ? { ...next, target_revision: nextRevision } : next); break;
     }
     case "tab_attached": { bumpRevision(); const old = tabs.get(event.tab_id); if (old && Number.isSafeInteger(event.window_id)) tabs.set(event.tab_id, { ...old, window_id: event.window_id, target_revision: nextRevision }); break; }
@@ -322,6 +323,10 @@ function watcherRevisionReceipt(tabId, expectedRevision, expectedDocumentId) {
   // turn unrelated topology churn into a false stale-target refusal.
   const sameDocument = typeof expectedDocumentId === "string" && expectedDocumentId.length > 0
     && tab?.document_id === expectedDocumentId;
+  // The live pair is authoritative; the watcher mirror may lag a rewrite.
+  if (!sameDocument && typeof expectedDocumentId === "string" && expectedDocumentId.length > 0
+    && pairedTabDocumentIds.get(tabId) === expectedDocumentId) return null;
+  if (pairedTabDocumentIds.has(tabId)) return null;
   if (!sameDocument && (!Number.isSafeInteger(expectedRevision) || !tab || tab.status !== "complete" || !tab.document_id)) {
     return { status: "not_dispatched", dispatch_acknowledged: false, dispatch_may_have_occurred: false,
       reason_code: "stale_watcher_document", reason: "The selected tab no longer has a stable paired document; refresh and reacquire the target once.",
@@ -684,34 +689,6 @@ async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) 
   if (!latestChain || latestChain.length !== chain.length || latestChain.some((frame, index) => frame.id !== chain[index].id || frame.loaderId !== chain[index].loaderId)) throw new Error("Frame ancestry or loader changed during owner mapping.");
   if (chain.slice(0, -1).some((frame, index) => (frameTreeRegistry.sessionForFrame(tabId, frame.id) || null) !== initialSessions[index])) throw new Error("Frame owner session changed during owner mapping.");
   return { x, y, owner_signature: owners };
-}
-async function directFramePoint(tabId, frameId, loaderId, x, y, childViewport) {
-  const route = { tabId }, tree = await sendCdpCommand(route, "Page.getFrameTree", {});
-  const root = tree?.frameTree, matches = (root?.childFrames || []).filter(child => child?.frame?.id === frameId);
-  if (matches.length !== 1 || matches[0].frame.loaderId !== loaderId) throw new Error("Only a fresh direct child frame can be mapped safely.");
-  const owner = await sendCdpCommand(route, "DOM.getFrameOwner", { frameId });
-  const ownerNodeId = owner?.backendNodeId;
-  if (!Number.isSafeInteger(ownerNodeId) || ownerNodeId <= 0) throw new Error("Frame owner identity is unavailable.");
-  const box = await sendCdpCommand(route, "DOM.getBoxModel", { backendNodeId: ownerNodeId });
-  const q = box?.model?.content;
-  if (!Array.isArray(q) || q.length !== 8 || !q.every(Number.isFinite) || !(childViewport?.width > 0) || !(childViewport?.height > 0)) throw new Error("Frame transform geometry is unavailable.");
-  // A parallelogram is the evidence that one affine transform maps this
-  // child viewport into the root viewport. Perspective transforms fail closed.
-  if (Math.abs(q[0] + q[4] - q[2] - q[6]) > 1 || Math.abs(q[1] + q[5] - q[3] - q[7]) > 1) throw new Error("Perspective or non-affine frame transforms are unsupported.");
-  const rootPoint = {
-    x: q[0] + x / childViewport.width * (q[2] - q[0]) + y / childViewport.height * (q[6] - q[0]),
-    y: q[1] + x / childViewport.width * (q[3] - q[1]) + y / childViewport.height * (q[7] - q[1]),
-  };
-  const resolved = await sendCdpCommand(route, "DOM.resolveNode", { backendNodeId: ownerNodeId });
-  if (!resolved?.object?.objectId) throw new Error("Frame owner could not be resolved for hit testing.");
-  const hit = await sendCdpCommand(route, "Runtime.callFunctionOn", {
-    objectId: resolved.object.objectId,
-    functionDeclaration: "function(x,y){const s=getComputedStyle(this);return this.isConnected&&s.display!=='none'&&s.visibility==='visible'&&s.pointerEvents!=='none'&&document.elementFromPoint(x,y)===this}",
-    arguments: [{ value: rootPoint.x }, { value: rootPoint.y }], returnByValue: true,
-  });
-  await sendCdpCommand(route, "Runtime.releaseObject", { objectId: resolved.object.objectId }).catch(() => {});
-  if (hit?.result?.value !== true) throw new Error("The transformed frame point is obscured or outside its owner.");
-  return rootPoint;
 }
 function fileInputNodes(node, found = []) {
   if (!node || typeof node !== "object") return found;
@@ -1221,7 +1198,7 @@ async function handleNativeMessage(port, portGeneration, message) {
         const firstFrame = await boundedNativeApi(chrome.webNavigation.getFrame({ tabId: tab.id, frameId: 0 }), undefined);
         const current = await boundedNativeApi(chrome.tabs.get(tab.id), undefined);
         const lastFrame = await boundedNativeApi(chrome.webNavigation.getFrame({ tabId: tab.id, frameId: 0 }), undefined);
-        const stableDocument = current?.status === "complete" && /^https?:\/\//i.test(current.url || "") && firstFrame?.documentId && firstFrame.documentId === lastFrame?.documentId && lastFrame.url === current.url;
+        const stableDocument = current?.status === "complete" && /^https?:\/\//i.test(current.url || "") && firstFrame?.documentId && firstFrame.documentId === lastFrame?.documentId;
         const owned = ownedDocuments.get(tab.id);
         return { id: tab.id, window_id: current?.windowId, group_id: Number.isSafeInteger(current?.groupId) && current.groupId >= 0 ? current.groupId : null, last_accessed: Number.isFinite(current?.lastAccessed) ? current.lastAccessed : undefined, title: String(current?.title || tab.title || "").slice(0, 256), url: String(current?.url || tab.url).slice(0, 2048), active_for_open: current?.id === lastFocusedActive,
           // Ownership follows the tab receipt for its lifetime. Navigation and
@@ -2850,14 +2827,23 @@ function screenshotTargetLifecycle(tab) {
   if (tab.frozen === false) return "active";
   return "unknown";
 }
-async function nativePageIdentity(tabId) {
-  for (let attempt = 0; attempt < 26; attempt++) {
-    const tab = await chrome.tabs.get(tabId);
-    const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
-    if (frame?.documentId && frame.url === tab.url) return { url: tab.url, document_id: frame.documentId };
-    if (attempt < 25) await new Promise(resolve => setTimeout(resolve, 10));
+async function nativePageIdentity(tabId, settled = false, allowLoading = false) {
+  // Wait for one document ID to stay complete across ~150 ms of polls. A paired
+  // tab stays fast because dispatch revalidates identity; initial pairing waits.
+  const alreadyPaired = settled || pairedTabDocumentIds.has(tabId);
+  let candidate, stableReads = 0, last;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const [tab, frame] = await Promise.all([chrome.tabs.get(tabId).catch(() => undefined), chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => undefined)]);
+    if (!frame?.documentId || (!allowLoading && tab?.status !== "complete")) { candidate = undefined; stableReads = 0; }
+    else {
+      last = { url: tab.url || frame.url, document_id: frame.documentId };
+      if (alreadyPaired) return last;
+      if (candidate !== frame.documentId) { candidate = frame.documentId; stableReads = 0; }
+      else if (++stableReads >= 15) return last;
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
-  throw new Error("Navigation did not expose a stable document identity within 250 ms.");
+  throw new Error("Navigation did not expose a stable document identity within 3000 ms.");
 }
 async function waitForTabDOMContentLoaded(tabId, afterDocumentId) {
   const currentDocumentReady = async () => {
@@ -2904,8 +2890,7 @@ async function pendingNavigationMatchesDocument(tabId, documentId) {
       chrome.tabs.get(tabId).catch(() => undefined),
       chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => undefined),
     ]);
-    return tab?.status === "complete" && frame?.documentId === documentId &&
-      frame.url === tab.url && frame.url === pending.url;
+    return tab?.status === "complete" && frame?.documentId === documentId;
   };
   if (!await readCurrent()) return false;
   await Promise.resolve();
@@ -2929,8 +2914,8 @@ async function attachNewTab(tabId, url, native, generation, navigate = true, wai
   // recovery/reattach paths (navigate=false) need this additional readiness
   // check before pairing the existing tab.
   if (!navigate && waitUntil !== "document_committed") await waitForTabDOMContentLoaded(tabId); if (!routeActive(native, generation)) throw new Error("Shared session ended during tab navigation.");
-  const identity = await nativePageIdentity(tabId); await attachDebugger(tabId); const attachedIdentity = await nativePageIdentity(tabId).catch(() => undefined);
-  if (!routeActive(native, generation) || !await pendingNavigationMatchesDocument(tabId, attachedIdentity?.document_id) || attachedIdentity?.url !== identity.url || attachedIdentity?.document_id !== identity.document_id) { await detachDebugger(tabId); throw new Error("Tab changed during attachment; retry from a fresh inventory."); }
+  const identity = await nativePageIdentity(tabId, true, true); await attachDebugger(tabId); const attachedIdentity = await nativePageIdentity(tabId, true, true).catch(() => undefined);
+  if (!routeActive(native, generation) || !await pendingNavigationMatchesDocument(tabId, attachedIdentity?.document_id) || attachedIdentity?.document_id !== identity.document_id) { await detachDebugger(tabId); throw new Error("Tab changed during attachment; retry from a fresh inventory."); }
   pairedTabUrls.set(tabId, attachedIdentity.url); pairedTabDocumentIds.set(tabId, attachedIdentity.document_id); bindPairedTabTopology(tabId); if (native) addNativeTab(tabId, generation); else manualAttachedTabs.add(tabId); return attachedIdentity;
 }
 async function returnExistingOpen(receipt, url, native, generation) {
@@ -2946,7 +2931,7 @@ async function returnExistingOpen(receipt, url, native, generation) {
   const attached = native ? nativeAttachedTabs : manualAttachedTabs;
   if (!attached.has(tabId)) {
     await attachDebugger(tabId);
-    const after = await nativePageIdentity(tabId).catch(() => undefined);
+    const after = await nativePageIdentity(tabId, true).catch(() => undefined);
     if (!routeActive(native, generation) || after?.url !== receipt.url || after?.document_id !== receipt.document_id) { await detachDebugger(tabId); throw new Error(`Open receipt ${receipt.tab_id} changed while reconnecting; no replacement tab was opened.`); }
     pairedTabUrls.set(tabId, after.url); pairedTabDocumentIds.set(tabId, after.document_id); bindPairedTabTopology(tabId); attached.add(tabId);
   }
@@ -2983,15 +2968,21 @@ const ownedTabOpener = configureOwnedTabOpener({
 async function createOwnedTabFromNative(request) { return ownedTabOpener.openOwnedTabFromNative(request); }
 
 async function createControllaTab(url, native, generation, tab, markerUrl, reused = false, waitUntil = "dom_content_loaded", active = true, createBackgroundWindow = false, placement = {}) {
+  const created = !tab;
   tab ||= await chrome.tabs.create({ url: markerUrl, active });
   let identity, attachedIdentity;
   try {
     const current = await chrome.tabs.get(tab.id);
     attachedIdentity = await attachNewTab(tab.id, url, native, generation, current.url !== url, waitUntil);
-    identity = await nativePageIdentity(tab.id);
+    identity = await nativePageIdentity(tab.id, true, true);
   }
   catch (error) {
     if (attachedIdentity && routeActive(native, generation) && pairedTabDocumentIds.get(tab.id) === attachedIdentity.document_id && (native ? nativeLeaseForGeneration(generation)?.tabs.has(tab.id) : manualAttachedTabs.has(tab.id))) { pairedTabUrls.delete(tab.id); pairedTabDocumentIds.delete(tab.id); clearPairedTabTopology(tab.id); if (native) removeNativeTab(tab.id); else manualAttachedTabs.delete(tab.id); await detachDebugger(tab.id); }
+    if (created) {
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      const failure = new Error("Open failed before pairing; the created tab was closed. " + String(error));
+      failure.reason_code = error?.reason_code || "open_failed_tab_closed"; throw failure;
+    }
     const failure = new Error("Tab " + tab.id + " remains open after the failed open; rediscover and pair it before use. " + String(error));
     failure.controllaOrphanTabId = String(tab.id);
     throw failure;
@@ -3184,8 +3175,8 @@ async function navigatePairedTab(tabId, url, native, generation) {
   const ready = waitForTabDOMContentLoaded(tabId, before.documentId);
   (native ? nativeAttachedTabs : manualAttachedTabs).delete(tabId); pairedTabUrls.delete(tabId); pairedTabDocumentIds.delete(tabId); await detachDebugger(tabId); await chrome.tabs.update(tabId, { url }); await ready;
   if (!routeActive(native, generation)) throw new Error("Shared session ended during tab navigation.");
-  const identity = await nativePageIdentity(tabId); await attachDebugger(tabId); const attachedIdentity = await nativePageIdentity(tabId).catch(() => undefined);
-  if (!routeActive(native, generation) || !await pendingNavigationMatchesDocument(tabId, attachedIdentity?.document_id) || attachedIdentity?.url !== identity.url || attachedIdentity?.document_id !== identity.document_id) { await detachDebugger(tabId); throw new Error("Tab changed during attachment; retry from a fresh inventory."); }
+  const identity = await nativePageIdentity(tabId, true, true); await attachDebugger(tabId); const attachedIdentity = await nativePageIdentity(tabId, true, true).catch(() => undefined);
+  if (!routeActive(native, generation) || !await pendingNavigationMatchesDocument(tabId, attachedIdentity?.document_id) || attachedIdentity?.document_id !== identity.document_id) { await detachDebugger(tabId); throw new Error("Tab changed during attachment; retry from a fresh inventory."); }
   pairedTabUrls.set(tabId, attachedIdentity.url); pairedTabDocumentIds.set(tabId, attachedIdentity.document_id); bindPairedTabTopology(tabId); if (native) addNativeTab(tabId, generation); else manualAttachedTabs.add(tabId);
   return { ...attachedIdentity, status: "complete", dispatch_acknowledged: true, dispatch_may_have_occurred: true, verified: true, document_changed: attachedIdentity.document_id !== before.documentId, next_action: "none" };
 }
@@ -3282,7 +3273,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") { clearDownloadLifecycleState(tabId, "tab_navigated"); clearFileChooserState(tabId, "Target navigated before the file chooser opened."); tabNavigationGenerations.set(tabId, (tabNavigationGenerations.get(tabId) || 0) + 1); if (pairedTabDocumentIds.has(tabId)) navigatingTabs.add(tabId); }
   if (changeInfo.status === "complete") { const pending = pendingMainFrameNavigations.get(tabId); if (pending?.failed) void clearFailedNavigationWhenStable(tabId, pending); if (!debuggerDetachedDuringNavigation.has(tabId)) navigatingTabs.delete(tabId); }
   const pairedUrl = pairedTabUrls.get(tabId); if (pairedUrl === undefined || !changeInfo.url || changeInfo.url === "about:blank" || navigatingTabs.has(tabId)) return;
-  const changed = (() => { try { const before = new URL(pairedUrl), after = new URL(changeInfo.url); return before.origin !== after.origin || before.pathname !== after.pathname || before.search !== after.search; } catch { return changeInfo.url !== pairedUrl; } })(); if (changed) void detachPairedTab(tabId);
+  const changed = (() => { try { const before = new URL(pairedUrl), after = new URL(changeInfo.url); return before.origin !== after.origin || before.pathname !== after.pathname || before.search !== after.search; } catch { return changeInfo.url !== pairedUrl; } })();
+  if (!changed) return;
+  // Keep the pair across a History API rewrite that preserves the document.
+  void (async () => {
+    const pairedDocumentId = pairedTabDocumentIds.get(tabId);
+    if (!pairedDocumentId) return;
+    const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => undefined);
+    if (pairedTabDocumentIds.get(tabId) !== pairedDocumentId || navigatingTabs.has(tabId)) return;
+    if (frame?.documentId === pairedDocumentId) pairedTabUrls.set(tabId, changeInfo.url); else await detachPairedTab(tabId);
+  })();
 });
 chrome.webNavigation.onBeforeNavigate.addListener(details => {
   if (details.frameId !== 0) return;

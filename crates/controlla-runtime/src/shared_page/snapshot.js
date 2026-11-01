@@ -143,6 +143,35 @@ function(q) {
     return parts.join('>');
   };
   const rectBucket = b => ({w: Math.round(b.width/50)*50, h: Math.round(b.height/50)*50, x: Math.round(b.left/100)*100, y: Math.round(b.top/100)*100});
+  const visibleNode = node => {
+    if (!node?.isConnected) return false;
+    const rect = node.getBoundingClientRect(), style = node.ownerDocument.defaultView.getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility === 'visible' && Number.parseFloat(style.opacity || '1') > 0;
+  };
+  // Expansion can live on the control or on its listbox host. Prefer the
+  // nearest explicit ARIA state, then a controlled popup that is actually
+  // visible. A collapsed menu and an open one must not look identical.
+  const expandedOf = e => {
+    const own = e.getAttribute('aria-expanded');
+    if (own !== null) return own;
+    const host = e.closest('[aria-expanded]');
+    if (host) return host.getAttribute('aria-expanded');
+    const ids = [e, e.parentElement, e.closest('[role="combobox"]')]
+      .filter(Boolean)
+      .flatMap(node => (node.getAttribute('aria-controls') || '').split(/\s+/).filter(Boolean));
+    for (const id of ids) if (visibleNode(e.ownerDocument.getElementById(id))) return 'true';
+    return null;
+  };
+  // aria-selected belongs to options and tabs; radios and checkboxes expose
+  // their checked state through aria-checked or the native control. Google
+  // Forms marks every rating option aria-selected=true, so preferring it for
+  // radios falsely reports the whole group as selected.
+  const selectedOf = (e, role) => {
+    const native = e instanceof HTMLInputElement && (e.type === 'checkbox' || e.type === 'radio')
+      ? (e.checked ? 'true' : 'false') : null;
+    if (['radio', 'checkbox', 'switch', 'menuitemradio', 'menuitemcheckbox'].includes(role)) return e.getAttribute('aria-checked') ?? native;
+    return e.getAttribute('aria-selected') ?? e.getAttribute('aria-checked') ?? native;
+  };
   const selector = 'a[href],button,input,textarea,select,summary,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="button"],[role="link"],[role="menuitem"],[role="checkbox"],[role="radio"],[role="tab"],[role="combobox"],[role="option"],[draggable="true"],[data-draggable="true"],[data-drop-target="true"],[aria-dropeffect]';
   let scanned = 0, truncated = false, bytes = 0, omitted_by_limit = 0, omitted_oversized = 0, early_stopped = false, goal_satisfied = false, goal_score = 0;
   let truncation_reason = null;
@@ -209,7 +238,18 @@ function(q) {
       const canvasHost = rich && (() => { if (paintsCanvas(e)) return true; for (let p = e.parentElement, depth = 0; p && depth < 3; p = p.parentElement, depth += 1) if (paintsCanvas(p)) return true; return false; })();
       const valueReadable = !rich || !(scope.kind === 'same_origin_blank_frame' || canvasHost);
       const feedbackRegion = e.closest('[role="alert"],[role="status"],[role="log"],[aria-live]') !== null;
-      const item = {reference:q.token+':'+items.length,tag:e.tagName.toLowerCase(),id:e.id || null,size:fileSizeOf(e),role,name:label,text:label,raw_value:value,...state,feedback_region:feedbackRegion,editable_kind:rich?'rich_text':editable?'plain_text':null,credential_input:credential,requires_user_input:credential,multiline:rich||e.tagName==='TEXTAREA'||e.getAttribute('aria-multiline')==='true',control_type:typeof e.type==='string'?e.type:null,multiple:'multiple'in e?e.multiple===true:null,min:e.getAttribute('min'),max:e.getAttribute('max'),step:e.getAttribute('step'),hover_reveals:e.getAttribute('data-hover-reveals')==='true'||e.hasAttribute('data-hover-reveals'),draggable:e.draggable===true||e.getAttribute('data-draggable')==='true',drop_target:e.getAttribute('data-drop-target')==='true'||e.getAttribute('aria-dropeffect')==='move',widget_kind:e.getAttribute('data-widget-kind'),href:e.tagName === 'A' ? e.href : null,target:e.tagName === 'A' ? e.getAttribute('target') : null,rel:e.tagName === 'A' ? e.getAttribute('rel') : null,expanded:e.getAttribute('aria-expanded'),selected:e.getAttribute('aria-selected') || e.getAttribute('aria-checked'),controls_selector:e.getAttribute('aria-controls')?.split(/\s+/).filter(Boolean).map(id=>'#'+CSS.escape(id)).join(',') || null,datetime,test_id:e.getAttribute('data-testid') || e.getAttribute('data-test') || e.getAttribute('data-qa') || null,datetime_utc_ms:exactInstant && Number.isFinite(parsedTime)?parsedTime:null,datetime_precision:exactInstant?'instant':dateOnly?'date':null,freshness_upper_bound_ms:Number.isFinite(freshnessUpperBound)?freshnessUpperBound:null,section:sectionOf(e),semantic_ancestor:semanticAncestor(e),dom_path_fingerprint:domPathFingerprint(e),rect_bucket:rectBucket(b),bounds:scope.frame==='main'?{x:b.left+e.ownerDocument.defaultView.scrollX,y:b.top+e.ownerDocument.defaultView.scrollY,width:b.width,height:b.height}:null,source_frame:scope.frame,source_frame_revision:String(e.ownerDocument.defaultView.performance.timeOrigin),source_frame_url:e.ownerDocument.location.href,source_kind:scope.kind,source_frame_owner:scope.owner?{tag:'iframe',id:scope.owner.id||null,class:typeof scope.owner.className==='string'?scope.owner.className||null:null,name:scope.owner.getAttribute('name')||null,src:scope.owner.getAttribute('src')||null}:null,hidden_editor:!state.rendered,value_readable:valueReadable};
+      const item = {reference:q.token+':'+items.length,tag:e.tagName.toLowerCase(),id:e.id || null,size:fileSizeOf(e),role,name:label,text:label,raw_value:value,...state,feedback_region:feedbackRegion,editable_kind:rich?'rich_text':editable?'plain_text':null,credential_input:credential,requires_user_input:credential,multiline:rich||e.tagName==='TEXTAREA'||e.getAttribute('aria-multiline')==='true',control_type:typeof e.type==='string'?e.type:null,multiple:'multiple'in e?e.multiple===true:null,min:e.getAttribute('min'),max:e.getAttribute('max'),step:e.getAttribute('step'),hover_reveals:e.getAttribute('data-hover-reveals')==='true'||e.hasAttribute('data-hover-reveals'),draggable:e.draggable===true||e.getAttribute('data-draggable')==='true',drop_target:e.getAttribute('data-drop-target')==='true'||e.getAttribute('aria-dropeffect')==='move',widget_kind:e.getAttribute('data-widget-kind'),href:e.tagName === 'A' ? e.href : null,target:e.tagName === 'A' ? e.getAttribute('target') : null,rel:e.tagName === 'A' ? e.getAttribute('rel') : null,expanded:expandedOf(e),selected:selectedOf(e,role),controls_selector:e.getAttribute('aria-controls')?.split(/\s+/).filter(Boolean).map(id=>'#'+CSS.escape(id)).join(',') || null,datetime,test_id:e.getAttribute('data-testid') || e.getAttribute('data-test') || e.getAttribute('data-qa') || null,datetime_utc_ms:exactInstant && Number.isFinite(parsedTime)?parsedTime:null,datetime_precision:exactInstant?'instant':dateOnly?'date':null,freshness_upper_bound_ms:Number.isFinite(freshnessUpperBound)?freshnessUpperBound:null,section:sectionOf(e),semantic_ancestor:semanticAncestor(e),dom_path_fingerprint:domPathFingerprint(e),rect_bucket:rectBucket(b),bounds:scope.frame==='main'?{x:b.left+e.ownerDocument.defaultView.scrollX,y:b.top+e.ownerDocument.defaultView.scrollY,width:b.width,height:b.height}:null,source_frame:scope.frame,source_frame_revision:String(e.ownerDocument.defaultView.performance.timeOrigin),source_frame_url:e.ownerDocument.location.href,source_kind:scope.kind,source_frame_owner:scope.owner?{tag:'iframe',id:scope.owner.id||null,class:typeof scope.owner.className==='string'?scope.owner.className||null:null,name:scope.owner.getAttribute('name')||null,src:scope.owner.getAttribute('src')||null}:null,hidden_editor:!state.rendered,value_readable:valueReadable};
+      // Remember the semantic signature on the retained node. Framework
+      // rerenders replace the element between snapshot and action; the old node
+      // still carries this identity, so the background action can rebind to the
+      // one visible live control with the same role, name, and context.
+      try {
+        Object.defineProperty(e, '__controllaIdentity', { configurable: true, value: {
+          tag: item.tag, role: item.role, name: item.name, href: item.href,
+          type: item.control_type, test_id: item.test_id, id: item.id,
+          path: item.dom_path_fingerprint, section: item.section
+        }});
+      } catch (_) {}
       let queryScore = 0;
       if (q.goal) {
         const normalize = text => text.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,' ').trim();

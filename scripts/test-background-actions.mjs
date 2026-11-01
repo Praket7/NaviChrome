@@ -11,10 +11,10 @@ async function run(html, action, expected, value, setup = '') {
   const page = await browser.newPage();
   try {
     await page.setContent(html);
-    return await page.evaluate(({ source, action, expected, value, setup }) => {
+    return await page.evaluate(async ({ source, action, expected, value, setup }) => {
       const retained = { nodes: [document.querySelector('#target')] };
       if (setup) new Function(setup)();
-      const result = new Function(`return (${source})`)().call(retained, 0, action, expected, value, null);
+      const result = await new Function(`return (${source})`)().call(retained, 0, action, expected, value, null);
       return { result, value: document.querySelector('#target')?.value, events: window.events || [] };
     }, { source, action, expected, value, setup });
   } finally { await page.close(); }
@@ -30,11 +30,18 @@ test('stale expected value prevents overwrite', async () => {
   assert.equal(actual.value, 'human edit');
   assert.equal(actual.result.reason, 'same_field_conflict');
 });
-test('replacement with identical name is not rebound', async () => {
+test('replacement with identical identity is rebound to the live control', async () => {
   const actual = await run('<input id="target" aria-label="Name" value="old">', 'fill', 'old', 'new',
     'document.querySelector("#target").outerHTML = \'<input id="target" aria-label="Name" value="old">\'');
+  assert.equal(actual.result.rebound, true);
+  assert.equal(actual.result.dispatched, true);
+  assert.equal(actual.value, 'new');
+});
+test('rebinding refuses when two live controls share the identity', async () => {
+  const actual = await run('<input id="target" aria-label="Name" value="old">', 'fill', 'old', 'new',
+    'document.querySelector("#target").outerHTML = \'<div><input aria-label="Name" value="old"></div><div><input aria-label="Name" value="old"></div>\'');
   assert.equal(actual.result.dispatched, false);
-  assert.equal(actual.value, 'old');
+  assert.equal(actual.result.reason, 'target_replaced');
 });
 test('live password transition refuses before reading a secret', async () => {
   const actual = await run('<input id="target" value="synthetic-secret">', 'fill', '', 'new',

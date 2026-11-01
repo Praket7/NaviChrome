@@ -20,6 +20,10 @@ const LOCAL_STDIO_PRINCIPAL: &str = "local-stdio";
 pub const SHARED_CLICK_UNSAFE_PREDICATE: &str = "['password','hidden','file','image'].includes(t)||(e instanceof HTMLInputElement&&!['text','search','email','url','tel','submit','reset','button'].includes(e.type))||(e.hasAttribute('data-requires-trusted')&&!(e instanceof HTMLTextAreaElement||e instanceof HTMLInputElement&&['text','search','email','url','tel'].includes(t)))||((e instanceof HTMLButtonElement||e instanceof HTMLInputElement)&&!!e.form&&['submit','reset'].includes(t))";
 const SHARED_CLICK_VERIFY_INITIAL_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const SHARED_CLICK_VERIFY_MAX_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// A slow pre-dispatch guard or activation must not consume the whole outcome
+/// budget: after an acknowledged dispatch the postcondition gets this much
+/// time even when the caller's timeout has already elapsed.
+const SHARED_CLICK_VERIFY_POST_DISPATCH_GRACE: Duration = Duration::from_millis(750);
 /// Why a click was refused before any input was dispatched.
 enum ClickRefusal {
     /// Typed guard failure; already shaped as the compact `not_dispatched` result.
@@ -837,6 +841,34 @@ fn click_unknown_reason_code(dispatch_acknowledged: bool) -> &'static str {
         "click_dispatch_uncertain"
     }
 }
+
+/// A click receipt is only useful if it names both the declared effect and
+/// what was actually observed. Keep this projection small: the caller needs a
+/// stable verdict, not a second copy of the page snapshot.
+fn shared_click_verification(
+    outcome: &SharedClickOutcome,
+    status: &str,
+    reason_code: &Value,
+    attempts: u32,
+) -> Value {
+    let basis = match outcome {
+        SharedClickOutcome::Navigation { .. } => "document_identity",
+        SharedClickOutcome::NewTab { .. } => "new_tab_inventory",
+        _ => "page_postcondition",
+    };
+    let verification_status = match status {
+        "verified" => "verified",
+        "dispatched_pending_verification" => "pending",
+        "unknown" => "not_observed",
+        _ => "not_dispatched",
+    };
+    json!({
+        "status": verification_status,
+        "basis": basis,
+        "reason_code": reason_code,
+        "attempts": attempts,
+    })
+}
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SharedClickArgs {
@@ -1302,47 +1334,65 @@ async fn capture_shared_snapshot(
         PageSessionTransport::Shared(shared) if shared.supports_batch_execution()
     );
     let (before, evaluation) = if batch_prelude {
-        let batch = connection
-            .command_batch(
-                registry,
-                &shared.handle,
-                &args.chrome_tab_id,
-                vec![
-                    controlla_browser::providers::SharedBatchAction {
-                        method: "Page.getFrameTree".into(),
-                        params: Value::Null,
-                        stop_on_not_ok: false,
-                    },
-                    controlla_browser::providers::SharedBatchAction {
-                        method: "Runtime.evaluate".into(),
-                        params: json!({"expression":expression,"returnByValue":false}),
-                        stop_on_not_ok: false,
-                    },
-                ],
-                Duration::from_secs(10),
-            )
-            .await?;
-        let receipts = batch["receipts"]
-            .as_array()
-            .filter(|receipts| receipts.len() == 2)
-            .ok_or("snapshot prelude batch omitted receipts")?;
-        if batch["completed"].as_u64() != Some(2)
-            || batch.get("batch_error").is_some()
-            || receipts[0]["method"] != "Page.getFrameTree"
-            || receipts[1]["method"] != "Runtime.evaluate"
-            || receipts
-                .iter()
-                .any(|receipt| receipt.get("error").is_some())
-        {
-            return Err(format!(
-                "snapshot prelude batch returned unexpected or failed commands: {}",
-                batch["batch_error"]
-            ));
+        // A snapshot issued while the tab is navigating can race the document
+        // swap: the extension may answer with a partial batch (no receipts) or
+        // a detached-context error. A snapshot is read-only, so retry the
+        // prelude briefly instead of surfacing that transient race.
+        let mut attempt = 0u32;
+        loop {
+            let read = async {
+                let batch = connection
+                    .command_batch(
+                        registry,
+                        &shared.handle,
+                        &args.chrome_tab_id,
+                        vec![
+                            controlla_browser::providers::SharedBatchAction {
+                                method: "Page.getFrameTree".into(),
+                                params: Value::Null,
+                                stop_on_not_ok: false,
+                            },
+                            controlla_browser::providers::SharedBatchAction {
+                                method: "Runtime.evaluate".into(),
+                                params: json!({"expression":expression,"returnByValue":false}),
+                                stop_on_not_ok: false,
+                            },
+                        ],
+                        Duration::from_secs(10),
+                    )
+                    .await?;
+                let receipts = batch["receipts"]
+                    .as_array()
+                    .filter(|receipts| receipts.len() == 2)
+                    .ok_or("snapshot prelude batch omitted receipts")?;
+                if batch["completed"].as_u64() != Some(2)
+                    || batch.get("batch_error").is_some()
+                    || receipts[0]["method"] != "Page.getFrameTree"
+                    || receipts[1]["method"] != "Runtime.evaluate"
+                    || receipts
+                        .iter()
+                        .any(|receipt| receipt.get("error").is_some())
+                {
+                    return Err(format!(
+                        "snapshot prelude batch returned unexpected or failed commands: {}",
+                        batch["batch_error"]
+                    ));
+                }
+                Ok::<_, String>((
+                    frame_identity_from_tree(&receipts[0]["result"])?,
+                    receipts[1]["result"].clone(),
+                ))
+            }
+            .await;
+            match read {
+                Ok(value) => break value,
+                Err(error) if attempt < 6 && snapshot_prelude_retryable(&error) => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(120)).await;
+                }
+                Err(error) => return Err(error),
+            }
         }
-        (
-            frame_identity_from_tree(&receipts[0]["result"])?,
-            receipts[1]["result"].clone(),
-        )
     } else {
         (
             shared_frame_identity(connection, registry, &shared.handle, &args.chrome_tab_id)
@@ -2658,6 +2708,20 @@ impl SharedOperationRead {
     fn remains_fresh(&self, identity: &(String, String, String), epoch: &Value) -> bool {
         &self.identity == identity && self.interaction_epoch == *epoch
     }
+}
+
+fn snapshot_prelude_retryable(error: &str) -> bool {
+    [
+        "omitted receipts",
+        "Execution context was destroyed",
+        "Cannot find context",
+        "Inspected target navigated or closed",
+        "No frame for given id",
+        "Target closed",
+        "batch_error",
+    ]
+    .iter()
+    .any(|marker| error.contains(marker))
 }
 
 fn frame_identity_from_tree(response: &Value) -> Result<(String, String, String), String> {
@@ -5168,8 +5232,11 @@ impl App {
             "next_action":"inspect_current_state_once_before_retrying",
             "reason":"outcome not verified before deadline; inspect state, do not automatically retry"
         }));
+        let verification_deadline =
+            deadline.max(tokio::time::Instant::now() + SHARED_CLICK_VERIFY_POST_DISPATCH_GRACE);
         let mut verification_poll = SHARED_CLICK_VERIFY_INITIAL_POLL_INTERVAL;
-        while pointer_terminal.is_none() && tokio::time::Instant::now() < deadline {
+        let mut verification_attempts = 0u32;
+        while pointer_terminal.is_none() && tokio::time::Instant::now() < verification_deadline {
             let check = async {
                 let identity = shared_frame_identity(
                     connection,
@@ -5211,7 +5278,11 @@ impl App {
                 let verified = observed && identity == after;
                 Ok::<_, String>((identity, verified))
             };
-            if let Ok(Ok((identity, true))) = tokio::time::timeout_at(deadline, check).await {
+            let checked = tokio::time::timeout_at(verification_deadline, check).await;
+            if checked.is_ok() {
+                verification_attempts += 1;
+            }
+            if let Ok(Ok((identity, true))) = checked {
                 let new_tab_candidate = if let SharedClickOutcome::NewTab { url } = &args.outcome {
                     connection
                         .command(
@@ -5230,7 +5301,11 @@ impl App {
                 result = json!({"status":"verified","dispatch_acknowledged":acknowledged,"input_mode":input_mode,"outcome":outcome,"url":identity.2,"navigation_observed":identity!=snapshot.identity,"new_tab_observed":matches!(&args.outcome, SharedClickOutcome::NewTab { .. }),"new_tab_candidate":new_tab_candidate});
                 break;
             }
-            let _ = tokio::time::timeout_at(deadline, tokio::time::sleep(verification_poll)).await;
+            let _ = tokio::time::timeout_at(
+                verification_deadline,
+                tokio::time::sleep(verification_poll),
+            )
+            .await;
             verification_poll = verification_poll
                 .saturating_mul(2)
                 .min(SHARED_CLICK_VERIFY_MAX_POLL_INTERVAL);
@@ -5252,6 +5327,26 @@ impl App {
                 "Navigation dispatch was acknowledged but the destination was not observable before the bounded wait; verify once and do not replay the click."
             );
         }
+        // A predicate that ran and stayed false is `outcome_not_observed`, not
+        // a timeout. Reserve the timeout code for a check that never completed.
+        if result["status"] == "unknown"
+            && verification_attempts > 0
+            && result["reason_code"] == "outcome_verification_timeout"
+        {
+            result["reason_code"] = json!("outcome_not_observed");
+        }
+        let verification_status = result["status"].as_str().unwrap_or("unknown").to_owned();
+        let verification_reason = result["reason_code"].clone();
+        result["outcome"] = outcome.clone();
+        result["verification_attempts"] = json!(verification_attempts);
+        result["verification"] = shared_click_verification(
+            &args.outcome,
+            &verification_status,
+            &verification_reason,
+            verification_attempts,
+        );
+        result["effect_verified"] = json!(verification_status == "verified");
+        result["replay_safe"] = json!(verification_status == "not_dispatched");
         if pointer_activation.is_object() {
             result["pointer_activation"] = pointer_activation;
         }
@@ -7963,6 +8058,21 @@ mod tests {
             "outcome_verification_timeout"
         );
         assert_eq!(click_unknown_reason_code(false), "click_dispatch_uncertain");
+    }
+
+    #[test]
+    fn shared_click_verification_names_the_outcome_and_attempts() {
+        use super::{SharedClickOutcome, shared_click_verification};
+        let result = shared_click_verification(
+            &SharedClickOutcome::Selected { selector: None },
+            "unknown",
+            &json!("outcome_not_observed"),
+            3,
+        );
+        assert_eq!(result["status"], "not_observed");
+        assert_eq!(result["basis"], "page_postcondition");
+        assert_eq!(result["reason_code"], "outcome_not_observed");
+        assert_eq!(result["attempts"], 3);
     }
 
     #[test]

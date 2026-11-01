@@ -1,8 +1,66 @@
 # Build progress
 
+## Click receipts and compact fallbacks — 2026-11-01
+
+Click verification receipts now echo the effect the caller declared. `visible`
+and `text` outcomes carry their selector and exact predicate result
+(`visible`, `text_present`) beside the existing expanded/selected state pairs,
+and the compact receipt projection keeps that proof instead of reducing it to
+a digest. Background selector outcomes poll for up to one second, so a dialog
+or menu created just after the click is observed rather than reported
+`not_observed`.
+
+The compaction pass also regained facts it had been dropping: a string
+verification such as `clipboard_document_text` survives instead of becoming an
+empty object, exact URLs below 120 characters stay exact, scoped artifact
+handles are no longer truncated before a later upload/drop, and download
+lifecycles omit null fields so the lifecycle and source identity both fit the
+640-byte step ceiling. A follow-up audit found that crowded `verify` workflow
+receipts still lost the observer, expected predicate, observed proof,
+postcondition, and predicate when the generic digest fallback ran; those facts
+now survive as bounded fields, and the hard fallback keeps them while they fit
+the fixed wire budget. The stale bin-test assertions for retained process
+leases now check contention through a separate coordinator, which is what a
+real second process sees.
+
+The normal skill is 4,089 bytes (under its 4,096-byte cap) and names every
+public `browser` action again, including `tabs`, `discover_shared_tabs`, and
+`pair_shared`. The click-outcome table now documents `text` and `new_tab`, and
+records that a background popup cannot prove a new tab.
+
+The 406 library tests, 343 facade tests, 25 Agent UX tests, source-structure
+checks, and the rebuilt release binary pass. The live click probe returned
+verified expanded and selected receipts with before/after state, and an honest
+`visible_not_observed` receipt carrying `selector` and `visible:false` when the
+Google Forms dialog selector did not match.
+
+## Phase 12 installed apps, concurrency, OS coverage, and matched pilot — 2026-10-31
+
+The §41–§45 qualification path now produces real evidence instead of fixture-only
+prose. Four installed applications passed: Google Docs typed 1,000+ characters in
+one native text transaction and persisted across a reopen; Google Docs
+replace/undo/append removed and restored the original marker exactly; Gmail
+composed a send-free draft whose subject and body survived an independent
+new-tab reopen; and a React controlled form accepted both values and saved.
+The evaluator records 4 qualified and 8 unqualified rows, so the release gate
+still cannot mistake partial coverage for a full matrix.
+
+The concurrency suite ran eight independent owned tabs with peak overlap 8:
+9.6 s wall against 54.3 s of serial tab time, zero wrong-target writes, and a
+fixture-server postcondition for every tab. Two independent MCP server
+processes also completed concurrently with peak overlap 2 and zero wrong-target
+writes. The headed OS recorder binds macOS 26.6.2 arm64 and Chrome 156.0.8078.79
+to those evidence hashes and marks Windows and Linux unqualified.
+
+The six-adapter matched pilot ran three counterbalanced repetitions on one
+shared read-only task with the same Chrome, model, and prompt shape. All six
+adapters verified every run; Controlla had the lowest median (11,939 ms) with one
+browser call per run. That is directional evidence only, not a p50/p95 release
+distribution, and the published report says so.
+
 ## Docs bulk typing and bounded tab reuse — 2026-10-30
 
-The last live blocker in the bulk-text fast path is closed. Google Docs keeps its editable in an event-target frame around a canvas, so the DOM guard cannot read its value. A background `type` now recognises that surface, dispatches the whole block through one trusted `Input.insertText`, and verifies through the document's own copy event instead of a DOM readback. `verify {kind:"text_present"}` uses the same copy proof when the DOM has no answer. Live installed Chrome completed 1,027 characters in 1,475 ms and 4,027 characters in 1,595 ms; both persisted across a same-tab reopen, and the exact URL reused the session's existing tab instead of adding another. Background page scroll now works without a target, reports `inconclusive` when the viewport did not move, and retains its readback through the compact receipt. The canvas proof moved to `mcp/v3_canvas_proof.rs`; route-signal planning moved to `execution_plan.rs`, leaving `v3_full.rs` at 31,995 lines under its 32,000-line ratchet. Full Rust workspace, strict Clippy, extension fixtures, Playwright Chrome tests, release/v3 checks, and the live Docs/ESPN script pass. The §17–§22 unified execution plan covers task programs, workflows, skills, learned operations, empirical routing, scheduled reads, speculative reads, and WebMCP-first read routing. The §23–§26 operation memory, task-conditioned observation, WALT URL promotion, and progressive observation paths are implemented and tested. The §27–§38 execution core now has snapshot fences, semantic mirrors, typed rebase classes, text-conflict preflight, lazy focus emulation, a bounded owned-tab pool, automatic read-only tab binding, and typed verification receipts. The facade is at 31,997 lines with the new `v3_core.rs` subsystem, and `background.js` is at its 3,350-line ratchet after moving focus, pool, counter, URL, and child-frame pinch code into `lib/`. The installed-app matrix and matched competitor benchmark (§41–§45) still require live accounts and are not claimed.
+The last live blocker in the bulk-text fast path is closed. Google Docs keeps its editable in an event-target frame around a canvas, so the DOM guard cannot read its value. A background `type` now recognises that surface, dispatches the whole block through one trusted `Input.insertText`, and verifies through the document's own copy event instead of a DOM readback. `verify {kind:"text_present"}` uses the same copy proof when the DOM has no answer. Live installed Chrome completed 1,027 characters in 1,475 ms and 4,027 characters in 1,595 ms; both persisted across a same-tab reopen, and the exact URL reused the session's existing tab instead of adding another. Background page scroll now works without a target, reports `inconclusive` when the viewport did not move, and retains its readback through the compact receipt. The canvas proof moved to `mcp/v3_canvas_proof.rs`; route-signal planning moved to `execution_plan.rs`, leaving `v3_full.rs` at 31,995 lines under its 32,000-line ratchet. Full Rust workspace, strict Clippy, extension fixtures, Playwright Chrome tests, release/v3 checks, and the live Docs/ESPN script pass. The §17–§22 unified execution plan covers task programs, workflows, skills, learned operations, empirical routing, scheduled reads, speculative reads, and WebMCP-first read routing. The §23–§26 operation memory, task-conditioned observation, WALT URL promotion, and progressive observation paths are implemented and tested. The §27–§38 execution core now has snapshot fences, semantic mirrors, typed rebase classes, text-conflict preflight, lazy focus emulation, a bounded owned-tab pool, automatic read-only tab binding, and typed verification receipts. The facade is at 31,997 lines with the new `v3_core.rs` subsystem, and `background.js` is at its 3,350-line ratchet after moving focus, pool, counter, URL, and child-frame pinch code into `lib/`. The installed-app matrix and matched competitor benchmark (§41–§45) were not yet claimed in this pass; the 2026-10-31 entry above records the later live run and its remaining gaps.
 
 ## Performance implementation — 2026-10-23
 

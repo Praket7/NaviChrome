@@ -9,9 +9,63 @@ This page separates four kinds of evidence. They are not interchangeable.
 | Matched competitor run | Relative latency and call counts under the same task | Application acceptance on its own |
 | Client smoke evidence | A supported client completed a real task through the MCP | Browser capability coverage |
 
-## Current status
+## Current status — 2026-10-31
 
-Run:
+| Row | Result | Evidence |
+|---|---|---|
+| Google Docs 1,000-character typing | qualified | exact text persisted across the exact-URL reopen; one native text transaction; `phase12-installed-evidence-2026-10-31.json` |
+| Google Docs replace / undo / append | qualified | original marker absent after select-all replacement, restored by undo, and present with the append marker at the document end |
+| Gmail send-free draft | qualified | recipient, subject, and body verified; draft visible after an independent reopen in a new tab; no Send dispatched |
+| React controlled form | qualified | React state accepted both values and the page reported Saved |
+| Word for Web | unqualified | no signed-in Microsoft Word for Web session was available |
+| CodeMirror / Monaco | unqualified | no installed instance was present in this checkout; the editor-ladder fixture is not an application acceptance |
+| contenteditable IME, cross-origin iframe, virtualized table, canvas, human interference | unqualified as installed apps | these matrix rows are fixture evidence by design; the deterministic suites cover the contracts, not a live application |
+
+Run the evaluator against the current evidence file:
+
+```sh
+node bench/runners/phase12-installed-apps.mjs \
+  --evidence bench/reports/phase12-installed-evidence-2026-10-31.json
+```
+
+The result is 4 qualified rows and 8 unqualified rows. `--require-qualified`
+still exits nonzero, so the release gate cannot mistake four live rows for a
+full matrix.
+
+### Concurrency — 2026-10-31
+
+```sh
+node bench/runners/phase12-concurrency.mjs --tabs=8 --processes=2
+```
+
+Eight independent owned tabs completed verified form writes concurrently with
+peak overlap 8, 9.6 s wall against 54.3 s of serial tab time, zero wrong-target
+writes, and every fixture-server postcondition accepted. Two independent MCP
+server processes also completed concurrently with peak overlap 2 and zero
+wrong-target writes. Evidence:
+`phase12-concurrency-2026-10-31T17-29-54-849Z.json`.
+
+### Matched competitor pilot — 2026-10-31
+
+```sh
+node bench/runners/phase12-competitor-report.mjs
+```
+
+The report covers all six configured adapters on one shared read-only task with
+three counterbalanced repetitions, the same Chrome, model, and prompt per
+adapter, and an independent HTTPS title/paragraph verifier. Controlla passed
+3/3 runs with one browser call per run and the lowest median in this pilot.
+This is directional, not a p50/p95 release distribution or a universal speed
+claim. The generated report is
+`bench/reports/phase12-competitor-report-2026-10-31.md`.
+
+### Headed OS matrix
+
+Only macOS 26.6.2 arm64 was executed. The machine-readable record binds the
+host, Chrome version, and evidence hashes, and marks Windows and Linux as
+unqualified. See [the OS matrix](os-matrix.md).
+
+Run without evidence to see the truthful default:
 
 ```sh
 node bench/runners/phase12-installed-apps.mjs

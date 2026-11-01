@@ -1,5 +1,20 @@
 # Verification matrix
 
+### 2026-10-31 Phase 12 installed apps, concurrency, OS coverage, and competitor pilot
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Google Docs 1,000-character live typing | pass | `phase12-live-apps.mjs` typed 1,000+ characters in one native text transaction, reopened the exact URL, and proved the marker persisted. One model-visible call per run. |
+| Google Docs live replace/undo/append | pass | Select-all replacement removed the original marker, undo restored it, and the append marker landed at the document end. All three writes verified; shortcut presses dispatched. |
+| Gmail live send-free draft | pass | Recipient, subject, and body verified; `Save & close` used; an independent new-tab reopen showed the draft row; no Send action was dispatched. |
+| React controlled form | pass | Both controlled values were accepted by React state and the page reported Saved. |
+| Installed-app matrix evaluator | pass with partial coverage | `node bench/runners/phase12-installed-apps.mjs --evidence bench/reports/phase12-installed-evidence-2026-10-31.json`: 4 qualified, 8 unqualified, 0 unknown; `--require-qualified` still exits nonzero. |
+| Eight-tab and two-process concurrency | pass | `phase12-concurrency.mjs --tabs=8 --processes=2`: 8/8 tabs accepted, peak overlap 8, 9.6 s wall vs 54.3 s serial, zero wrong-target writes; 2/2 independent MCP processes accepted with peak overlap 2 and zero wrong-target writes. |
+| Headed OS matrix | pass for macOS only | `phase12-os-matrix.mjs` binds macOS 26.6.2 arm64 / Chrome 156.0.8078.79 to the evidence hashes and lists Windows and Linux as unqualified. |
+| Six-adapter matched pilot | pass as a pilot | `phase11-public-readonly-pilot.mjs --repetitions=3`: all six adapters verified 3/3 on the same read-only task; Controlla median 11,939 ms with one browser call, lowest median in this pilot. Three repetitions do not establish p50/p95. |
+| Competitor report writer | pass | `phase12-competitor-report.test.mjs` (3 tests) rejects a missing adapter, rejects a partial pilot, and keeps the claim gate closed even when all six adapters pass. |
+| Installed-app matrix | 4/12 qualified | Word for Web, CodeMirror, and Monaco had no signed-in/installed surface; the fixture rows stay fixture evidence. See [plan status](plan-status-2026-10-30.md) and [the OS matrix](qualification/os-matrix.md). |
+
 ### 2026-10-31 typed rebase, text conflicts, focus emulation, bounded pool, and one-call binding
 
 | Check | Result | Evidence and boundary |
@@ -11,7 +26,7 @@
 | One-call existing-tab Research | pass for deterministic routing | `browser action=task` with no session discovers shared tabs, binds only one unique exact-origin/path or tab-ID match, and returns typed `ambiguous`/`no_matching_tab`/`not_available` receipts otherwise. `matching_task_tabs` tests cover exact URL, same-origin/path, tab-ID authority, no match, and empty hints. |
 | Child-frame pinch and shadow routing | pass | `test-background.cjs`: child-frame pinch dispatches two-finger touchStart/touchMove/touchEnd through the owner quad, a stale loader refuses with no input, an open-shadow frame click passes the composed hit-test guard, and a bounded shadow-chain failure fails closed. |
 | Format, Clippy, Rust and extension suites | pass | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --quiet -- -D warnings`, `cargo test -p controlla-runtime --lib` (403), `--bin controlla-v2` (338), `source_structure` (4), `test-background.cjs`, `test-p0-resources.mjs` (15), `test-observation.mjs` (6). |
-| Installed-app matrix | not run in this pass | §41–§45 require a signed-in installed Chrome, installed Docs/Word/Gmail, a headed OS matrix, and matched competitor runs. No application or superiority claim is made from the fixture suite; see [plan status](plan-status-2026-10-30.md). |
+| Installed-app matrix | 4/12 qualified on 2026-10-31 | Google Docs typing, Google Docs edit, Gmail compose, and the React form are live-qualified. Word for Web, CodeMirror, Monaco, and the fixture rows remain unqualified. See the Phase 12 entry above and [plan status](plan-status-2026-10-30.md). |
 
 ### 2026-10-30 operation memory, task filtering, URL promotion, and progressive observation
 
@@ -40,7 +55,7 @@
 | Installed-Chrome qualification of the new paths | pass for Docs bulk and tab reuse; partial for broad apps | Playwright-driven real Chrome passed `check:background-dom` (9 tests) and `check:transaction-background` (13 tests, including 1,000/4,000-character bulk insertion, unicode, canvas stop/resume). The installed Chrome and rebuilt native host passed `scripts/live-bulk-docs.mjs` with `ALL_LIVE_CHECKS_PASSED`: Docs 1k and 4k bulk inserts verified, the exact-URL reopen reused the same tab, the persisted text was proven, ESPN page scroll moved the viewport, and the NFL link navigated. The extension was not reloaded, and arbitrary signed-in apps remain unqualified. See [plan status](plan-status-2026-10-30.md). |
 | Google Docs bulk insertion and persistence | pass, live installed Chrome | A 1,027-character block verified in 1,475 ms (696 chars/s) and a 4,027-character block in 1,595 ms (2,525 chars/s), each with one `Input.insertText` and `bulk_insert: true`. Verification used the document's copy event (`verification: clipboard_document_text`), the clipboard was restored, and a same-tab reopen returned the same tab. `verify {kind:"text_present"}` passed after the reopen through the canvas copy fallback. Boundary: two freshly created documents; arbitrary Drive persistence and every Docs surface remain unqualified. |
 | Background page scroll proof | pass, live installed Chrome | `act scroll` without a reference scrolled ESPN by 900 CSS pixels; the receipt returned `status: verified`, `viewport_moved: true`, and before/after offsets. An unchanged viewport now reports `inconclusive` / `scroll_offset_unchanged`, never `verified`. |
-| Compact receipt preserves the fast-path proof | pass | `cargo test -p controlla-runtime --bin controlla-v2 compact_bulk` asserts `bulk_insert`, `completed_chars`, `typing_mode`, `verification`, and `document_text` survive the 640-byte receipt projection. |
+| Compact receipt preserves the fast-path proof | pass | `cargo test -p controlla-runtime --bin controlla-v2 compact_bulk` asserts `bulk_insert`, `completed_chars`, `typing_mode`, `verification`, and `document_text` survive the 640-byte receipt projection. `compact_verify_keeps_expected_and_observed_proof` covers crowded `verify` receipts: the observer, bounded expected predicate, observed fact, postcondition, and predicate survive projection and the hard fallback. |
 | Cold-open readiness race | pass | `test-background.cjs` now waits for the worker's `capabilities` message after `ready`; the full parallel suite no longer sends `create_tab` before the native handshake finishes. |
 
 ### 2026-10-28 execution-first guard routing and SPA identity

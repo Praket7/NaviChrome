@@ -1,5 +1,26 @@
 # Blockers and external dependencies
 
+## Phase 12 qualification boundary — 2026-10-31
+
+- The installed-app matrix is 4/12. Google Docs typing, Google Docs
+  replace/undo/append, Gmail compose, and the React form are live-qualified on
+  macOS. Word for Web had no signed-in session, CodeMirror and Monaco had no
+  installed instance, and the remaining rows are fixture evidence by design.
+  Do not promote those rows from fixture tests.
+- The concurrency suite passed eight tabs and two MCP processes on one host with
+  zero wrong-target writes. It has not been run across separate machines,
+  Chrome profiles, or a second Chrome major version.
+- The headed OS matrix is macOS 26.6.2 arm64 / Chrome 156.0.8078.79 only.
+  Windows and Linux cells are unqualified; no renderer, input, focus, clipboard,
+  or window-manager behavior is inferred for them.
+- The six-adapter competitor pilot is three counterbalanced repetitions on one
+  public read-only task. It is not a p50/p95 distribution and does not cover
+  installed applications, mutations, forms, concurrency, or safety parity. The
+  full Phase 12 workload matrix remains the release-level competitor gate.
+- The pilot timing origin is process spawn, not an actual prompt-send boundary,
+  because the Codex JSON stream does not expose prompt dispatch. Prompt-to-final
+  spans therefore remain null in that evidence.
+
 ## Remaining performance qualification gates — 2026-10-23
 
 [The implementation ledger](performance-implementation-2026-10-23.md) records code improvements and local evidence. Native-host cross-platform event IPC, broad session-lock restructuring, authoritative Chrome-build cost attestation across sessions, actual client timing hooks, production route-weight calibration, representative site/account acceptance and matched end-to-end competitor measurements remain open. Current cost learning conservatively stays within an accepted session. The full legacy simulated-bridge click fixture has an extension-only pointer-command coverage gap; it cannot certify installed-extension mutations.

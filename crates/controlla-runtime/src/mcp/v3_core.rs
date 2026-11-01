@@ -5,7 +5,9 @@
 //! observation. Keeping them out of `v3_full.rs` holds the facade below its
 //! line ratchet while leaving dispatch in the facade.
 
-use super::super::{BrowserClickOutcome, BrowserSessionArgs};
+use super::super::{
+    BrowserClickOutcome, BrowserPredicate, BrowserSessionArgs, BrowserVerifyArgs, verify_impl,
+};
 use super::{AppV3, V3ActArgs, V3BrowserArgs, invalid};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use serde_json::{Value, json};
@@ -228,6 +230,45 @@ pub(super) fn learned_target_template(target: &Value) -> Option<crate::page_acti
         ancestor: None,
         test_id: None,
     })
+}
+
+/// Map a same-document click outcome to the exact read-only predicate that
+/// proves it. Navigation needs before/after document identity, so it stays in
+/// the dispatch path; visible-text outcomes are ordinary page predicates.
+pub(super) fn click_outcome_predicate(outcome: &BrowserClickOutcome) -> Option<BrowserPredicate> {
+    match outcome {
+        BrowserClickOutcome::Text { selector, text } => Some(BrowserPredicate::TextPresent {
+            scope: Some(selector.clone()),
+            text: text.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// Prove a same-document click outcome through the ordinary read-only verifier.
+/// This keeps background activation from reporting `unknown` for a text update
+/// it already performed.
+pub(super) async fn verify_click_outcome(
+    app: &AppV3,
+    args: &V3ActArgs,
+    outcome: &BrowserClickOutcome,
+) -> bool {
+    let Some(predicate) = click_outcome_predicate(outcome) else {
+        return false;
+    };
+    match verify_impl(
+        &app.core,
+        &BrowserVerifyArgs {
+            session_id: args.session_id.clone(),
+            chrome_tab_id: args.chrome_tab_id.clone(),
+            predicate,
+        },
+    )
+    .await
+    {
+        Ok(value) => super::workflow_verification_passed(&value),
+        Err(_) => false,
+    }
 }
 
 pub(super) fn learned_click_predicate(outcome: Option<&BrowserClickOutcome>) -> Option<crate::page_action_memory::VerifyPredicate> {

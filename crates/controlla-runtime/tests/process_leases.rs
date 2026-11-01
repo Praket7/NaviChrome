@@ -43,8 +43,14 @@ fn read_read_may_share() {
 }
 
 #[test]
-fn unknown_retains_lease() {
-    let coord = test_coordinator();
+fn unknown_retains_lease_for_other_processes() {
+    let dir = std::env::temp_dir().join(format!(
+        "controlla-process-leases-unknown-{}-{}",
+        std::process::id(),
+        getrandom::u32().unwrap()
+    ));
+    let holder = LeaseCoordinator::with_lock_dir(&dir);
+    let other_process = LeaseCoordinator::with_lock_dir(&dir);
     let key = LeaseKey {
         browser_instance: "b".into(),
         target_id: "t".into(),
@@ -52,13 +58,13 @@ fn unknown_retains_lease() {
         account_epoch: "a".into(),
         effect_class: "mutation".into(),
     };
-    let _l = coord
+    let _l = holder
         .try_acquire(key.clone(), "p1", Duration::from_secs(60), false)
         .unwrap();
-    coord.retain_on_unknown(&key, "p1");
-    // still held
+    holder.retain_on_unknown(&key, "p1");
+    // Still held for any other process; only the same process may adopt it.
     assert!(
-        coord
+        other_process
             .try_acquire(key, "p2", Duration::from_secs(10), false)
             .is_err()
     );

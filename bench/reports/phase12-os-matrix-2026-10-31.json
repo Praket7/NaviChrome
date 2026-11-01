@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "kind": "phase12_os_matrix",
+  "generated_at_iso": "2026-10-31T17:42:51.858Z",
+  "host": {
+    "family": "macos",
+    "name": "macOS 26.6.2",
+    "version": "26.6.2",
+    "build": "25G83",
+    "arch": "arm64",
+    "chrome": "Google Chrome 156.0.8078.79"
+  },
+  "qualified_cells": [
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "headed_installed_chrome",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-installed-evidence-2026-10-31.json",
+      "evidence_hash": "2d3a8d21b1e6634f2ff4519d3e9b16bdf7bb5f563fb04c9ce969b97f2d1cbc75",
+      "row_count": 4,
+      "applications": [
+        "google",
+        "gmail",
+        "react"
+      ]
+    },
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "background_concurrent_tabs",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-concurrency-2026-10-31T17-29-54-849Z.json",
+      "evidence_hash": "2a5aab2bad647380ee6533fd2b805b08473e3d6bad8cbcb4bae7c30f99cdd3b8",
+      "tabs": 8,
+      "peak_overlap": 8,
+      "wrong_target_events": 0
+    },
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "multi_process_concurrent_tabs",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-concurrency-2026-10-31T17-29-54-849Z.json",
+      "evidence_hash": "429b30b56806541f5dfcbcaebbea2f4b0d47ad1476d3a66136dc7cc3ca6ed424",
+      "processes": 2,
+      "peak_overlap": 2,
+      "wrong_target_events": 0
+    }
+  ],
+  "cells": [
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "headed_installed_chrome",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-installed-evidence-2026-10-31.json",
+      "evidence_hash": "2d3a8d21b1e6634f2ff4519d3e9b16bdf7bb5f563fb04c9ce969b97f2d1cbc75",
+      "row_count": 4,
+      "applications": [
+        "google",
+        "gmail",
+        "react"
+      ]
+    },
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "background_concurrent_tabs",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-concurrency-2026-10-31T17-29-54-849Z.json",
+      "evidence_hash": "2a5aab2bad647380ee6533fd2b805b08473e3d6bad8cbcb4bae7c30f99cdd3b8",
+      "tabs": 8,
+      "peak_overlap": 8,
+      "wrong_target_events": 0
+    },
+    {
+      "os": "macOS 26.6.2",
+      "arch": "arm64",
+      "browser": "Google Chrome 156.0.8078.79",
+      "mode": "multi_process_concurrent_tabs",
+      "qualified": true,
+      "evidence": "bench/reports/phase12-concurrency-2026-10-31T17-29-54-849Z.json",
+      "evidence_hash": "429b30b56806541f5dfcbcaebbea2f4b0d47ad1476d3a66136dc7cc3ca6ed424",
+      "processes": 2,
+      "peak_overlap": 2,
+      "wrong_target_events": 0
+    }
+  ],
+  "unqualified_platforms": [
+    {
+      "family": "windows",
+      "reason": "not executed on this host; cross-OS behavior is not inferred from macOS evidence"
+    },
+    {
+      "family": "linux",
+      "reason": "not executed on this host; cross-OS behavior is not inferred from macOS evidence"
+    }
+  ],
+  "claim_scope": "only macOS 26.6.2 arm64 is evidenced by this run",
+  "cross_os_claim_allowed": false
+}

@@ -67,7 +67,7 @@ test('headless guidance keeps browser lifecycle mode separate from page tools', 
     assert.match(content, /skip `list` and standalone `snapshot`/);
     assert.match(content, /`release_after_task: true`/);
     assert.match(content, /accepts.*`foreground`.*`background`/s);
-    assert.match(content, /do not pass `mode` to `snapshot`|page tools take `session_id` and do not accept `mode`/);
+    assert.match(content, /do not pass `mode` to `snapshot`|page tools take `session_id` and do not accept `mode`|page tools take `session_id`, not `mode`/);
   }
 });
 

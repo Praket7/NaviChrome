@@ -143,14 +143,23 @@ impl LeaseCoordinator {
             // process is the one the receipt told to inspect before retrying.
             if !is_read {
                 let same_owner = map.get(&key).is_some_and(|held| held.lease.owner == owner);
-                if same_owner {
+                let retained_unknown = map.get(&key).is_some_and(|held| held.unknown);
+                if same_owner || retained_unknown {
                     let path = self
                         .lock_dir
                         .join(format!("{}.lock", lease_key_digest(&key)));
                     write_owner_record(&path, &self.state_dir, &key, owner, ttl);
+                    // A retained lease belongs to a returned action, so a new
+                    // call may adopt it. Bump the generation so the old
+                    // unknown-retention timer cannot release the new hold.
+                    let generation = self
+                        .next_generation
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let held = map.get_mut(&key).unwrap();
+                    held.lease.owner = owner.to_owned();
                     held.lease.expires_at = Instant::now() + ttl;
                     held.unknown = false;
+                    held.generation = generation;
                     return Ok(held.lease.clone());
                 }
             }
@@ -789,33 +798,81 @@ mod tests {
     }
 
     #[test]
-    fn unknown_retains_lease() {
-        let coord = LeaseCoordinator::with_lock_dir(test_dir());
+    fn unknown_retains_lease_for_other_processes() {
+        let dir = test_dir();
+        let holder = LeaseCoordinator::with_lock_dir(&dir);
+        let other_process = LeaseCoordinator::with_lock_dir(&dir);
         let key = key();
-        coord
+        holder
             .try_acquire(key.clone(), "p1", Duration::from_secs(60), false)
             .unwrap();
-        coord.retain_on_unknown(&key, "p1");
+        holder.retain_on_unknown(&key, "p1");
         assert!(
-            coord
+            other_process
                 .try_acquire(key, "p2", Duration::from_secs(10), false)
                 .is_err()
         );
     }
 
     #[tokio::test]
-    async fn unknown_retention_releases_after_bounded_hold() {
+    async fn retained_unknown_lease_is_adoptable_by_the_next_call_in_the_same_process() {
+        // Each direct act uses a fresh owner generation. After an unknown
+        // outcome the next call must be able to inspect and retry instead of
+        // waiting out the 120s cross-process retention, which used to surface
+        // as "target remained busy (current owner: another MCP process)".
         let coord = LeaseCoordinator::with_lock_dir(test_dir());
         let key = key();
         coord
-            .try_acquire(key.clone(), "p1", Duration::from_secs(60), false)
+            .try_acquire(key.clone(), "act:1:1", Duration::from_secs(60), false)
             .unwrap();
-        let released = coord.changed();
-        tokio::pin!(released);
-        released.as_mut().enable();
-        coord.retain_on_unknown_for(key.clone(), "p1".into(), Duration::from_millis(20));
+        coord.retain_on_unknown_for(key.clone(), "act:1:1".into(), Duration::from_secs(60));
+        let adopted = coord
+            .try_acquire(key.clone(), "act:1:2", Duration::from_secs(60), false)
+            .expect("the next call in this process must adopt the retained lease");
+        assert_eq!(adopted.owner, "act:1:2");
+        assert!(coord.release(&key, "act:1:2"));
         assert!(
             coord
+                .try_acquire(key, "act:1:3", Duration::from_secs(10), false)
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn adopted_lease_survives_the_previous_unknown_retention_timer() {
+        let coord = LeaseCoordinator::with_lock_dir(test_dir());
+        let key = key();
+        coord
+            .try_acquire(key.clone(), "act:1:1", Duration::from_secs(60), false)
+            .unwrap();
+        coord.retain_on_unknown_for(key.clone(), "act:1:1".into(), Duration::from_millis(25));
+        coord
+            .try_acquire(key.clone(), "act:1:2", Duration::from_secs(60), false)
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            coord
+                .try_acquire(key, "act:1:3", Duration::from_secs(10), false)
+                .is_err(),
+            "the superseded retention timer must not release the adopted lease"
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_retention_releases_after_bounded_hold() {
+        let dir = test_dir();
+        let holder = LeaseCoordinator::with_lock_dir(&dir);
+        let other_process = LeaseCoordinator::with_lock_dir(&dir);
+        let key = key();
+        holder
+            .try_acquire(key.clone(), "p1", Duration::from_secs(60), false)
+            .unwrap();
+        let released = holder.changed();
+        tokio::pin!(released);
+        released.as_mut().enable();
+        holder.retain_on_unknown_for(key.clone(), "p1".into(), Duration::from_millis(20));
+        assert!(
+            other_process
                 .try_acquire(key.clone(), "p2", Duration::from_secs(10), false)
                 .is_err()
         );
@@ -823,7 +880,7 @@ mod tests {
             .await
             .expect("unknown hold did not expire and notify waiters");
         assert!(
-            coord
+            other_process
                 .try_acquire(key, "p2", Duration::from_secs(10), false)
                 .is_ok()
         );

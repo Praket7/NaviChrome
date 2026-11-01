@@ -1,0 +1,574 @@
+{
+  "version": 1,
+  "kind": "phase12_evidence",
+  "generated_at_ms": 1793467494209,
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node_version": "v24.19.0",
+    "binary_sha256": "318f6ff886ac7b3160915aba23e2886095aba5855b6bc5b7a43d50e6d4c8970b",
+    "binary_path": "/Users/pcg/Documents/Codex/2026-10-30/controlla-performance/target/release/controlla-v2"
+  },
+  "results": [
+    {
+      "id": "google-docs-type-1000",
+      "application_accepted": true,
+      "client_completed": true,
+      "assertions_passed": true,
+      "evidence_hash": "sha256:71361df6fc565bd9cee11c8ad8e6ad6fad930f544fcc73fdbe9b5b27756801f8",
+      "controlla_version": "0.1.0",
+      "recorded_at_ms": 1793467417961,
+      "evidence_kind": "live",
+      "proof": {
+        "row": "google-docs-type-1000",
+        "marker_sha256": "b38d823ccdc89fa3c48b24252bf6f67bb30a6b5aad8513d871f0313125224f87",
+        "body_chars": 1032,
+        "completed_chars": 1032,
+        "status": "verified",
+        "typing_mode": "block",
+        "bulk_insert": true,
+        "verification": "clipboard_document_text",
+        "elapsed_ms": 5232,
+        "attempts": 1,
+        "native_host_messages_sent": 21,
+        "auto_attach_calls": null,
+        "cdp_methods": {
+          "Controlla.presentationState": 4,
+          "Input.dispatchKeyEvent": 6,
+          "Input.insertText": 1,
+          "Page.getFrameTree": 2,
+          "Runtime.callFunctionOn": 7,
+          "Runtime.evaluate": 1
+        },
+        "reopen_reused_tab": true,
+        "reopened_url_sha256": "8d1511fb12c5446f8521a844e3329d5edae17661ab0bc205b6aa49983409e017",
+        "persisted_status": "passed",
+        "persisted_verification": "clipboard_document_text",
+        "assertions": {
+          "exact_text": true,
+          "one_model_call": true,
+          "one_native_text_transaction": true,
+          "per_character_native_requests": true,
+          "auto_attach_toggles_warm": true
+        },
+        "cleanup": {
+          "close_owned_error": "Error: tool browser failed: {\"content\":[{\"type\":\"text\",\"text\":\"close_owned needs another still-open tab in this session to verify the target lifecycle Next action: Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.\"}],\"structuredContent\":{\"bridge_kind\":null,\"dispatch_may_have_occurred\":false,\"next_action\":\"Correct the named",
+          "release": {
+            "effect": "released this provider's debugger attachments",
+            "metrics": {
+              "attach_us": null,
+              "browser_command_budget": 256,
+              "browser_commands_remaining": 256,
+              "browser_commands_used": 0,
+              "budget_stop_reason": null,
+              "cdp_bytes": 0,
+              "cdp_command_budget": 20000,
+              "cdp_commands": 0,
+              "cdp_commands_charged": 0,
+              "cdp_commands_partial": false,
+              "cdp_commands_remaining": 20000,
+              "cdp_methods": {},
+              "command_purposes": {},
+              "dom_nodes_scanned": 0,
+              "elapsed_us": 107,
+              "execution_us": 0,
+              "first_browser_op_us": null,
+              "host_round_trips": 0,
+              "last_browser_op_us": null,
+              "model_visible_calls": 1,
+              "native_host_messages": 0,
+              "native_host_messages_received": 0,
+              "native_host_messages_sent": 0,
+              "observation_bytes": 0,
+              "operation_id": "mcp:86410:7",
+              "phases": {
+                "artifact_transfer_us": 0,
+                "discovery_us": 0,
+                "dispatch_us": 0,
+                "enrichment_us": 0,
+                "grounding_us": 0,
+                "pair_us": 0,
+                "readiness_us": 0,
+                "serialization_us": 3,
+                "snapshot_us": 0,
+                "verification_us": 0
+              },
+              "queue_us": 0,
+              "retries": 0,
+              "returned_observation_packets": 0,
+              "screenshot_bytes": 0,
+              "startup_us": null,
+              "unknown_deliveries": 0
+            },
+            "mode": "background",
+            "observation_boundary": {
+              "count_complete": true,
+              "count_source": "structured_mcp_response_at_return_boundary",
+              "external_model_inspection": null,
+              "external_model_telemetry": "outside_mcp_process",
+              "returned_observation_packets": 0
+            },
+            "page_content_is_untrusted": true,
+            "released": true,
+            "session_id": "session-1-1"
+          }
+        }
+      }
+    },
+    {
+      "id": "google-docs-replace-append-undo",
+      "application_accepted": true,
+      "client_completed": true,
+      "assertions_passed": true,
+      "evidence_hash": "sha256:11904273c5230e75b59ddd3ae06650a5705ec922d97f9c8b2c29089b12d2d0c2",
+      "controlla_version": "0.1.0",
+      "recorded_at_ms": 1793467615356,
+      "evidence_kind": "live",
+      "proof": {
+        "row": "google-docs-replace-append-undo",
+        "original_marker_sha256": "77220c42ed0a5936fe17a1bb3341ebba18d46914a8d0a9ef0dd0e8aedd7eae0b",
+        "replacement_marker_sha256": "fe7745ae14208a7aaec4444cd2c391b82b695876e788848ba43fff3f39e1a9aa",
+        "append_marker_sha256": "86d13df2020f0648147eee6e553f793d5968fe984618ddae0a289ceab7f4d3f3",
+        "statuses": {
+          "original": "verified",
+          "select_all": "dispatched",
+          "replace": "verified",
+          "replacement_visible": "passed",
+          "original_absent_after_replace": true,
+          "undo": "dispatched",
+          "original_restored": "passed",
+          "replacement_absent_after_undo": true,
+          "move_to_end": "dispatched",
+          "append": "verified",
+          "append_visible": "passed"
+        },
+        "assertions": {
+          "exact_text_after_each_step": true,
+          "selection_anchor_preserved": true
+        },
+        "cleanup": {
+          "close_owned_error": "Error: tool browser failed: {\"content\":[{\"type\":\"text\",\"text\":\"session was not created in this V3 browser mode Next action: Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.\"}],\"structuredContent\":{\"bridge_kind\":null,\"dispatch_may_have_occurred\":false,\"next_action\":\"Correct the named argument or refresh the selected tab an",
+          "release": {
+            "effect": "released this provider's debugger attachments",
+            "metrics": {
+              "attach_us": null,
+              "browser_command_budget": 256,
+              "browser_commands_remaining": 256,
+              "browser_commands_used": 0,
+              "budget_stop_reason": null,
+              "cdp_bytes": 0,
+              "cdp_command_budget": 20000,
+              "cdp_commands": 0,
+              "cdp_commands_charged": 0,
+              "cdp_commands_partial": false,
+              "cdp_commands_remaining": 20000,
+              "cdp_methods": {},
+              "command_purposes": {},
+              "dom_nodes_scanned": 0,
+              "elapsed_us": 89,
+              "execution_us": 0,
+              "first_browser_op_us": null,
+              "host_round_trips": 0,
+              "last_browser_op_us": null,
+              "model_visible_calls": 1,
+              "native_host_messages": 0,
+              "native_host_messages_received": 0,
+              "native_host_messages_sent": 0,
+              "observation_bytes": 0,
+              "operation_id": "mcp:86562:20",
+              "phases": {
+                "artifact_transfer_us": 0,
+                "discovery_us": 0,
+                "dispatch_us": 0,
+                "enrichment_us": 0,
+                "grounding_us": 0,
+                "pair_us": 0,
+                "readiness_us": 0,
+                "serialization_us": 2,
+                "snapshot_us": 0,
+                "verification_us": 0
+              },
+              "queue_us": 0,
+              "retries": 0,
+              "returned_observation_packets": 0,
+              "screenshot_bytes": 0,
+              "startup_us": null,
+              "unknown_deliveries": 0
+            },
+            "mode": "foreground",
+            "observation_boundary": {
+              "count_complete": true,
+              "count_source": "structured_mcp_response_at_return_boundary",
+              "external_model_inspection": null,
+              "external_model_telemetry": "outside_mcp_process",
+              "returned_observation_packets": 0
+            },
+            "page_content_is_untrusted": true,
+            "released": true,
+            "session_id": "session-1-1"
+          }
+        }
+      }
+    },
+    {
+      "id": "gmail-compose",
+      "application_accepted": true,
+      "client_completed": true,
+      "assertions_passed": true,
+      "evidence_hash": "sha256:7643e0937229ba68becf97b9a43631f8d1c75f227659926418dde990768bd250",
+      "controlla_version": "0.1.0",
+      "recorded_at_ms": 1793467484678,
+      "evidence_kind": "live",
+      "proof": {
+        "row": "gmail-compose",
+        "url_sha256": "cb01e011626ee7cd9f291d9698a6ddb32f7757be4c8dfc37b7641e9fade39031",
+        "compose_button_observed": true,
+        "compose_click_status": "unknown",
+        "compose_click_reason": "outcome_verification_timeout",
+        "reconcile_status": "passed",
+        "subject_sha256": "f5a54968d2688b32d13f8f7b730718716eb327dbe2653900ccd48adf368f5a30",
+        "body_sha256": "73254c677d79bc84283f149d82f6f9616d8eeda5c0e37c960d017c5491b445d5",
+        "draft_status": "completed",
+        "draft_receipts": [
+          {
+            "step": "find",
+            "reason_code": null,
+            "verified": null
+          },
+          {
+            "step": "fill",
+            "status": "verified",
+            "reason_code": null,
+            "verified": true
+          },
+          {
+            "step": "find",
+            "reason_code": null,
+            "verified": null
+          },
+          {
+            "step": "fill",
+            "status": "verified",
+            "reason_code": null,
+            "verified": true
+          },
+          {
+            "step": "find",
+            "reason_code": null,
+            "verified": null
+          },
+          {
+            "step": "type",
+            "status": "verified",
+            "reason_code": null,
+            "verified": true
+          }
+        ],
+        "save_click_status": "unknown",
+        "save_click_reason": "outcome_verification_timeout",
+        "save_verification_status": "passed",
+        "reopened_draft_visible": true,
+        "reopened_items": [
+          {
+            "role": "checkbox",
+            "name_sha256": "0dfd6a2fea190a39383cbe9f73e030d4955a9869efcff9b09e0422791752fdd8",
+            "ref": "@c1"
+          },
+          {
+            "role": "link",
+            "name_sha256": "7b942a549fac0438622cec5f40f3f25c645388da0e3e3fd2f7a99fe85bb6a2ed",
+            "ref": "@c2"
+          },
+          {
+            "role": "checkbox",
+            "name_sha256": "325da4f31b2d4b3b4569f402a7317c7f8897c0626c7d820048e0c23958a16cc0",
+            "ref": "@c3"
+          },
+          {
+            "role": "link",
+            "name_sha256": "41f1d91f0b287fb2bee667d37e3dbc52aa84666c86b909643c3967f75e88f57c",
+            "ref": "@c4"
+          },
+          {
+            "role": "checkbox",
+            "name_sha256": "8569cdb6c1ff57324c7046daac62487ae83194c7931ec0f6db033aa52f60f1c4",
+            "ref": "@c5"
+          },
+          {
+            "role": "link",
+            "name_sha256": "59e492686585a3b27928abcecd676c2a5701b6f88bfe609d4222ef807e6c4a8e",
+            "ref": "@c6"
+          }
+        ],
+        "assertions": {
+          "recipient_resolved": true,
+          "subject_exact": true,
+          "body_exact": true,
+          "draft_persisted_after_reopen": true,
+          "no_send_dispatched": true
+        },
+        "cleanup": {
+          "compose": {
+            "close_owned_error": "Error: tool browser failed: {\"content\":[{\"type\":\"text\",\"text\":\"close_owned needs another still-open tab in this session to verify the target lifecycle Next action: Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.\"}],\"structuredContent\":{\"bridge_kind\":null,\"dispatch_may_have_occurred\":false,\"next_action\":\"Correct the named",
+            "release": {
+              "effect": "released this provider's debugger attachments",
+              "metrics": {
+                "attach_us": null,
+                "browser_command_budget": 256,
+                "browser_commands_remaining": 256,
+                "browser_commands_used": 0,
+                "budget_stop_reason": null,
+                "cdp_bytes": 0,
+                "cdp_command_budget": 20000,
+                "cdp_commands": 0,
+                "cdp_commands_charged": 0,
+                "cdp_commands_partial": false,
+                "cdp_commands_remaining": 20000,
+                "cdp_methods": {},
+                "command_purposes": {},
+                "dom_nodes_scanned": 0,
+                "elapsed_us": 93,
+                "execution_us": 0,
+                "first_browser_op_us": null,
+                "host_round_trips": 0,
+                "last_browser_op_us": null,
+                "model_visible_calls": 1,
+                "native_host_messages": 0,
+                "native_host_messages_received": 0,
+                "native_host_messages_sent": 0,
+                "observation_bytes": 0,
+                "operation_id": "mcp:86410:37",
+                "phases": {
+                  "artifact_transfer_us": 0,
+                  "discovery_us": 0,
+                  "dispatch_us": 0,
+                  "enrichment_us": 0,
+                  "grounding_us": 0,
+                  "pair_us": 0,
+                  "readiness_us": 0,
+                  "serialization_us": 2,
+                  "snapshot_us": 0,
+                  "verification_us": 0
+                },
+                "queue_us": 0,
+                "retries": 0,
+                "returned_observation_packets": 0,
+                "screenshot_bytes": 0,
+                "startup_us": null,
+                "unknown_deliveries": 0
+              },
+              "mode": "background",
+              "observation_boundary": {
+                "count_complete": true,
+                "count_source": "structured_mcp_response_at_return_boundary",
+                "external_model_inspection": null,
+                "external_model_telemetry": "outside_mcp_process",
+                "returned_observation_packets": 0
+              },
+              "page_content_is_untrusted": true,
+              "released": true,
+              "session_id": "session-3-1"
+            }
+          },
+          "verification": {
+            "close_owned_error": "Error: tool browser failed: {\"content\":[{\"type\":\"text\",\"text\":\"close_owned needs another still-open tab in this session to verify the target lifecycle Next action: Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.\"}],\"structuredContent\":{\"bridge_kind\":null,\"dispatch_may_have_occurred\":false,\"next_action\":\"Correct the named",
+            "release": {
+              "effect": "released this provider's debugger attachments",
+              "metrics": {
+                "attach_us": null,
+                "browser_command_budget": 256,
+                "browser_commands_remaining": 256,
+                "browser_commands_used": 0,
+                "budget_stop_reason": null,
+                "cdp_bytes": 0,
+                "cdp_command_budget": 20000,
+                "cdp_commands": 0,
+                "cdp_commands_charged": 0,
+                "cdp_commands_partial": false,
+                "cdp_commands_remaining": 20000,
+                "cdp_methods": {},
+                "command_purposes": {},
+                "dom_nodes_scanned": 0,
+                "elapsed_us": 96,
+                "execution_us": 0,
+                "first_browser_op_us": null,
+                "host_round_trips": 0,
+                "last_browser_op_us": null,
+                "model_visible_calls": 1,
+                "native_host_messages": 0,
+                "native_host_messages_received": 0,
+                "native_host_messages_sent": 0,
+                "observation_bytes": 0,
+                "operation_id": "mcp:86410:41",
+                "phases": {
+                  "artifact_transfer_us": 0,
+                  "discovery_us": 0,
+                  "dispatch_us": 0,
+                  "enrichment_us": 0,
+                  "grounding_us": 0,
+                  "pair_us": 0,
+                  "readiness_us": 0,
+                  "serialization_us": 2,
+                  "snapshot_us": 0,
+                  "verification_us": 0
+                },
+                "queue_us": 0,
+                "retries": 0,
+                "returned_observation_packets": 0,
+                "screenshot_bytes": 0,
+                "startup_us": null,
+                "unknown_deliveries": 0
+              },
+              "mode": "background",
+              "observation_boundary": {
+                "count_complete": true,
+                "count_source": "structured_mcp_response_at_return_boundary",
+                "external_model_inspection": null,
+                "external_model_telemetry": "outside_mcp_process",
+                "returned_observation_packets": 0
+              },
+              "page_content_is_untrusted": true,
+              "released": true,
+              "session_id": "session-4-1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "react-form",
+      "application_accepted": true,
+      "client_completed": true,
+      "assertions_passed": true,
+      "evidence_hash": "sha256:219136e323468842ee154e8ff0b3a23fc7fa7c8c0ed63a3f826646e2d2e33194",
+      "controlla_version": "0.1.0",
+      "recorded_at_ms": 1793467494203,
+      "evidence_kind": "live",
+      "proof": {
+        "row": "react-form",
+        "fixture_url_sha256": "a56f878e105d87a6aebab73f3af9c7b46a9d819b63b74d842fb0860a1c248920",
+        "acceptance_sha256": "70082708445b5ac4af3b20fa252978dab8685115277f1078b36df09f753f5ccb",
+        "mutation_status": "completed",
+        "mutation_receipts": [
+          {
+            "step": "find",
+            "reason_code": null
+          },
+          {
+            "status": "verified",
+            "action": "fill",
+            "step": "fill",
+            "reason_code": null
+          },
+          {
+            "step": "find",
+            "reason_code": null
+          },
+          {
+            "status": "verified",
+            "action": "fill",
+            "step": "fill",
+            "reason_code": null
+          },
+          {
+            "step": "find",
+            "reason_code": null
+          },
+          {
+            "status": "unknown",
+            "action": "click",
+            "step": "click",
+            "reason_code": "outcome_verification_timeout"
+          },
+          {
+            "status": "passed",
+            "step": "verify",
+            "reason_code": null
+          },
+          {
+            "status": "passed",
+            "step": "verify",
+            "reason_code": null
+          }
+        ],
+        "fill_verified": true,
+        "click_status": "completed",
+        "click_reason_code": null,
+        "status_verification": "passed",
+        "oracle_state": {
+          "persisted": true,
+          "form_kind": "form",
+          "form_sha256": "70082708445b5ac4af3b20fa252978dab8685115277f1078b36df09f753f5ccb"
+        },
+        "assertions": {
+          "react_state_accepts_value": true,
+          "postcondition_verified": true
+        },
+        "cleanup": {
+          "close_owned_error": "Error: tool browser failed: {\"content\":[{\"type\":\"text\",\"text\":\"close_owned needs another still-open tab in this session to verify the target lifecycle Next action: Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.\"}],\"structuredContent\":{\"bridge_kind\":null,\"dispatch_may_have_occurred\":false,\"next_action\":\"Correct the named",
+          "release": {
+            "effect": "released this provider's debugger attachments",
+            "metrics": {
+              "attach_us": null,
+              "browser_command_budget": 256,
+              "browser_commands_remaining": 256,
+              "browser_commands_used": 0,
+              "budget_stop_reason": null,
+              "cdp_bytes": 0,
+              "cdp_command_budget": 20000,
+              "cdp_commands": 0,
+              "cdp_commands_charged": 0,
+              "cdp_commands_partial": false,
+              "cdp_commands_remaining": 20000,
+              "cdp_methods": {},
+              "command_purposes": {},
+              "dom_nodes_scanned": 0,
+              "elapsed_us": 101,
+              "execution_us": 0,
+              "first_browser_op_us": null,
+              "host_round_trips": 0,
+              "last_browser_op_us": null,
+              "model_visible_calls": 1,
+              "native_host_messages": 0,
+              "native_host_messages_received": 0,
+              "native_host_messages_sent": 0,
+              "observation_bytes": 0,
+              "operation_id": "mcp:86410:46",
+              "phases": {
+                "artifact_transfer_us": 0,
+                "discovery_us": 0,
+                "dispatch_us": 0,
+                "enrichment_us": 0,
+                "grounding_us": 0,
+                "pair_us": 0,
+                "readiness_us": 0,
+                "serialization_us": 3,
+                "snapshot_us": 0,
+                "verification_us": 0
+              },
+              "queue_us": 0,
+              "retries": 0,
+              "returned_observation_packets": 0,
+              "screenshot_bytes": 0,
+              "startup_us": null,
+              "unknown_deliveries": 0
+            },
+            "mode": "background",
+            "observation_boundary": {
+              "count_complete": true,
+              "count_source": "structured_mcp_response_at_return_boundary",
+              "external_model_inspection": null,
+              "external_model_telemetry": "outside_mcp_process",
+              "returned_observation_packets": 0
+            },
+            "page_content_is_untrusted": true,
+            "released": true,
+            "session_id": "session-5-1"
+          }
+        }
+      }
+    }
+  ],
+  "blocked": [],
+  "generated_at_iso": "2026-10-31T17:27:08.833Z"
+}

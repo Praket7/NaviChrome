@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "kind": "phase12_competitor_report",
+  "generated_at_iso": "2026-10-31T17:44:19.066Z",
+  "source": {
+    "path": "bench/reports/phase12-competitor-pilot-2026-10-31-3rep.json",
+    "sha256": "f730b7b340cf2e55bdbaedae1f6aab4e91bc7514b04adf778a08701b0c3c05eb"
+  },
+  "environment": {
+    "chrome_version": "Google Chrome 156.0.8078.79",
+    "model": "gpt-6-luna",
+    "selected_adapters": [
+      "controlla",
+      "playwright-mcp",
+      "chrome-devtools-mcp",
+      "agent-browser",
+      "browser-use",
+      "stagehand"
+    ],
+    "adapter_versions": {
+      "playwright_mcp": "0.0.83",
+      "chrome_devtools_mcp": "1.10.1",
+      "agent_browser": "0.39.1",
+      "browser_use": "0.13.11",
+      "browser_use_pinned_source_commit": "c75e8476e26d18b7617643bc2ae082fae8eae431",
+      "browser_use_mcp_server_file_sha256": "696aee232f331ca215bb6e5ed21d5400dda1e4e530a6af6ade923e928acb2bd3",
+      "browser_use_identity_scope": "package version plus browser_use/mcp/server.py hash; full package Git commit not attested",
+      "browser_use_executable": "/Users/pcg/.local/share/chrome-controlla-bench/browser-use-venv/bin/browser-use",
+      "stagehand_commit": "cd7b230778cf92269e4cb90e80d97f5113781c51",
+      "stagehand_tag": "@browserbasehq/stagehand@4.1.0",
+      "stagehand_facade_sha256": "12333b5a0362833ab5175c28dc021d5e9b6061d4c3bab6ca5855c3144b4e4692",
+      "stagehand_server_path": "/Users/pcg/.local/share/chrome-controlla/comparison-mcps/stagehand-4.1.0/packages/integrations/core/dist/facade/stdio-server.mjs",
+      "stagehand_identity_scope": "exact git commit/tag plus built stdio facade hash"
+    },
+    "controlla_binary_sha256": "b8f97f4f77149ea62c6f231f767ba9a9ed3c2d9e8b119e12cebbcf11d7fadb82",
+    "browser_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "run_mode": "cold_unknown",
+    "machine": "darwin-arm64",
+    "timing_origin": "immediately_before_codex_cli_spawn; Codex JSON events do not expose prompt-send dispatch"
+  },
+  "task": {
+    "id": "example-domain-title-paragraph",
+    "url": "https://example.com/",
+    "verifier": "independent HTTPS fetch and exact title/paragraph match plus observed browser tool calls"
+  },
+  "pairs": 3,
+  "rows": [
+    {
+      "competitor": "controlla-v3",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 11938.765916,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 88830,
+      "prompt_sha256": "d6f88d5ce7c5ade865c2fe676d3ee277870dd30c0d29c4d4006121da0860bba7"
+    },
+    {
+      "competitor": "controlla-v3",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 13636.3605,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 116059,
+      "prompt_sha256": "d6f88d5ce7c5ade865c2fe676d3ee277870dd30c0d29c4d4006121da0860bba7"
+    },
+    {
+      "competitor": "controlla-v3",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 11108.641292,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 72728,
+      "prompt_sha256": "d6f88d5ce7c5ade865c2fe676d3ee277870dd30c0d29c4d4006121da0860bba7"
+    },
+    {
+      "competitor": "stagehand-v4",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 12319.644542,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 71792,
+      "prompt_sha256": "9d4bbe0ee7d1bfc59d847a64d157b4c0d8f678bb1dac30b3fec521ace9ec6f54"
+    },
+    {
+      "competitor": "stagehand-v4",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 14700.051042,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 72011,
+      "prompt_sha256": "9d4bbe0ee7d1bfc59d847a64d157b4c0d8f678bb1dac30b3fec521ace9ec6f54"
+    },
+    {
+      "competitor": "stagehand-v4",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 9951.77875,
+      "browser_round_trips": 1,
+      "model_round_trips": null,
+      "tokens": 54299,
+      "prompt_sha256": "9d4bbe0ee7d1bfc59d847a64d157b4c0d8f678bb1dac30b3fec521ace9ec6f54"
+    },
+    {
+      "competitor": "playwright-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 88223.239916,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 89170,
+      "prompt_sha256": "2f27d32baeeb92b141a5160bcc840768edabe25e3aff50ec8da2ba4ca6b9cc3a"
+    },
+    {
+      "competitor": "playwright-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 18183.407042,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 169622,
+      "prompt_sha256": "2f27d32baeeb92b141a5160bcc840768edabe25e3aff50ec8da2ba4ca6b9cc3a"
+    },
+    {
+      "competitor": "playwright-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 19121.24875,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 107052,
+      "prompt_sha256": "2f27d32baeeb92b141a5160bcc840768edabe25e3aff50ec8da2ba4ca6b9cc3a"
+    },
+    {
+      "competitor": "browser-use",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 23062.567959,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 91605,
+      "prompt_sha256": "78c30e3754ed88a01103d080722c12cdb156dfef40e944db3cb60f6b0d7bd38b"
+    },
+    {
+      "competitor": "browser-use",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 16245.210291,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 81641,
+      "prompt_sha256": "78c30e3754ed88a01103d080722c12cdb156dfef40e944db3cb60f6b0d7bd38b"
+    },
+    {
+      "competitor": "browser-use",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 13639.034708,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 82124,
+      "prompt_sha256": "78c30e3754ed88a01103d080722c12cdb156dfef40e944db3cb60f6b0d7bd38b"
+    },
+    {
+      "competitor": "chrome-devtools-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 18737.206541,
+      "browser_round_trips": 4,
+      "model_round_trips": null,
+      "tokens": 215913,
+      "prompt_sha256": "41bdc6e249c8d9b8d123469f71280d2a41545b57d83b437e203bcec6f5b95c17"
+    },
+    {
+      "competitor": "chrome-devtools-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 25736.752458,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 169841,
+      "prompt_sha256": "41bdc6e249c8d9b8d123469f71280d2a41545b57d83b437e203bcec6f5b95c17"
+    },
+    {
+      "competitor": "chrome-devtools-mcp",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 21664.351417,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 132761,
+      "prompt_sha256": "41bdc6e249c8d9b8d123469f71280d2a41545b57d83b437e203bcec6f5b95c17"
+    },
+    {
+      "competitor": "agent-browser",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 16047.174666,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 90769,
+      "prompt_sha256": "99cc57cd5865ac77801e7336981652db49764fb3f8c4fc07053726d81b46ed09"
+    },
+    {
+      "competitor": "agent-browser",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 13661.813083,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 115250,
+      "prompt_sha256": "99cc57cd5865ac77801e7336981652db49764fb3f8c4fc07053726d81b46ed09"
+    },
+    {
+      "competitor": "agent-browser",
+      "evidence_kind": "real",
+      "reproducible": true,
+      "success": true,
+      "verified_success": true,
+      "severe_safety_failures": 0,
+      "wall_ms": 13500.488166,
+      "browser_round_trips": 3,
+      "model_round_trips": null,
+      "tokens": 96793,
+      "prompt_sha256": "99cc57cd5865ac77801e7336981652db49764fb3f8c4fc07053726d81b46ed09"
+    }
+  ],
+  "summary": {
+    "controlla-v3": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 11938.765916,
+      "min_wall_ms": 11108.641292,
+      "max_wall_ms": 13636.3605,
+      "median_input_tokens": 88830,
+      "median_browser_round_trips": 1,
+      "prompt_sha256": "d6f88d5ce7c5ade865c2fe676d3ee277870dd30c0d29c4d4006121da0860bba7"
+    },
+    "stagehand-v4": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 12319.644542,
+      "min_wall_ms": 9951.77875,
+      "max_wall_ms": 14700.051042,
+      "median_input_tokens": 71792,
+      "median_browser_round_trips": 1,
+      "prompt_sha256": "9d4bbe0ee7d1bfc59d847a64d157b4c0d8f678bb1dac30b3fec521ace9ec6f54"
+    },
+    "playwright-mcp": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 19121.24875,
+      "min_wall_ms": 18183.407042,
+      "max_wall_ms": 88223.239916,
+      "median_input_tokens": 107052,
+      "median_browser_round_trips": 3,
+      "prompt_sha256": "2f27d32baeeb92b141a5160bcc840768edabe25e3aff50ec8da2ba4ca6b9cc3a"
+    },
+    "browser-use": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 16245.210291,
+      "min_wall_ms": 13639.034708,
+      "max_wall_ms": 23062.567959,
+      "median_input_tokens": 82124,
+      "median_browser_round_trips": 3,
+      "prompt_sha256": "78c30e3754ed88a01103d080722c12cdb156dfef40e944db3cb60f6b0d7bd38b"
+    },
+    "chrome-devtools-mcp": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 21664.351417,
+      "min_wall_ms": 18737.206541,
+      "max_wall_ms": 25736.752458,
+      "median_input_tokens": 169841,
+      "median_browser_round_trips": 3,
+      "prompt_sha256": "41bdc6e249c8d9b8d123469f71280d2a41545b57d83b437e203bcec6f5b95c17"
+    },
+    "agent-browser": {
+      "runs": 3,
+      "verified_success_rate": 1,
+      "median_wall_ms": 13661.813083,
+      "min_wall_ms": 13500.488166,
+      "max_wall_ms": 16047.174666,
+      "median_input_tokens": 96793,
+      "median_browser_round_trips": 3,
+      "prompt_sha256": "99cc57cd5865ac77801e7336981652db49764fb3f8c4fc07053726d81b46ed09"
+    }
+  },
+  "pilot_leader": "controlla-v3",
+  "claimEligible": false,
+  "claimReasons": [
+    "the pilot scope is one read-only task; the full Phase 12 workload matrix was not run",
+    "three paired repetitions are a pilot, not a p50/p95 release distribution"
+  ],
+  "boundary": {
+    "scope": "one public read-only fact task, six adapters, same prompt/model/Chrome per adapter, counterbalanced order",
+    "not_claimed": [
+      "p50/p95 release distribution",
+      "universal fastest/best",
+      "installed-application parity",
+      "form, mutation, concurrency, or safety parity"
+    ],
+    "controlla_note": "Controlla passed every pilot repetition; its one-call task was the lowest median in this pilot."
+  }
+}
