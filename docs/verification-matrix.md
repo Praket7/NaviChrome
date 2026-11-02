@@ -1,5 +1,14 @@
 # Verification matrix
 
+### 2026-11-02 click guard: named words, not screenshots
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| A click names the words it presses | pass | `expected_label` is carried from `act` and `shared_click` into the page guard; the guard refuses `label_not_under_pointer` only when those words are absent from the control under the pointer or its control-sized ancestry. Three Playwright cases in `scripts/test-background-actions.mjs` cover present, absent, and nested-ancestor labels; three more cover background DOM activation. |
+| A menu the agent just opened no longer blocks its next click | pass | The guarded-click epoch no longer compares scroll offset, viewport size, or the document-wide semantic counter; the guard re-reads the exact node, name/value, and hit target before dispatch. `mcp::tests::interaction_epoch_guard_binds_click_to_snapshot_and_document_identity` accepts a scroll/menu change and still rejects a new loader/document. |
+| Obstruction and element-kind checks are unchanged | pass | With no label, an overlay still refuses `obscured`; the separate unsafe predicate still refuses password, hidden, file, image, trusted, and submit/reset controls. Playwright asserts the obstruction direction. |
+| Windows screenshot contract race | pass locally | `test-background.cjs` now waits for the pairing reply and for debugger warm-up to settle before baselining the authorization-race assertion; the previously failing `screenshot_payload_tests::runtime_generated_screenshot_request_passes_extension_validator` passes in a full workspace run and in five repeated harness runs. Windows CI confirmation is pending the pushed run. |
+
 ### 2026-10-31 Phase 12 installed apps, concurrency, OS coverage, and competitor pilot
 
 | Check | Result | Evidence and boundary |

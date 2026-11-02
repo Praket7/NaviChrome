@@ -881,6 +881,9 @@ struct SharedClickArgs {
     input_mode: Option<String>,
     #[serde(default)]
     click_kind: Option<String>,
+    /// The words this click intends to press (for example `Insert`). The guard
+    /// refuses only when those words are not on the element under the pointer.
+    expected_label: Option<String>,
     /// Revision returned by the watcher-backed tab inventory. When supplied,
     /// the extension refuses dispatch if topology changed after discovery.
     expected_target_revision: Option<u64>,
@@ -3020,27 +3023,30 @@ fn shared_epoch_matches(
     let fresh = make(current, current_interaction);
     if use_case == crate::v3::EpochUse::GuardedClick {
         // Only guarded semantic clicks revalidate the exact node, its name/value,
-        // visibility, hit target, and viewport in the browser-side guard immediately
-        // before dispatch. Other pointer mutations keep the strict page semantic epoch.
+        // visibility, and hit target in the browser-side guard immediately before
+        // dispatch. The guard is stronger than a document mutation counter or a
+        // scroll offset, and those two change whenever an agent opens its own
+        // menu. A refused click must name a real objection, not a moved cursor.
         grounded.browser_generation == fresh.browser_generation
             && grounded.target_id == fresh.target_id
             && grounded.target_revision == fresh.target_revision
             && grounded.frame_id == fresh.frame_id
             && grounded.loader_id == fresh.loader_id
             && grounded.document_id == fresh.document_id
-            && grounded.viewport_revision == fresh.viewport_revision
     } else {
         grounded.compatible_with(&fresh, use_case)
     }
 }
 
-fn final_click_guard_matches_viewport(result: &Value, prepared_viewport: Option<&str>) -> bool {
+/// The final guard is the last CDP read before pointer dispatch. It proves the
+/// exact node, its hit target, and (when the click names them) the words under
+/// the pointer. It deliberately does not compare the click point against a
+/// previous screenshot or a prepared scroll offset: a menu the agent just
+/// opened moves both, and refusing on that stopped every click in a run.
+fn final_click_guard_confirms_target(result: &Value) -> bool {
     result["ok"] == true
         && result["x"].as_f64().is_some_and(f64::is_finite)
         && result["y"].as_f64().is_some_and(f64::is_finite)
-        && result["viewport"]
-            .as_str()
-            .is_some_and(|viewport| prepared_viewport.is_none_or(|prepared| viewport == prepared))
 }
 
 fn find_cdp_frame(response: &Value, frame_id: &str) -> Option<(String, String)> {
@@ -4944,7 +4950,7 @@ impl App {
             let mut recovered_via: Option<&'static str> = None;
             let mut ledger: Option<crate::action_recovery::RecoveryLedger> = None;
             let mut active_reason: Option<crate::guard_reason::GuardReason> = None;
-            let mut guard_opts = Value::Null;
+            let mut guard_opts = json!({"label": args.expected_label});
             let mut value = Value::Null;
             for _ in 0..=crate::recovery_exec::MAX_LADDER_STEPS {
                 let response=connection.command(registry,&shared.handle,&args.chrome_tab_id,"Runtime.callFunctionOn",json!({"objectId":snapshot.object_id,"functionDeclaration":guard,"arguments":[{"value":index},{"value":outcome},{"value":guard_opts}],"returnByValue":true})).await.map_err(|e|e.to_string())?;
@@ -4976,7 +4982,7 @@ impl App {
                 executed.record(operation);
                 match operation {
                     crate::recovery_exec::RungOperation::Rescroll { block } => {
-                        guard_opts = json!({"scroll": block});
+                        guard_opts = json!({"scroll": block, "label": args.expected_label});
                     }
                     crate::recovery_exec::RungOperation::Settle { delay_ms } => {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
@@ -5064,7 +5070,7 @@ impl App {
                 return Ok(rmcp::handler::server::wrapper::Json(refusal));
             }
         };
-        let (guard, initial_checked, recovered_via, executed) = guard;
+        let (guard, _prepared, recovered_via, executed) = guard;
         // Consume before dispatch: even a lost reply must not permit a duplicate click with this reference.
         if !unrestricted {
             shared
@@ -5078,18 +5084,7 @@ impl App {
             .as_ref()
             .ok_or_else(|| invalid("session not accepted"))?;
         let registry = shared.registry()?;
-        let prepared_viewport = initial_checked["viewport"].as_str().map(str::to_owned);
         if !unrestricted {
-            let mut dispatch_snapshot = snapshot.clone();
-            let Some(prepared_viewport) = prepared_viewport.as_deref() else {
-                return Ok(rmcp::handler::server::wrapper::Json(json!({
-                    "status":"not_dispatched",
-                    "reason":"click guard omitted its prepared viewport; inspect current state",
-                    "reason_code":"invalid_guard_receipt",
-                    "dispatch_acknowledged":false
-                })));
-            };
-            dispatch_snapshot.interaction_epoch["viewport"] = json!(prepared_viewport);
             let fresh = tokio::time::timeout_at(
                 deadline,
                 shared_identity_and_epoch(
@@ -5102,7 +5097,7 @@ impl App {
                 ),
             )
             .await;
-            if !matches!(fresh, Ok(Ok((ref identity, ref interaction))) if shared_epoch_matches(&dispatch_snapshot, &args.chrome_tab_id, identity, interaction, crate::v3::EpochUse::GuardedClick))
+            if !matches!(fresh, Ok(Ok((ref identity, ref interaction))) if shared_epoch_matches(&snapshot, &args.chrome_tab_id, identity, interaction, crate::v3::EpochUse::GuardedClick))
             {
                 return Ok(rmcp::handler::server::wrapper::Json(
                     json!({"status":"not_dispatched","reason":"document changed before dispatch; take one fresh snapshot","dispatch_acknowledged":false}),
@@ -5160,14 +5155,7 @@ impl App {
                 _ => Value::Null,
             }
         };
-        if !final_click_guard_matches_viewport(
-            &final_checked,
-            if unrestricted {
-                None
-            } else {
-                prepared_viewport.as_deref()
-            },
-        ) {
+        if !final_click_guard_confirms_target(&final_checked) {
             let mut refusal = if final_checked["reason"].is_string() {
                 crate::guard_reason::refusal(&final_checked)
             } else {
@@ -5210,7 +5198,8 @@ impl App {
                     &args.chrome_tab_id,
                     "Controlla.pointerClick",
                     json!({"object_id":snapshot.object_id,"index":index,"outcome":outcome,
-                    "function_declaration":guard,"viewport":prepared_viewport,"click_kind":click_kind,
+                    "function_declaration":guard,"click_kind":click_kind,
+                    "expected_label":args.expected_label,
                     "expected_target_revision":args.expected_target_revision}),
                 ),
             )
@@ -7814,7 +7803,7 @@ mod tests {
     use super::{
         App, LOCAL_STDIO_PRINCIPAL, SHARED_CLICK_UNSAFE_PREDICATE, SHARED_TYPE_GUARD_FUNCTION,
         SharedOperationRead, SharedPageSnapshot, click_mouse_events,
-        final_click_guard_matches_viewport, pointer_click_events, pointer_events,
+        final_click_guard_confirms_target, pointer_click_events, pointer_events,
         shared_command_value, shared_epoch_matches, shared_identity_epoch_batch,
         shared_outcome_identity_allows_verification, shared_typing_minimum_duration,
         validate_loopback_ws, validate_pinch, validate_swipe_endpoints, validate_wheel_delta,
@@ -7934,24 +7923,24 @@ mod tests {
     }
 
     #[test]
-    fn final_click_guard_requires_a_live_hit_test_and_stable_viewport() {
+    fn final_click_guard_requires_a_live_hit_test_not_a_stored_viewport() {
         let checked = json!({"ok":true,"x":120.5,"y":80.0,"viewport":"800x600@0,0"});
-        assert!(final_click_guard_matches_viewport(
-            &checked,
-            Some("800x600@0,0")
-        ));
-        assert!(!final_click_guard_matches_viewport(
-            &checked,
-            Some("800x600@0,1")
-        ));
-        assert!(!final_click_guard_matches_viewport(
-            &json!({"ok":false,"x":120.5,"y":80.0,"viewport":"800x600@0,0"}),
-            Some("800x600@0,0")
-        ));
-        assert!(!final_click_guard_matches_viewport(
-            &json!({"ok":true,"x":"120.5","y":80.0,"viewport":"800x600@0,0"}),
-            Some("800x600@0,0")
-        ));
+        assert!(final_click_guard_confirms_target(&checked));
+        // Scrolling or opening a menu changes the viewport string; the guard
+        // already re-hit-tested the exact node, so that is not a refusal.
+        assert!(final_click_guard_confirms_target(&json!({
+            "ok":true,"x":120.5,"y":80.0,"viewport":"800x600@0,240"
+        })));
+        assert!(!final_click_guard_confirms_target(&json!({
+            "ok":false,"x":120.5,"y":80.0,"viewport":"800x600@0,0"
+        })));
+        assert!(!final_click_guard_confirms_target(&json!({
+            "ok":true,"x":"120.5","y":80.0,"viewport":"800x600@0,0"
+        })));
+        // A guard that names missing words must never reach dispatch.
+        assert!(!final_click_guard_confirms_target(&json!({
+            "ok":false,"reason":"label_not_under_pointer"
+        })));
     }
 
     #[test]
@@ -8526,11 +8515,27 @@ mod tests {
             &json!({"semantic_revision":5,"focus":"body","selection":"collapsed:0","viewport":"800x600@0,0"}),
             crate::v3::EpochUse::GuardedClick
         ));
-        assert!(!shared_epoch_matches(
+        // A scroll, resize, or the menu an agent just opened changes the
+        // semantic counter and the viewport string. That is not a new document:
+        // the guard re-reads the exact node and its hit target before dispatch,
+        // so these must not refuse the click.
+        assert!(shared_epoch_matches(
             &snapshot,
             "tab-1",
             &snapshot.identity,
-            &json!({"semantic_revision":5,"focus":"body","selection":"collapsed:0","viewport":"900x600@0,0"}),
+            &json!({"semantic_revision":9,"focus":"menu","selection":"collapsed:0","viewport":"900x600@0,240"}),
+            crate::v3::EpochUse::GuardedClick
+        ));
+        // A different loader/document still refuses: that is a real objection.
+        assert!(!shared_epoch_matches(
+            &snapshot,
+            "tab-1",
+            &(
+                "frame".into(),
+                "new-loader".into(),
+                "https://example.test/a".into()
+            ),
+            &json!({"semantic_revision":9,"focus":"menu","selection":"collapsed:0","viewport":"900x600@0,240"}),
             crate::v3::EpochUse::GuardedClick
         ));
         assert!(!shared_epoch_matches(

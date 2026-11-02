@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const source = readFileSync(new URL('../crates/controlla-runtime/src/shared_page/background_action.js', import.meta.url), 'utf8');
+const guardSource = readFileSync(new URL('../crates/controlla-runtime/src/shared_page/guard.js', import.meta.url), 'utf8');
 let browser;
 before(async () => { browser = await chromium.launch({ headless: true, ...(process.env.CONTROLLA_CHROME ? { executablePath: process.env.CONTROLLA_CHROME } : { channel: 'chrome' }) }); });
 after(async () => { await browser?.close(); });
@@ -77,4 +78,66 @@ test('sensitive transition during input hides post-dispatch value', async () => 
     'document.querySelector("#target").addEventListener("input", e=>{e.target.type="password";e.target.value="synthetic-secret"})');
   assert.equal(actual.result.dispatched, true);
   assert.equal(JSON.stringify(actual.result).includes('synthetic-secret'), false);
+});
+
+async function runWithLabel(html, action, label) {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(html);
+    return await page.evaluate(async ({ source, action, label }) => {
+      const retained = { nodes: [document.querySelector('#target')] };
+      const result = await new Function(`return (${source})`)().call(retained, 0, action, null, null, null, null, label);
+      return { result };
+    }, { source, action, label });
+  } finally { await page.close(); }
+}
+test('background activation presses the control whose words the click named', async () => {
+  const actual = await runWithLabel('<button id="target">Insert</button>', 'click', 'Insert');
+  assert.equal(actual.result.dispatched, true);
+  assert.equal(actual.result.ok, true);
+});
+test('background activation refuses when the named words are absent', async () => {
+  const actual = await runWithLabel('<button id="target">Insert</button>', 'click', 'Paste');
+  assert.equal(actual.result.dispatched, false);
+  assert.equal(actual.result.reason, 'label_not_under_pointer');
+});
+test('background activation accepts a named ancestor control', async () => {
+  const actual = await runWithLabel('<div aria-label="Insert image"><button id="target"><span>+</span></button></div>', 'click', 'insert image');
+  assert.equal(actual.result.dispatched, true);
+  assert.equal(actual.result.ok, true);
+});
+
+async function runPointerGuard(html, { label = null } = {}) {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(html);
+    return await page.evaluate(({ source, label }) => {
+      const target = document.querySelector('#target');
+      const nameOf = n => (n?.getAttribute?.('aria-label') || n?.innerText || n?.textContent || '').replace(/\s+/g, ' ').trim();
+      const retained = {
+        nodes: [target],
+        items: [{ tag: target.tagName.toLowerCase(), role: target.getAttribute('role') || 'button', name: nameOf(target), raw_value: '', href: null, source_frame: 'main' }],
+        name: nameOf,
+        raw: n => (typeof n?.value === 'string' ? n.value : ''),
+        visible: n => { const r = n.getBoundingClientRect(), s = getComputedStyle(n); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; },
+      };
+      const guard = new Function('__UNSAFE__', `return (${source})`)(false);
+      return guard.call(retained, 0, { kind: 'focused' }, { label });
+    }, { source: guardSource, label });
+  } finally { await page.close(); }
+}
+const OVERLAY = '<button id="target" style="position:absolute;left:100px;top:100px;width:120px;height:40px">Insert</button><div id="menu" role="menuitem" style="position:absolute;left:100px;top:100px;width:120px;height:40px;z-index:10">Image</div>';
+test('pointer guard passes a menu the agent just opened when its words are under the pointer', async () => {
+  const checked = await runPointerGuard(OVERLAY, { label: 'Image' });
+  assert.equal(checked.ok, true);
+});
+test('pointer guard refuses when the named words are not under the pointer', async () => {
+  const checked = await runPointerGuard(OVERLAY, { label: 'Insert' });
+  assert.equal(checked.ok, false);
+  assert.equal(checked.reason, 'label_not_under_pointer');
+});
+test('pointer guard still reports a real obstruction when no words are named', async () => {
+  const checked = await runPointerGuard(OVERLAY);
+  assert.equal(checked.ok, false);
+  assert.equal(checked.reason, 'obscured');
 });

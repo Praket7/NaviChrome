@@ -176,8 +176,12 @@ impl InteractionEpoch {
                     && self.viewport_revision == fresh.viewport_revision
             }
             EpochUse::GuardedClick => {
-                self.semantic_revision == fresh.semantic_revision
-                    && self.viewport_revision == fresh.viewport_revision
+                // The guard re-reads the exact node, its name and value, and its
+                // hit target immediately before dispatch. A document-wide
+                // mutation counter or a scroll offset is not identity: opening a
+                // menu changes both, and refusing on them stopped every click an
+                // agent made after opening its own menu.
+                true
             }
             EpochUse::TextMutation => {
                 self.semantic_revision == fresh.semantic_revision

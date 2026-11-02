@@ -52,6 +52,8 @@ pub enum GuardReason {
     ReadOnly,
     /// Typed-value or caret precondition no longer holds.
     StaleValue,
+    /// The words the click named are not on the element under the pointer.
+    LabelNotUnderPointer,
 }
 
 /// How much the caller has authorized the runtime to resolve internally.
@@ -121,7 +123,7 @@ pub enum RetryClass {
 }
 
 impl GuardReason {
-    pub const ALL: [GuardReason; 21] = [
+    pub const ALL: [GuardReason; 22] = [
         GuardReason::FrameLocalRouteRequired,
         GuardReason::ProtectedBrowserSurface,
         GuardReason::UnsupportedRendererSurface,
@@ -143,6 +145,7 @@ impl GuardReason {
         GuardReason::UnsupportedControl,
         GuardReason::ReadOnly,
         GuardReason::StaleValue,
+        GuardReason::LabelNotUnderPointer,
     ];
 
     pub fn code(self) -> &'static str {
@@ -168,6 +171,7 @@ impl GuardReason {
             GuardReason::UnsupportedControl => "unsupported_control",
             GuardReason::ReadOnly => "read_only",
             GuardReason::StaleValue => "stale_value",
+            GuardReason::LabelNotUnderPointer => "label_not_under_pointer",
         }
     }
 
@@ -212,7 +216,8 @@ impl GuardReason {
             | GuardReason::StaleReference
             | GuardReason::ChangedTarget
             | GuardReason::Detached
-            | GuardReason::StaleValue => RetryClass::SafeInternal,
+            | GuardReason::StaleValue
+            | GuardReason::LabelNotUnderPointer => RetryClass::SafeInternal,
             // A disabled control often becomes enabled after an async settle;
             // one bounded wait is internal, and a still-disabled control is
             // then reported as an application state, not a capability limit.
@@ -227,7 +232,9 @@ impl GuardReason {
 
     fn strict_retry_class(self, _context: &GuardContext) -> RetryClass {
         match self {
-            GuardReason::OutsideViewport | GuardReason::Obscured => RetryClass::SafeInternal,
+            GuardReason::OutsideViewport
+            | GuardReason::Obscured
+            | GuardReason::LabelNotUnderPointer => RetryClass::SafeInternal,
             GuardReason::StaleReference
             | GuardReason::ChangedTarget
             | GuardReason::Detached

@@ -5,7 +5,7 @@ function(index, outcome, opts) {
   // internal, only a real boundary (secret entry, a Chrome-owned surface, or a
   // fresh document) needs the caller. Keep this advisory table in sync with
   // `GuardReason::retry_class`.
-  const RETRY = {outside_viewport:'safe_internal',obscured:'safe_internal',stale_reference:'safe_internal',changed_target:'safe_internal',detached:'safe_internal',document_changed:'refresh_snapshot',hidden:'refresh_snapshot',no_hit_target:'safe_internal',pointer_events_none:'safe_internal',disabled:'safe_internal',aria_disabled:'safe_internal',stale_value:'safe_internal',masked_boundary:'requires_user',trusted_boundary:'safe_internal',read_only:'safe_internal',unsupported_control:'safe_internal',unsupported_renderer_surface:'safe_internal',frame_local_route_required:'safe_internal',cross_origin_frame_unresolved:'safe_internal',protected_browser_surface:'do_not_retry',native_dialog_route_required:'safe_internal'};
+  const RETRY = {outside_viewport:'safe_internal',obscured:'safe_internal',stale_reference:'safe_internal',changed_target:'safe_internal',detached:'safe_internal',document_changed:'refresh_snapshot',hidden:'refresh_snapshot',no_hit_target:'safe_internal',label_not_under_pointer:'safe_internal',pointer_events_none:'safe_internal',disabled:'safe_internal',aria_disabled:'safe_internal',stale_value:'safe_internal',masked_boundary:'requires_user',trusted_boundary:'safe_internal',read_only:'safe_internal',unsupported_control:'safe_internal',unsupported_renderer_surface:'safe_internal',frame_local_route_required:'safe_internal',cross_origin_frame_unresolved:'safe_internal',protected_browser_surface:'do_not_retry',native_dialog_route_required:'safe_internal'};
   const fail = (reason, detail) => ({ok:false, reason, retry_class:RETRY[reason] || 'do_not_retry', detail:detail || {}});
   const round = n => Math.round(n);
   const rectOf = b => ({l:round(b.left), t:round(b.top), r:round(b.right), b:round(b.bottom)});
@@ -63,6 +63,37 @@ function(index, outcome, opts) {
     return h;
   };
   const protectedNode = n => !!composedClosest(n, '[data-masked],[data-requires-trusted],input[type="password"],input[type="file"],input[type="hidden"]');
+  // The click carries the words it intends to press (for example `Insert`).
+  // Those words are proof of the intended control: they must be on the node
+  // under the pointer or on a control that contains it. This replaces the old
+  // screenshot/scroll-offset comparison, which refused every click after a
+  // menu the agent had just opened moved the layout.
+  const normText = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const wantedLabel = normText(opts && opts.label).toLowerCase();
+  const nameOfNode = n => normText(
+    n?.getAttribute?.('aria-label')
+      || (n?.getAttribute?.('aria-labelledby') || '').split(/\s+/).filter(Boolean)
+        .map(id => n.ownerDocument?.getElementById(id)?.innerText || '').join(' ')
+      || n?.innerText || n?.textContent
+      || (typeof n?.value === 'string' ? n.value : '')
+      || n?.getAttribute?.('title')
+  ).toLowerCase();
+  const labelUnderPointer = () => {
+    if (!wantedLabel) return null;
+    if (!deepHit()) return fail('label_not_under_pointer', {match: 'no_hit_target'});
+    // Walk only control-sized ancestry. Climbing into <body> would match text
+    // from anywhere on the page and turn this check into a no-op.
+    for (let n = deepHit(), depth = 0; n && depth < 4 && n !== document.body && n !== document.documentElement; n = n.parentElement || n.getRootNode()?.host, depth++) {
+      const name = nameOfNode(n);
+      if (name && (name === wantedLabel || name.includes(wantedLabel))) return null;
+    }
+    return fail('label_not_under_pointer', {match: 'absent'});
+  };
+  let labelChecked = false, labelMiss = null;
+  const labelResult = () => {
+    if (!labelChecked) { labelMiss = labelUnderPointer(); labelChecked = true; }
+    return labelMiss;
+  };
   const ordered = [
     () => composedClosest(e, '[data-masked]') || e.querySelector('[data-masked]') ? fail('masked_boundary') : null,
     () => e.querySelector('[data-requires-trusted]') || trustedBoundary && (trustedBoundary !== e || !trustedText || outcome?.kind !== 'focused') ? fail('trusted_boundary', {self: trustedBoundary === e}) : null,
@@ -76,9 +107,14 @@ function(index, outcome, opts) {
     () => s.pointerEvents === 'none' ? fail('pointer_events_none') : null,
     () => (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) ? fail('outside_viewport', {rect: rectOf(b), viewport: {w: innerWidth, h: innerHeight}, scroll: align}) : null,
     () => !deepHit() ? fail('no_hit_target', {rect: rectOf(b)}) : null,
+    () => labelResult(),
     () => {
       const h = deepHit();
       if (h === e || e.contains(h)) return null;
+      // A named label that resolves under the pointer means the pointer presses
+      // exactly the words the click named. An overlay the agent just opened is
+      // then the intended control, not an obstruction.
+      if (wantedLabel && !labelResult()) return null;
       // Never describe a protected blocker; report only that one exists.
       if (protectedNode(h)) return fail('obscured', {blocker: {protected: true}, rect: rectOf(b)});
       const hs = getComputedStyle(h), hb = h.getBoundingClientRect();

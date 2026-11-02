@@ -1,4 +1,4 @@
-function(index, action, expected, next, key, outcomeKind) {
+function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
   const nodes = Array.isArray(this?.nodes) ? this.nodes : null;
   let e = nodes ? nodes[index] : this;
   let rebound = false;
@@ -6,6 +6,7 @@ function(index, action, expected, next, key, outcomeKind) {
 
   const tagOf = node => node && typeof node.tagName === 'string' ? node.tagName.toUpperCase() : '';
   const norm = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const expectedLabel = norm(expectedLabelArg).toLowerCase();
   const visible = node => {
     if (!node?.isConnected) return false;
     const rect = node.getBoundingClientRect(), style = node.ownerDocument.defaultView.getComputedStyle(node);
@@ -19,6 +20,17 @@ function(index, action, expected, next, key, outcomeKind) {
     return norm(labelled || node.getAttribute?.('aria-label') || node.innerText || node.textContent
       || (typeof node.value === 'string' ? node.value : '') || node.getAttribute?.('title')
       || node.getAttribute?.('placeholder') || '');
+  };
+  // The click names the words it intends to press. They must be on the target
+  // or on a control that contains it; a mismatched name is a real objection.
+  const labelMatches = (node, wanted) => {
+    // Control-sized ancestry only: <body> contains the whole page, so walking
+    // into it would match any words at all.
+    for (let n = node, depth = 0; n && depth < 4 && n !== node.ownerDocument?.body && n !== node.ownerDocument?.documentElement; n = n.parentElement || n.getRootNode()?.host, depth++) {
+      const name = accessibleName(n).toLowerCase();
+      if (name && (name === wanted || name.includes(wanted))) return true;
+    }
+    return false;
   };
   // Picker widgets (Google Drive, Material menus) keep controls inside shadow
   // roots. A light-DOM query misses them and turns a re-render into a false
@@ -114,6 +126,7 @@ function(index, action, expected, next, key, outcomeKind) {
     || e.closest('[data-masked],[data-requires-trusted]');
   if (sensitive()) return refuse('sensitive_or_trusted_target');
   if (e.matches(':disabled,[aria-disabled="true"],[inert]') || e.closest('[inert]')) return refuse('blocked');
+  if (expectedLabel && !labelMatches(e, expectedLabel)) return refuse('label_not_under_pointer');
   const valueOf = () => {
     if (!e.isConnected || sensitive()) return undefined;
     return e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement || e instanceof HTMLSelectElement

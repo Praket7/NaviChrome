@@ -1,5 +1,30 @@
 # Build progress
 
+## Click guards name the words they press — 2026-11-02
+
+A live Google Slides run stopped 22 times in one deck. Every stop was a false
+alarm: the pre-click guard compared the click point against the previous
+screenshot's viewport and document-wide mutation counter, so a menu the agent
+had just opened invalidated its own next click, and the agent degraded to one
+click per turn (126 turns where Playwright MCP needed 61).
+
+The guard now carries the words the click intends to press (`expected_label`,
+for example `Insert`) and refuses only when those words are not on the control
+under the pointer, or on a control that contains it. A named label that
+resolves under the pointer also authorizes a click over an overlay the agent
+opened itself. The document-only epoch still refuses a changed loader or
+document; the element-kind predicate still refuses passwords, hidden/file
+inputs, and submit/reset controls; a real obstruction with no named label is
+still `obscured`. Scroll offset, viewport size, and the semantic mutation
+counter are no longer refusal conditions, because the page guard re-reads the
+exact node, its name/value, and its hit target immediately before dispatch.
+
+Verified by three Playwright DOM tests (pointer label present, absent, and
+nested ancestor), three background-activation label tests, and the epoch unit
+test that now proves a scroll/menu change is accepted while a new document is
+refused. The extension harness also settles pairing warm-up before measuring
+commands, which removes the Windows-only race in the screenshot contract test.
+
 ## Click receipts and compact fallbacks — 2026-11-01
 
 Click verification receipts now echo the effect the caller declared. `visible`

@@ -1728,10 +1728,11 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
             respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,reason_code:"activation_revalidation_failed",reason:"Target identity changed during temporary tab activation."} }); return;
           }
         }
+        // Final read: exact node, hit target, and named words. A moved scroll offset or screenshot is not a refusal.
         const checked = await sendCdpCommand({tabId}, "Runtime.callFunctionOn", {objectId,
-          functionDeclaration:guard, arguments:[{value:index},{value:outcome}], returnByValue:true});
+          functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label}}], returnByValue:true});
         finalChecked = checked?.result?.value;
-        if (!finalChecked?.ok || (!activated && expectedViewport != null && finalChecked.viewport !== expectedViewport) || !Number.isFinite(finalChecked.x) || !Number.isFinite(finalChecked.y)) {
+        if (!finalChecked?.ok || !Number.isFinite(finalChecked.x) || !Number.isFinite(finalChecked.y)) {
           respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,reason_code:"final_target_revalidation_failed",reason:finalChecked?.reason || "Target or viewport changed before pointer input."} }); return;
         }
         const point = {x:finalChecked.x,y:finalChecked.y};
@@ -1747,10 +1748,9 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
                 completed_clicks:1,reason_code:"double_click_target_changed",reason:"The first click was sent, but target identity or active-tab state changed before the second click. Inspect before retrying."} }); return;
             }
             const secondCheck = await sendCdpCommand({tabId}, "Runtime.callFunctionOn", {objectId,
-              functionDeclaration:guard, arguments:[{value:index},{value:outcome}], returnByValue:true});
+              functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label}}], returnByValue:true});
             const secondTarget = secondCheck?.result?.value;
-            if (!secondTarget?.ok || secondTarget.viewport !== finalChecked.viewport ||
-                secondTarget.x !== point.x || secondTarget.y !== point.y) {
+            if (!secondTarget?.ok || secondTarget.x !== point.x || secondTarget.y !== point.y) {
               respond({ type:"result", id:request.id, result:{status:"unknown",dispatch_acknowledged:false,dispatch_may_have_occurred:true,
                 completed_clicks:1,reason_code:"double_click_target_changed",reason:"The first click was sent, but the same target, viewport, or hit point could not be revalidated before the second click. Inspect before retrying."} }); return;
             }

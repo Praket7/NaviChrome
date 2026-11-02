@@ -3057,7 +3057,31 @@ async function waitFor(predicate, description) {
 
   liveNative.hostMessage({ type: "pair", request_id: "document-auth-race", tab_ids: [70],
     expected_urls: expectedUrls([70]), expected_document_ids: expectedDocuments([70]) });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  // Wait for this pairing's own reply, not one macrotask. Under load a late
+  // attach or focus-domain enable used to land inside the command window this
+  // block measures, so the assertion saw another pair's debugger calls.
+  const waitForNativeReply = async id => {
+    const matches = message => message.id === id || message.request_id === id;
+    for (let attempt = 0; attempt < 400 && !liveNative.sent.some(matches); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    return liveNative.sent.filter(matches).at(-1);
+  };
+  const authRacePairReply = await waitForNativeReply("document-auth-race");
+  assert.equal(authRacePairReply?.type, "paired",
+    "the authorization-race fixture is paired before its command is measured");
+  // Pairing warms three diagnostics domains asynchronously. Wait until the
+  // debugger call count stops moving before baselining, so this window
+  // measures the command itself rather than another pair's warm-up.
+  const settleDebuggerCalls = async () => {
+    let stable = 0, previous = -1;
+    for (let attempt = 0; attempt < 200 && stable < 3; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      if (debuggerCalls.length === previous) stable += 1; else { previous = debuggerCalls.length; stable = 0; }
+    }
+    return debuggerCalls.length;
+  };
+  await settleDebuggerCalls();
   let frameReadStarted;
   const frameRead = new Promise(resolve => { frameReadStarted = resolve; });
   blockedFrame = { tabId: 70, started: frameReadStarted };

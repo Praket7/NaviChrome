@@ -2891,7 +2891,7 @@ impl AppV3 {
             "objectId":snapshot.object_id,
             "functionDeclaration":include_str!("../shared_page/background_action.js"),
             "arguments":[{"value":index},{"value":action},{"value":args.expected_value},
-                {"value":args.value},{"value":args.key},{"value":outcome_kind}], "returnByValue":true,"awaitPromise":true
+                {"value":args.value},{"value":args.key},{"value":outcome_kind},{"value":args.expected_label}], "returnByValue":true,"awaitPromise":true
         })).await;
         let result = match response {
             Ok(response) => match super::super::shared_value(&response) {
@@ -4149,6 +4149,10 @@ struct V3ActArgs {
     #[schemars(skip)]
     expected_visual_revision: Option<String>,
     #[schemars(
+        description = "The words this click intends to press, for example Insert. The guard refuses only when those words are not on the element under the pointer; omit it for coordinate and visual clicks."
+    )]
+    expected_label: Option<String>,
+    #[schemars(
         description = "Fresh @cN reference, or an exact role/name such as link ‘Buffalo Bills’ resolved on the selected tab before the action."
     )]
     reference: Option<String>,
@@ -4220,6 +4224,7 @@ impl V3ActArgs {
             desktop_action: None,
             desktop_mode: None,
             expected_visual_revision: None,
+            expected_label: None,
             expected_value: None,
             value: None,
             allow_password: None,
@@ -5645,6 +5650,7 @@ async fn visual_click_impl(
     chrome_tab_id: &str,
     probe: &Value,
     point: Option<(f64, f64)>,
+    expected_label: Option<&str>,
 ) -> Result<Value, rmcp::ErrorData> {
     if app.browser_modes.lock().await.get(session_id) == Some(&crate::v3::BrowserMode::Background) {
         let presentation = presentation_state(app, session_id, chrome_tab_id).await;
@@ -5699,10 +5705,20 @@ async fn visual_click_impl(
     {
         return Ok(json!({"status":"not_dispatched","reason_code":"document_epoch_changed"}));
     }
+    // The click may name the words it intends to press. Those words must be on
+    // the element under the point (or a control that contains it). This is a
+    // concrete objection; a changed screenshot is not.
+    let wanted_label = expected_label
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(|label| serde_json::to_string(label).map_err(|error| invalid(error.to_string())))
+        .transpose()?
+        .unwrap_or_else(|| "null".to_owned());
     let expression = format!(
-        "(()=>{{const x={x},y={y},e=document.elementFromPoint(x,y);if(!e)return {{ok:false,reason:'no_hit'}};const r=e.getBoundingClientRect(),s=getComputedStyle(e),tag=e.tagName.toLowerCase(),type=(e.type||'').toLowerCase();const forbidden=['password','file','hidden','checkbox','radio','submit','button','reset'].includes(type)||e.hasAttribute('data-masked')||e.hasAttribute('data-requires-trusted')||e.matches(':disabled,[aria-disabled=true],[aria-readonly=true]');return {{ok:!forbidden&&r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none'&&e===document.elementFromPoint(x,y),tag,type,role:e.getAttribute('role'),name:(e.getAttribute('aria-label')||e.innerText||e.value||'').slice(0,200),protected:forbidden}}}})()",
+        "(()=>{{const x={x},y={y},wanted={label},n=e=>String(e?.getAttribute?.('aria-label')||e?.innerText||e?.textContent||(typeof e?.value==='string'?e.value:'')||e?.getAttribute?.('title')||'').replace(/\\s+/g,' ').trim().toLowerCase(),e=document.elementFromPoint(x,y);if(!e)return {{ok:false,reason:'no_hit_target'}};const r=e.getBoundingClientRect(),s=getComputedStyle(e),tag=e.tagName.toLowerCase(),type=(e.type||'').toLowerCase();const forbidden=['password','file','hidden','checkbox','radio','submit','button','reset'].includes(type)||e.hasAttribute('data-masked')||e.hasAttribute('data-requires-trusted')||e.matches(':disabled,[aria-disabled=true],[aria-readonly=true]');const wants=wanted?wanted.toLowerCase():'',labelled=()=>{{if(!wanted)return true;for(let c=e,d=0;c&&d<6;c=c.parentElement||c.getRootNode()?.host,d++){{const v=n(c);if(v&&(v===wants||v.includes(wants)))return true}}return false}};const hit=labelled();return {{ok:!forbidden&&r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&s.pointerEvents!=='none'&&e===document.elementFromPoint(x,y)&&hit,reason:hit?'unsafe_or_obscured_coordinate_target':'label_not_under_pointer',tag,type,role:e.getAttribute('role'),name:(e.getAttribute('aria-label')||e.innerText||e.value||'').slice(0,200),protected:forbidden}}}})()",
         x = serde_json::to_string(&x).map_err(|e| invalid(e.to_string()))?,
-        y = serde_json::to_string(&y).map_err(|e| invalid(e.to_string()))?
+        y = serde_json::to_string(&y).map_err(|e| invalid(e.to_string()))?,
+        label = wanted_label
     );
     let hit = connection
         .command(
@@ -5716,9 +5732,10 @@ async fn visual_click_impl(
         .map_err(|e| invalid(e.to_string()))?;
     let hit = super::super::shared_value(&hit).map_err(|e| invalid(e.to_string()))?;
     if hit["ok"] != true || hit["protected"] == true {
-        return Ok(
-            json!({"status":"not_dispatched","reason_code":"unsafe_or_obscured_coordinate_target","hit_test":hit}),
-        );
+        let reason_code = hit["reason"]
+            .as_str()
+            .unwrap_or("unsafe_or_obscured_coordinate_target");
+        return Ok(json!({"status":"not_dispatched","reason_code":reason_code,"hit_test":hit}));
     }
     let fresh =
         super::super::shared_frame_identity(connection, registry, &shared.handle, chrome_tab_id)
@@ -5820,6 +5837,7 @@ async fn guarded_coordinate_click(
         &args.chrome_tab_id,
         &probe,
         Some((x, y)),
+        args.expected_label.as_deref(),
     )
     .await?;
     receipt["coordinate_binding"] = json!({
@@ -13649,6 +13667,7 @@ async fn shared_browser_download_lifecycle(
             desktop_action: None,
             desktop_mode: None,
             expected_visual_revision: None,
+            expected_label: None,
             session_id: session_id.to_owned(),
             chrome_tab_id: tab_id.to_owned(),
             action: "click".into(),
@@ -18202,6 +18221,7 @@ impl AppV3 {
                 desktop_action: None,
                 desktop_mode: None,
                 expected_visual_revision: None,
+                expected_label: None,
                 session_id: session_id.to_owned(),
                 chrome_tab_id: tab_id.to_owned(),
                 action: "page_tool".into(),
@@ -18408,6 +18428,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: session_id.to_owned(),
                     chrome_tab_id: tab_id.to_owned(),
                     action: "fill".into(),
@@ -18465,6 +18486,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: session_id.to_owned(),
                     chrome_tab_id: tab_id.to_owned(),
                     action: "click".into(),
@@ -18652,6 +18674,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: session_id.to_owned(),
                     chrome_tab_id: tab_id.to_owned(),
                     action: "click".into(),
@@ -18827,6 +18850,7 @@ impl AppV3 {
                         desktop_action: None,
                         desktop_mode: None,
                         expected_visual_revision: None,
+                        expected_label: None,
                         session_id: session_id.to_owned(),
                         chrome_tab_id: tab_id.to_owned(),
                         action: "fill".into(),
@@ -18871,6 +18895,7 @@ impl AppV3 {
                         desktop_action: None,
                         desktop_mode: None,
                         expected_visual_revision: None,
+                        expected_label: None,
                         session_id: session_id.to_owned(),
                         chrome_tab_id: tab_id.to_owned(),
                         action: "click".into(),
@@ -22959,6 +22984,7 @@ impl AppV3 {
                     &args.chrome_tab_id,
                     registered,
                     None,
+                    None,
                 )
                 .await?
             }
@@ -23112,6 +23138,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "fill".into(),
@@ -23173,6 +23200,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "fill".into(),
@@ -23283,6 +23311,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "click".into(),
@@ -23334,6 +23363,7 @@ impl AppV3 {
                         desktop_action: None,
                         desktop_mode: None,
                         expected_visual_revision: None,
+                        expected_label: None,
                         session_id: args.session_id.clone(),
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: action.into(),
@@ -23416,6 +23446,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "click".into(),
@@ -23921,6 +23952,7 @@ impl AppV3 {
                         desktop_action: None,
                         desktop_mode: None,
                         expected_visual_revision: None,
+                        expected_label: None,
                         session_id: args.session_id.clone(),
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: "click".into(),
@@ -24033,6 +24065,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "scroll".into(),
@@ -24073,6 +24106,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "scroll_to".into(),
@@ -24308,6 +24342,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "fill".into(),
@@ -24353,6 +24388,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "select".into(),
@@ -24402,6 +24438,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "type".into(),
@@ -24443,6 +24480,7 @@ impl AppV3 {
                     desktop_action: None,
                     desktop_mode: None,
                     expected_visual_revision: None,
+                    expected_label: None,
                     session_id: args.session_id.clone(),
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "press".into(),
@@ -24617,6 +24655,7 @@ impl AppV3 {
                         desktop_action: None,
                         desktop_mode: None,
                         expected_visual_revision: None,
+                        expected_label: None,
                         session_id: args.session_id.clone(),
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: "page_tool".into(),
@@ -26739,6 +26778,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: active_tab_id.clone(),
                             action: "fill".into(),
@@ -26825,6 +26865,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: active_tab_id.clone(),
                             action: "click".into(),
@@ -26885,6 +26926,7 @@ impl AppV3 {
                             desktop_action: None,
                             desktop_mode: None,
                             expected_visual_revision: None,
+                            expected_label: None,
                             session_id: args.session_id.clone(),
                             chrome_tab_id: active_tab_id.clone(),
                             action: "click".into(),

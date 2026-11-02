@@ -140,6 +140,13 @@ fn execution_first_plan(reason: GuardReason, context: &GuardContext) -> Vec<Reco
             RecoveryDirective::internal(R::WaitForSettling, "settle_then_reobserve", 2),
             RecoveryDirective::internal(R::Reobserve, "scoped_subtree", 1),
         ],
+        // The words the click named were not under the pointer. Re-observe the
+        // scoped subtree once in case a nested render hid the name, then ask
+        // the caller to correct the words rather than inventing a new target.
+        G::LabelNotUnderPointer => vec![
+            RecoveryDirective::internal(R::Reobserve, "scoped_subtree", 1),
+            RecoveryDirective::terminal(R::CallerRefresh),
+        ],
         G::NoHitTarget => vec![RecoveryDirective::internal(
             R::WaitForSettling,
             "layout_settle_hit_recheck",

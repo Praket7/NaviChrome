@@ -91,6 +91,7 @@ pub(super) async fn upload_click(
             desktop_action: None,
             desktop_mode: None,
             expected_visual_revision: None,
+            expected_label: None,
             session_id: session_id.to_owned(),
             chrome_tab_id: tab_id.to_owned(),
             action: "click".into(),
