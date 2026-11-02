@@ -4463,9 +4463,8 @@ fn compact_shared_discovery(
         let Some(host) = parsed.host_str() else { continue };
         if domain.as_deref().is_some_and(|expected| !host.eq_ignore_ascii_case(expected)) { continue; }
         let title = tab["title"].as_str().unwrap_or_default();
-        if let Some(query) = &query {
-            if !title.to_lowercase().contains(query) && !raw_url.to_lowercase().contains(query) { continue; }
-        }
+        if let Some(query) = &query
+            && !title.to_lowercase().contains(query) && !raw_url.to_lowercase().contains(query) { continue; }
         matches.push(json!({
             "id":tab["id"],"document_id":tab["document_id"],
             "window_id":tab["window_id"],"group_id":tab["group_id"],
