@@ -108,6 +108,7 @@ pub const SHARED_EXTENSION_AUTHORIZED_METHODS: &[&str] = &[
     "Controlla.waitForFileChooser",
     "Controlla.downloadLifecycle",
     "Controlla.scrollToTarget",
+    "Controlla.pageDiagnostics",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

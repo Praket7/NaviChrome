@@ -35,6 +35,8 @@
     "check:background-dom": "node --test scripts/test-background-actions.mjs",
     "check:transaction-background": "node --test scripts/test-transaction-background.mjs",
     "check:snapshot-efficiency": "node --test scripts/test-snapshot-efficiency.mjs",
+    "check:extraction-live": "node --test scripts/test-extraction-live.mjs",
+    "check:snapshot-epoch": "node --test scripts/test-snapshot-epoch-live.mjs",
     "check:webmcp-browser": "node --test scripts/test-webmcp-browser.mjs"
   },
   "devDependencies": {

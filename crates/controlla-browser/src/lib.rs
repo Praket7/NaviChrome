@@ -3,6 +3,7 @@
 mod blocking;
 pub mod cancellation;
 pub mod coordination;
+pub mod diagnostics;
 mod input;
 pub mod input_planner;
 pub mod input_strategy;
@@ -286,6 +287,7 @@ pub struct BrowserConnection {
     events: broadcast::Sender<BrowserEvent>,
     event_replay: Arc<Mutex<VecDeque<BrowserEvent>>>,
     event_sequence: Arc<AtomicU64>,
+    diagnostics: Arc<Mutex<diagnostics::DiagnosticsBuffer>>,
     pub(crate) extraction_cursors: Arc<Mutex<HashMap<String, Value>>>,
 }
 
@@ -315,6 +317,8 @@ impl BrowserConnection {
         let replay_for_reader = Arc::clone(&event_replay);
         let event_sequence = Arc::new(AtomicU64::new(0));
         let sequence_for_reader = Arc::clone(&event_sequence);
+        let diagnostics = Arc::new(Mutex::new(diagnostics::DiagnosticsBuffer::default()));
+        let diagnostics_for_reader = Arc::clone(&diagnostics);
         let cancellation = CancellationToken::new();
         let cancellation_for_tasks = cancellation.clone();
         tokio::spawn(async move {
@@ -357,6 +361,7 @@ impl BrowserConnection {
                     continue;
                 };
                 let Some(id) = value.get("id").and_then(Value::as_u64) else {
+                    diagnostics_for_reader.lock().await.record(&value);
                     let event = BrowserEvent {
                         sequence: sequence_for_reader.fetch_add(1, Ordering::AcqRel) + 1,
                         value: value.clone(),
@@ -411,6 +416,7 @@ impl BrowserConnection {
             let _generation = generation_for_disconnect.fetch_add(1, Ordering::AcqRel) + 1;
             targets_for_reader.write().await.reconnect();
             frames_for_reader.write().await.frames.clear();
+            diagnostics_for_reader.lock().await.clear();
             let mut pending = pending_for_responses.lock().await;
             for (_, sender) in pending.drain() {
                 let _ = sender.send(Err(BrowserError::Closed));
@@ -428,6 +434,7 @@ impl BrowserConnection {
             events,
             event_replay,
             event_sequence,
+            diagnostics,
             extraction_cursors: Arc::new(Mutex::new(HashMap::new())),
         };
         // OOPIFs have their own flattened CDP sessions. Enabling Page and
@@ -707,6 +714,10 @@ impl BrowserConnection {
     /// Receive the next protocol event from the shared browser reader. This
     /// is intentionally separate from command correlation so event waits never
     /// need to open or lock a target WebSocket.
+    pub async fn diagnostics_snapshot(&self, limit: usize, clear: bool) -> Value {
+        self.diagnostics.lock().await.snapshot(limit, clear)
+    }
+
     pub async fn next_event(&self, duration: Duration) -> Result<Value, BrowserError> {
         if let Some(event) = self.event_replay.lock().await.pop_front() {
             return Ok(event.value);
@@ -829,6 +840,7 @@ impl BrowserConnection {
                     "Runtime.enable",
                     "DOM.enable",
                     "Network.enable",
+                    "Log.enable",
                     "Accessibility.enable",
                 ] {
                     self.command(Some(session_id.clone()), method, Value::Null)
@@ -2891,6 +2903,7 @@ mod tests {
             events: broadcast::channel(8).0,
             event_replay: Arc::new(Mutex::new(VecDeque::new())),
             event_sequence: Arc::new(AtomicU64::new(0)),
+            diagnostics: Arc::new(Mutex::new(diagnostics::DiagnosticsBuffer::default())),
             extraction_cursors: Arc::new(Mutex::new(HashMap::new())),
         };
         connection.targets.write().await.apply_created(target());
@@ -3548,7 +3561,7 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
             let mut methods = Vec::new();
-            while methods.len() < 6 {
+            while methods.len() < 7 {
                 if let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) =
                     socket.next().await
                 {
@@ -3593,6 +3606,7 @@ mod tests {
                 "Runtime.enable",
                 "DOM.enable",
                 "Network.enable",
+                "Log.enable",
                 "Accessibility.enable"
             ]
         );

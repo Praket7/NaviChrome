@@ -20,7 +20,7 @@ impl Default for ObservationRequest {
             required_roles: Vec::new(),
             scope: None,
             since_snapshot_id: None,
-            byte_budget: 12_000,
+            byte_budget: 32_000,
         }
     }
 }

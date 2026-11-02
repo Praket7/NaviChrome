@@ -1,9 +1,9 @@
+use super::recovery::{complete_download_guard, complete_editor_guard};
 use super::{
     AppV2, BrowserActArgs, BrowserClickOutcome, BrowserExtractArgs, BrowserFindArgs,
     BrowserPredicate, BrowserSessionArgs, BrowserSnapshotArgs, BrowserVerifyArgs, find_impl,
     resolve_reference, retained_mutation, snapshot_impl, verify_impl,
 };
-use super::recovery::{complete_download_guard, complete_editor_guard};
 use crate::execution_plan::{route_candidates, task_needs_visual_evidence, task_route_signals};
 use crate::v3_execution::shared::{value_has_unknown, value_may_have_dispatched};
 use base64::Engine as _;
@@ -16,18 +16,17 @@ use serde_json::{Value, json};
 #[path = "../mcp/v3_core.rs"]
 mod execution_core;
 use execution_core::{
-    action_memory_signature_from_items, editor_value_unreadable, finalize_visual_requirement,
-    hidden_canvas_editor_refusal, learned_action_replay,
+    AutoBindOutcome, action_memory_signature_from_items, editor_value_unreadable,
+    finalize_visual_requirement, hidden_canvas_editor_refusal, learned_action_replay,
     page_tool_signature, promote_learned_url_operation, read_only_research_skill_steps,
     record_task_operation, research_profile_input, stale_reference_receipt, task_snapshot_goal,
-    text_conflict_preflight, AutoBindOutcome,
+    text_conflict_preflight,
 };
 #[path = "../mcp/v3_canvas_proof.rs"]
 mod canvas_proof;
 use canvas_proof::{verify_canvas_document_text, verify_canvas_text_present};
 #[path = "../mcp/v3_upload.rs"]
 mod upload;
-use upload::*;
 use sha2::Digest as _;
 use std::{
     future::Future,
@@ -35,6 +34,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
+use upload::*;
 
 const SHARED_TRIGGER_UPLOAD_DEADLINE: Duration = Duration::from_secs(25);
 static NEXT_WORKFLOW_OWNER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -45,14 +45,22 @@ fn next_direct_act_owner() -> String {
 }
 static NEXT_SKILL_EXAMPLE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-fn bounded_visual_region(region: super::full::ProbeRegionArgs) -> Result<super::full::ProbeRegionArgs, rmcp::ErrorData> {
+fn bounded_visual_region(
+    region: super::full::ProbeRegionArgs,
+) -> Result<super::full::ProbeRegionArgs, rmcp::ErrorData> {
     let values = [region.x, region.y, region.width, region.height];
-    if values.iter().any(|value| !value.is_finite() || *value < 0.0 || value.fract() != 0.0)
-        || region.width <= 0.0 || region.height <= 0.0
-        || region.x + region.width > 4096.0 || region.y + region.height > 4096.0
+    if values
+        .iter()
+        .any(|value| !value.is_finite() || *value < 0.0 || value.fract() != 0.0)
+        || region.width <= 0.0
+        || region.height <= 0.0
+        || region.x + region.width > 4096.0
+        || region.y + region.height > 4096.0
         || region.width * region.height > 16_777_216.0
     {
-        return Err(invalid("visual stability region must use bounded integer CSS pixels"));
+        return Err(invalid(
+            "visual stability region must use bounded integer CSS pixels",
+        ));
     }
     Ok(region)
 }
@@ -75,13 +83,25 @@ impl crate::visual_stability::VisualFrameSource for V3VisualFrameSource<'_> {
             return Box::pin(async move { Ok(sample) });
         }
         Box::pin(async move {
-            let shared = self.core.legacy.shared_sessions.lock().await.get(self.session_id).cloned().ok_or(crate::visual_stability::VisualStabilityError {
-                reason_code:"visual_capture_failed", message:"visual session is unavailable",
-            })?;
+            let shared = self
+                .core
+                .legacy
+                .shared_sessions
+                .lock()
+                .await
+                .get(self.session_id)
+                .cloned()
+                .ok_or(crate::visual_stability::VisualStabilityError {
+                    reason_code: "visual_capture_failed",
+                    message: "visual session is unavailable",
+                })?;
             let shared = shared.lock().await;
-            let connection = shared.connection.as_ref().ok_or(crate::visual_stability::VisualStabilityError {
-                reason_code:"visual_capture_failed", message:"visual session is not accepted",
-            })?;
+            let connection = shared.connection.as_ref().ok_or(
+                crate::visual_stability::VisualStabilityError {
+                    reason_code: "visual_capture_failed",
+                    message: "visual session is not accepted",
+                },
+            )?;
             let response = connection.command(
                 shared.registry().map_err(|_| crate::visual_stability::VisualStabilityError { reason_code:"visual_capture_failed", message:"visual session registry is unavailable" })?,
                 &shared.handle,
@@ -92,27 +112,57 @@ impl crate::visual_stability::VisualFrameSource for V3VisualFrameSource<'_> {
                 reason_code:if error.contains("document") || error.contains("stale") {"stale_visual_reference"} else if error.contains("lifecycle") {"inactive_target"} else {"visual_capture_failed"},
                 message:if error.contains("lifecycle") {"visual target is not active"} else {"bounded visual capture failed"},
             })?;
-            let data = response["data"].as_str().ok_or(crate::visual_stability::VisualStabilityError {
-                reason_code: "visual_capture_failed", message: "Chrome omitted bounded screenshot data",
-            })?;
-            if data.len() > 8 * 1024 * 1024 { return Err(crate::visual_stability::VisualStabilityError { reason_code:"invalid_visual_stability_sample", message:"Chrome screenshot payload exceeded the stability bound" }); }
-            let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| crate::visual_stability::VisualStabilityError {
-                reason_code: "invalid_visual_stability_sample", message: "Chrome screenshot data was invalid",
-            })?;
+            let data =
+                response["data"]
+                    .as_str()
+                    .ok_or(crate::visual_stability::VisualStabilityError {
+                        reason_code: "visual_capture_failed",
+                        message: "Chrome omitted bounded screenshot data",
+                    })?;
+            if data.len() > 8 * 1024 * 1024 {
+                return Err(crate::visual_stability::VisualStabilityError {
+                    reason_code: "invalid_visual_stability_sample",
+                    message: "Chrome screenshot payload exceeded the stability bound",
+                });
+            }
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|_| crate::visual_stability::VisualStabilityError {
+                    reason_code: "invalid_visual_stability_sample",
+                    message: "Chrome screenshot data was invalid",
+                })?;
             let evidence = &response["visual_evidence"];
-            let document_id = evidence["document_id"].as_str().filter(|value| !value.is_empty()).ok_or(crate::visual_stability::VisualStabilityError {
-                reason_code:"invalid_visual_stability_sample", message:"Chrome omitted screenshot document identity",
-            })?;
+            let document_id = evidence["document_id"]
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or(crate::visual_stability::VisualStabilityError {
+                    reason_code: "invalid_visual_stability_sample",
+                    message: "Chrome omitted screenshot document identity",
+                })?;
             let target_id = evidence["target_id"].as_str().unwrap_or_default();
             if target_id != self.tab_id || evidence["target_lifecycle"] != "active" {
-                return Err(crate::visual_stability::VisualStabilityError { reason_code:"inactive_target", message:"visual screenshot target is not active" });
+                return Err(crate::visual_stability::VisualStabilityError {
+                    reason_code: "inactive_target",
+                    message: "visual screenshot target is not active",
+                });
             }
             use sha2::Digest as _;
             let encoded_hash = sha2::Sha256::digest(&bytes);
-            if evidence["image_sha256"].as_str().is_none_or(|expected| !encoded_hash.iter().enumerate().all(|(index, byte)| expected.as_bytes().get(index*2..index*2+2).is_some_and(|part| part == format!("{byte:02x}").as_bytes()))) {
-                return Err(crate::visual_stability::VisualStabilityError { reason_code:"invalid_visual_stability_sample", message:"Chrome screenshot checksum did not match its evidence" });
+            if evidence["image_sha256"].as_str().is_none_or(|expected| {
+                !encoded_hash.iter().enumerate().all(|(index, byte)| {
+                    expected
+                        .as_bytes()
+                        .get(index * 2..index * 2 + 2)
+                        .is_some_and(|part| part == format!("{byte:02x}").as_bytes())
+                })
+            }) {
+                return Err(crate::visual_stability::VisualStabilityError {
+                    reason_code: "invalid_visual_stability_sample",
+                    message: "Chrome screenshot checksum did not match its evidence",
+                });
             }
-            let (pixel_digest, pixel_region) = crate::visual_stability::normalized_pixel_digest(&bytes)?;
+            let (pixel_digest, pixel_region) =
+                crate::visual_stability::normalized_pixel_digest(&bytes)?;
             let x = self.region.x.max(0.0) as u32;
             let y = self.region.y.max(0.0) as u32;
             Ok(crate::visual_stability::VisualStabilitySample {
@@ -123,9 +173,15 @@ impl crate::visual_stability::VisualFrameSource for V3VisualFrameSource<'_> {
                 },
                 target_active: true,
                 pixel_digest: pixel_digest.clone(),
-                visual_revision: evidence["image_sha256"].as_str().unwrap_or_default().to_owned(),
+                visual_revision: evidence["image_sha256"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
                 geometry: crate::visual_stability::VisualRegion {
-                    x: 0, y: 0, width: x.saturating_add(pixel_region.width), height: y.saturating_add(pixel_region.height),
+                    x: 0,
+                    y: 0,
+                    width: x.saturating_add(pixel_region.width),
+                    height: y.saturating_add(pixel_region.height),
                 },
             })
         })
@@ -135,7 +191,11 @@ impl crate::visual_stability::VisualFrameSource for V3VisualFrameSource<'_> {
 async fn measured_receipt(
     operation: impl Future<Output = Result<Json<Value>, rmcp::ErrorData>>,
 ) -> Result<Json<Value>, rmcp::ErrorData> {
-    measured_receipt_with_budget(crate::v3::CommandBudget::interactive_default(), Box::pin(operation)).await
+    measured_receipt_with_budget(
+        crate::v3::CommandBudget::interactive_default(),
+        Box::pin(operation),
+    )
+    .await
 }
 
 async fn measured_receipt_with_budget(
@@ -169,17 +229,31 @@ async fn measured_receipt_with_budget(
 }
 
 fn attach_latency_slo(receipt: &mut Value, elapsed_us: u64) {
-    let action = receipt.get("action").and_then(Value::as_str)
+    let action = receipt
+        .get("action")
+        .and_then(Value::as_str)
         .or_else(|| receipt.get("route_kind").and_then(Value::as_str));
     let Some(operation) = action.and_then(|action| match action {
-        "click" | "double_click" | "context_click" => Some(controlla_runtime::latency_slo::OperationKind::SemanticClick),
-        "fill" | "secure_fill" | "type" => Some(controlla_runtime::latency_slo::OperationKind::Fill),
+        "click" | "double_click" | "context_click" => {
+            Some(controlla_runtime::latency_slo::OperationKind::SemanticClick)
+        }
+        "fill" | "secure_fill" | "type" => {
+            Some(controlla_runtime::latency_slo::OperationKind::Fill)
+        }
         "scroll" | "scroll_to" => Some(controlla_runtime::latency_slo::OperationKind::Scroll),
-        "snapshot" | "observe" => Some(controlla_runtime::latency_slo::OperationKind::SnapshotDelta),
-        "screenshot" | "screenshot_crop" => Some(controlla_runtime::latency_slo::OperationKind::BackgroundScreenshot),
-        "replay" | "skill_replay" => Some(controlla_runtime::latency_slo::OperationKind::ReplayWorkflow),
+        "snapshot" | "observe" => {
+            Some(controlla_runtime::latency_slo::OperationKind::SnapshotDelta)
+        }
+        "screenshot" | "screenshot_crop" => {
+            Some(controlla_runtime::latency_slo::OperationKind::BackgroundScreenshot)
+        }
+        "replay" | "skill_replay" => {
+            Some(controlla_runtime::latency_slo::OperationKind::ReplayWorkflow)
+        }
         _ => None,
-    }) else { return; };
+    }) else {
+        return;
+    };
     let slo = controlla_runtime::latency_slo::slo_for(operation);
     receipt["latency_slo"] = json!({
         "operation": slo.operation,
@@ -317,20 +391,44 @@ fn annotate_foreground_open_presentation(result: &mut Value) {
     }
 }
 
-/// Keep a prior-baseline observation compact: unchanged controls stay
-/// addressable by their existing `@cN` refs and are omitted from the payload.
-/// Without a usable baseline the full observation is returned unchanged.
-fn shape_incremental_snapshot(snapshot: &mut Value) -> bool {
-    let incremental = snapshot["delta"]["full"] != true;
-    snapshot["incremental"] = json!(incremental);
-    snapshot["delta_basis"] = json!(if incremental {
-        "immediately_prior_observation"
+fn snapshot_baseline_matches_current(current: &str, requested: Option<&str>) -> bool {
+    requested
+        .map(str::trim)
+        .filter(|requested| !requested.is_empty())
+        .is_some_and(|requested| !current.is_empty() && requested == current)
+}
+
+/// Keep a prior-baseline observation compact only when the caller named the
+/// retained snapshot. A missing, stale, or unknown baseline is a full
+/// observation; it must never be labeled as a delta.
+fn shape_incremental_snapshot(snapshot: &mut Value, baseline_match: bool) -> bool {
+    let delta_was_incremental = snapshot["delta"]["full"] != true;
+    let incremental = baseline_match && delta_was_incremental;
+    snapshot["baseline_match"] = json!(baseline_match);
+    if !baseline_match {
+        // Keep the full item list and make the delta self-contained. A caller
+        // that ignores ``items`` can still apply every control from ``upsert``.
+        let items = snapshot["items"].as_array().cloned().unwrap_or_default();
+        snapshot["delta"]["full"] = json!(true);
+        snapshot["delta"]["upsert"] = json!(items);
+        snapshot["delta"]["removed"] = json!([]);
+        snapshot["delta_basis"] = json!("baseline_mismatch");
     } else {
-        "full_observation_required"
+        snapshot["delta_basis"] = json!(if incremental {
+            "validated_snapshot_id"
+        } else {
+            "full_observation_required"
+        });
+    }
+    snapshot["incremental"] = json!(incremental);
+    snapshot["unchanged_items_omitted"] = json!(if incremental {
+        let item_count = snapshot["items"].as_array().map_or(0, Vec::len);
+        let upsert_count = snapshot["delta"]["upsert"].as_array().map_or(0, Vec::len);
+        item_count.saturating_sub(upsert_count)
+    } else {
+        0
     });
     if incremental {
-        snapshot["unchanged_items_omitted"] =
-            json!(snapshot["items"].as_array().map_or(0, Vec::len));
         snapshot["items"] = json!([]);
         snapshot["items_returned"] = json!(0);
     }
@@ -341,14 +439,15 @@ fn shape_incremental_snapshot(snapshot: &mut Value) -> bool {
 mod route_telemetry_tests {
     use super::execution_core::finalize_visual_requirement;
     use super::{
-        AppV3, BrowserClickOutcome, BrowserPredicate, V3ReadyWhen, V3WorkflowStep, attach_execution_actuals, attach_observation_boundary,
-        attach_operation_costs, background_window_focus_invariant, browser_tool_result,
-        contains_returned_page_evidence, foreground_open_invariant,
-        navigation_ready_event_matches, observe_site_warmth, open_workflow_route_receipt,
-        page_tool_route_receipt, readiness_wait_expression, selected_automation_window_invariant,
-        shape_incremental_snapshot, task_cost_context, task_parallel_research_allowed,
-        task_route_signals, task_trace_steps, upload_acceptance_baseline_allows_dispatch,
-        verify_visual_region_change,
+        AppV3, BrowserClickOutcome, BrowserPredicate, V3ReadyWhen, V3WorkflowStep,
+        attach_execution_actuals, attach_observation_boundary, attach_operation_costs,
+        background_window_focus_invariant, browser_tool_result, contains_returned_page_evidence,
+        foreground_open_invariant, navigation_ready_event_matches, observe_site_warmth,
+        open_workflow_route_receipt, page_tool_route_receipt, readiness_wait_expression,
+        selected_automation_window_invariant, shape_incremental_snapshot,
+        snapshot_baseline_matches_current, task_cost_context, task_parallel_research_allowed,
+        task_route_signals, task_trace_steps, typing_policy,
+        upload_acceptance_baseline_allows_dispatch, verify_visual_region_change,
     };
     use serde_json::json;
 
@@ -358,17 +457,40 @@ mod route_telemetry_tests {
             "items": [{"reference":"@c1"},{"reference":"@c2"}],
             "delta": {"full": false, "upsert": [{"reference":"@c2"}], "removed": []}
         });
-        assert!(shape_incremental_snapshot(&mut with_baseline));
+        assert!(shape_incremental_snapshot(&mut with_baseline, true));
         assert_eq!(with_baseline["items"], json!([]));
-        assert_eq!(with_baseline["unchanged_items_omitted"], 2);
+        assert_eq!(with_baseline["unchanged_items_omitted"], 1);
         assert_eq!(with_baseline["delta"]["upsert"][0]["reference"], "@c2");
+        assert_eq!(with_baseline["delta_basis"], "validated_snapshot_id");
         let mut without_baseline = json!({
             "items": [{"reference":"@c1"}],
             "delta": {"full": true, "upsert": [{"reference":"@c1"}], "removed": []}
         });
-        assert!(!shape_incremental_snapshot(&mut without_baseline));
+        assert!(!shape_incremental_snapshot(&mut without_baseline, false));
         assert_eq!(without_baseline["items"].as_array().unwrap().len(), 1);
-        assert_eq!(without_baseline["delta_basis"], "full_observation_required");
+        assert_eq!(without_baseline["delta"]["full"], true);
+        assert_eq!(without_baseline["delta_basis"], "baseline_mismatch");
+        assert_eq!(without_baseline["unchanged_items_omitted"], 0);
+    }
+
+    #[test]
+    fn auto_typing_never_selects_human_pacing() {
+        let auto = typing_policy(Some("auto"), None, "hello", true).unwrap();
+        assert!(matches!(auto.mode, crate::v3::TypingMode::FastKeys));
+        let omitted = typing_policy(None, None, "hello", true).unwrap();
+        assert!(matches!(omitted.mode, crate::v3::TypingMode::FastKeys));
+        let human = typing_policy(Some("human_keys"), Some(5), "hello", true).unwrap();
+        assert!(matches!(human.mode, crate::v3::TypingMode::HumanKeys));
+        assert_eq!(human.delay_ms, 5);
+    }
+
+    #[test]
+    fn snapshot_baseline_requires_the_exact_retained_id() {
+        assert!(snapshot_baseline_matches_current("snap-1", Some("snap-1")));
+        assert!(!snapshot_baseline_matches_current("snap-2", Some("snap-1")));
+        assert!(!snapshot_baseline_matches_current("", Some("snap-1")));
+        assert!(!snapshot_baseline_matches_current("snap-1", Some("")));
+        assert!(!snapshot_baseline_matches_current("snap-1", None));
     }
 
     #[test]
@@ -416,7 +538,10 @@ mod route_telemetry_tests {
             super::infer_click_outcome(&json!({"role":"button","tag":"button","name":"Save"})),
             Some(BrowserClickOutcome::Focused)
         ));
-        assert!(super::infer_click_outcome(&json!({"role":"button","tag":"div","name":"Add file"})).is_none());
+        assert!(
+            super::infer_click_outcome(&json!({"role":"button","tag":"div","name":"Add file"}))
+                .is_none()
+        );
         assert!(super::infer_click_outcome(&json!({"role":"generic","name":"Save"})).is_none());
     }
 
@@ -638,11 +763,17 @@ mod route_telemetry_tests {
             "missing reference",
             None,
         ));
-        let payload = result.structured_content.expect("structured validation result");
+        let payload = result
+            .structured_content
+            .expect("structured validation result");
         assert_eq!(payload["status"], "error");
         assert_eq!(payload["reason_code"], "invalid_tool_request");
         assert_eq!(payload["dispatch_may_have_occurred"], false);
-        assert!(payload["next_action"].as_str().is_some_and(|value| !value.is_empty()));
+        assert!(
+            payload["next_action"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
     }
 
     #[test]
@@ -652,14 +783,20 @@ mod route_telemetry_tests {
             {"id":2,"title":"Buffalo Bills news","url":"https://www.espn.com/nfl/team?session=secret","active_for_open":false,"window_id":8,"document_id":"doc-b"}
         ]}});
         let all = super::compact_shared_discovery(raw.clone(), None, None).unwrap();
-        assert_eq!(all["snapshot"]["match_count"], 2,
-            "unfiltered discovery must expose active and background tabs");
+        assert_eq!(
+            all["snapshot"]["match_count"], 2,
+            "unfiltered discovery must expose active and background tabs"
+        );
         assert_eq!(all["snapshot"]["tabs"][0]["id"], 1);
         assert_eq!(all["snapshot"]["tabs"][1]["id"], 2);
-        let scoped = super::compact_shared_discovery(raw.clone(), Some("Buffalo Bills"), None).unwrap();
+        let scoped =
+            super::compact_shared_discovery(raw.clone(), Some("Buffalo Bills"), None).unwrap();
         assert_eq!(scoped["snapshot"]["match_count"], 1);
         assert_eq!(scoped["snapshot"]["tabs"][0]["id"], 2);
-        assert_eq!(scoped["snapshot"]["tabs"][0]["origin"], "https://www.espn.com");
+        assert_eq!(
+            scoped["snapshot"]["tabs"][0]["origin"],
+            "https://www.espn.com"
+        );
         assert!(!scoped.to_string().contains("access_token"));
         assert!(!scoped.to_string().contains("session=secret"));
         let empty = super::compact_shared_discovery(raw, Some("unmatched"), None).unwrap();
@@ -669,8 +806,14 @@ mod route_telemetry_tests {
 
     #[test]
     fn semantic_text_references_require_an_explicit_role_and_bounded_name() {
-        assert_eq!(super::parse_semantic_text_reference("link ‘Buffalo Bills’"), Some(("link", "Buffalo Bills".into())));
-        assert_eq!(super::parse_semantic_text_reference("button \"Continue\""), Some(("button", "Continue".into())));
+        assert_eq!(
+            super::parse_semantic_text_reference("link ‘Buffalo Bills’"),
+            Some(("link", "Buffalo Bills".into()))
+        );
+        assert_eq!(
+            super::parse_semantic_text_reference("button \"Continue\""),
+            Some(("button", "Continue".into()))
+        );
         assert!(super::parse_semantic_text_reference("Buffalo Bills").is_none());
         assert!(super::parse_semantic_text_reference("link ‘’").is_none());
     }
@@ -681,12 +824,27 @@ mod route_telemetry_tests {
         assert!(super::is_final_order_control("Buy now"));
         assert!(!super::is_final_order_control("View order details"));
         let details = super::V3OrderConfirmation {
-            expected_origin: "https://shop.example".into(), item_summary: "One book".into(),
-            total: "$42.00".into(), account: "Personal account".into(), final_action: "Place Order".into(),
+            expected_origin: "https://shop.example".into(),
+            item_summary: "One book".into(),
+            total: "$42.00".into(),
+            account: "Personal account".into(),
+            final_action: "Place Order".into(),
         };
-        assert!(super::valid_order_confirmation(&details, "https://shop.example", "Place Order"));
-        assert!(!super::valid_order_confirmation(&details, "https://other.example", "Place Order"));
-        assert!(!super::valid_order_confirmation(&details, "https://shop.example", "Pay Now"));
+        assert!(super::valid_order_confirmation(
+            &details,
+            "https://shop.example",
+            "Place Order"
+        ));
+        assert!(!super::valid_order_confirmation(
+            &details,
+            "https://other.example",
+            "Place Order"
+        ));
+        assert!(!super::valid_order_confirmation(
+            &details,
+            "https://shop.example",
+            "Pay Now"
+        ));
     }
 
     #[test]
@@ -985,23 +1143,36 @@ mod route_telemetry_tests {
         let stable: V3ReadyWhen = serde_json::from_value(json!({
             "kind":"visual_stable","quiet_ms":300,"timeout_ms":3000,
             "region":{"x":0,"y":0,"width":640,"height":480}
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(stable.label(), "visual_stable");
-        assert!(serde_json::from_value::<V3ReadyWhen>(json!({
-            "kind":"visual_stable","quiet_ms":300,"timeout_ms":3000,"unexpected":true
-        })).is_err());
+        assert!(
+            serde_json::from_value::<V3ReadyWhen>(json!({
+                "kind":"visual_stable","quiet_ms":300,"timeout_ms":3000,"unexpected":true
+            }))
+            .is_err()
+        );
     }
 
     #[test]
     fn workflow_wait_stable_is_read_only_and_has_bounded_schema_fields() {
         use crate::workflow_vm::VmOperation;
-        let step = V3WorkflowStep::WaitStable { region: None, quiet_ms: 300, timeout_ms: 3_000 };
+        let step = V3WorkflowStep::WaitStable {
+            region: None,
+            quiet_ms: 300,
+            timeout_ms: 3_000,
+        };
         assert_eq!(step.effect(), crate::workflow::EffectClass::ReadOnly);
         assert_eq!(super::workflow_step_name(&step), "wait_stable");
         let schema = schemars::schema_for!(V3WorkflowStep);
         let value = serde_json::to_value(schema).unwrap();
         let stable = &value["oneOf"];
-        let stable = stable.as_array().unwrap().iter().find(|variant| variant["properties"]["kind"]["const"] == "wait_stable").unwrap();
+        let stable = stable
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|variant| variant["properties"]["kind"]["const"] == "wait_stable")
+            .unwrap();
         assert_eq!(stable["properties"]["quiet_ms"]["minimum"], 150);
         assert_eq!(stable["properties"]["quiet_ms"]["maximum"], 2_000);
         assert_eq!(stable["properties"]["timeout_ms"]["maximum"], 10_000);
@@ -1010,14 +1181,22 @@ mod route_telemetry_tests {
     #[test]
     fn desktop_fallback_requires_an_immediate_read_only_verify_step() {
         let fallback = V3WorkflowStep::DesktopFallback {
-            reference:"@v1".into(),
-            action:crate::desktop_fallback::DesktopAction::Move { x:12, y:14 },
-            mode:crate::desktop_fallback::DesktopMode::Foreground,
+            reference: "@v1".into(),
+            action: crate::desktop_fallback::DesktopAction::Move { x: 12, y: 14 },
+            mode: crate::desktop_fallback::DesktopMode::Foreground,
             expected_visual_revision: None,
         };
-        let verify = V3WorkflowStep::Verify { predicate:BrowserPredicate::Url { equals:"https://example.test/".into() } };
-        assert!(!super::desktop_fallback_sequence_is_verified(std::slice::from_ref(&fallback)));
-        assert!(super::desktop_fallback_sequence_is_verified(&[fallback, verify]));
+        let verify = V3WorkflowStep::Verify {
+            predicate: BrowserPredicate::Url {
+                equals: "https://example.test/".into(),
+            },
+        };
+        assert!(!super::desktop_fallback_sequence_is_verified(
+            std::slice::from_ref(&fallback)
+        ));
+        assert!(super::desktop_fallback_sequence_is_verified(&[
+            fallback, verify
+        ]));
     }
 
     #[test]
@@ -1485,6 +1664,20 @@ mod route_telemetry_tests {
     }
 
     #[test]
+    fn receipts_without_a_reason_are_given_an_actionable_code() {
+        let mut receipt = json!({"status":"not_dispatched","action":"type"});
+        super::normalize_receipt_outcomes(&mut receipt);
+        assert_eq!(receipt["reason_code"], "precondition_failed");
+
+        let mut with_reason = json!({
+            "status":"not_dispatched",
+            "reason":"editor_guard_rejected: focus changed before dispatch"
+        });
+        super::normalize_receipt_outcomes(&mut with_reason);
+        assert_eq!(with_reason["reason_code"], "editor_guard_rejected");
+    }
+
+    #[test]
     fn task_navigation_single_read_requires_destination_and_ready_document_epoch() {
         let state = |epoch, url, ready_state| super::NavigationDocumentState {
             epoch,
@@ -1558,13 +1751,26 @@ mod route_telemetry_tests {
             json!({"id": 11, "url": "https://www.espn.com/", "document_id": "doc-11", "active_for_open": true, "last_accessed": 1.0, "window_id": 2}),
             json!({"id": 12, "url": "https://www.espn.com/nfl/", "document_id": "doc-12", "active_for_open": true, "last_accessed": 200.0, "window_id": 1}),
         ];
-        assert_eq!(super::reusable_tab_for_url(&tabs, "https://www.espn.com/", None).map(|item| item.0), Some("11".into()));
-        assert_eq!(super::reusable_tab_for_url(&tabs, "https://www.espn.com/nfl/", None).map(|item| item.0), Some("12".into()));
+        assert_eq!(
+            super::reusable_tab_for_url(&tabs, "https://www.espn.com/", None).map(|item| item.0),
+            Some("11".into())
+        );
+        assert_eq!(
+            super::reusable_tab_for_url(&tabs, "https://www.espn.com/nfl/", None)
+                .map(|item| item.0),
+            Some("12".into())
+        );
         assert!(super::reusable_tab_for_url(&tabs, "https://www.espn.com/story", None).is_none());
-        assert_eq!(super::reusable_tab_for_url(&tabs, "https://www.espn.com/", Some("10")).map(|item| item.0), Some("10".into()));
+        assert_eq!(
+            super::reusable_tab_for_url(&tabs, "https://www.espn.com/", Some("10"))
+                .map(|item| item.0),
+            Some("10".into())
+        );
         assert!(super::reusable_tab_for_url(&tabs, "https://www.espn.com/", Some("12")).is_none());
         let unstable = vec![json!({"id": 10, "url": "https://www.espn.com/", "window_id": 1})];
-        assert!(super::reusable_tab_for_url(&unstable, "https://www.espn.com/", Some("10")).is_none());
+        assert!(
+            super::reusable_tab_for_url(&unstable, "https://www.espn.com/", Some("10")).is_none()
+        );
     }
 
     #[test]
@@ -1577,12 +1783,22 @@ mod route_telemetry_tests {
         // A read-only view and the editor are the same document, so the editor
         // tab is reused instead of opening a second tab for the same doc.
         assert_eq!(
-            super::reusable_tab_for_url(&tabs, &format!("https://docs.google.com/document/d/{id}/mobilebasic"), None).map(|item| item.0),
+            super::reusable_tab_for_url(
+                &tabs,
+                &format!("https://docs.google.com/document/d/{id}/mobilebasic"),
+                None
+            )
+            .map(|item| item.0),
             Some("30".into())
         );
         // Another document never matches, even when it is the focused tab.
         assert!(
-            super::reusable_tab_for_url(&tabs, "https://docs.google.com/document/d/missing/mobilebasic", None).is_none()
+            super::reusable_tab_for_url(
+                &tabs,
+                "https://docs.google.com/document/d/missing/mobilebasic",
+                None
+            )
+            .is_none()
         );
         // A different host with the same path is not the same resource.
         assert!(!super::same_document_resource(
@@ -1595,7 +1811,12 @@ mod route_telemetry_tests {
             json!({"id": 41, "url": format!("https://docs.google.com/document/d/{id}/mobilebasic"), "document_id": "doc-41", "active_for_open": false, "last_accessed": 99.0, "window_id": 1}),
         ];
         assert_eq!(
-            super::reusable_tab_for_url(&both, &format!("https://docs.google.com/document/d/{id}/mobilebasic"), None).map(|item| item.0),
+            super::reusable_tab_for_url(
+                &both,
+                &format!("https://docs.google.com/document/d/{id}/mobilebasic"),
+                None
+            )
+            .map(|item| item.0),
             Some("41".into())
         );
     }
@@ -1606,8 +1827,16 @@ mod route_telemetry_tests {
         let edit = format!("https://docs.google.com/document/d/{id}/edit?tab=t.0");
         let other_view = format!("https://docs.google.com/document/d/{id}/edit");
         let bound = vec!["30".to_owned()];
-        assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, &edit));
-        assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, &other_view));
+        assert!(super::bound_tab_matches_open(
+            &bound, "30", None, &edit, &edit
+        ));
+        assert!(super::bound_tab_matches_open(
+            &bound,
+            "30",
+            None,
+            &edit,
+            &other_view
+        ));
         // A different URL is an ordinary in-place navigation of the one bound
         // tab, not a reason to allocate another owned tab.
         assert!(super::bound_tab_matches_open(
@@ -1617,14 +1846,44 @@ mod route_telemetry_tests {
             &edit,
             "https://docs.google.com/document/d/another-doc/edit"
         ));
-        assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, "https://example.test/"));
-        assert!(!super::bound_tab_matches_open(&bound, "31", Some("31"), &edit, &other_view));
+        assert!(super::bound_tab_matches_open(
+            &bound,
+            "30",
+            None,
+            &edit,
+            "https://example.test/"
+        ));
+        assert!(!super::bound_tab_matches_open(
+            &bound,
+            "31",
+            Some("31"),
+            &edit,
+            &other_view
+        ));
         // Several bound tabs need an explicit, bound tab ID; guessing would
         // navigate the wrong document.
         let several = vec!["30".to_owned(), "31".to_owned()];
-        assert!(!super::bound_tab_matches_open(&several, "30", None, &edit, &other_view));
-        assert!(super::bound_tab_matches_open(&several, "31", Some("31"), &edit, &other_view));
-        assert!(!super::bound_tab_matches_open(&several, "30", Some("31"), &edit, &other_view));
+        assert!(!super::bound_tab_matches_open(
+            &several,
+            "30",
+            None,
+            &edit,
+            &other_view
+        ));
+        assert!(super::bound_tab_matches_open(
+            &several,
+            "31",
+            Some("31"),
+            &edit,
+            &other_view
+        ));
+        assert!(!super::bound_tab_matches_open(
+            &several,
+            "30",
+            Some("31"),
+            &edit,
+            &other_view
+        ));
 
         // Google Forms redirect submitted responses to an account-scoped
         // `/u/<n>/.../formResponse` path. That is still the same form, so a
@@ -1633,9 +1892,20 @@ mod route_telemetry_tests {
         let submitted = format!("https://docs.google.com/forms/u/0/d/e/{form_id}/formResponse");
         let viewform = format!("https://docs.google.com/forms/d/e/{form_id}/viewform?usp=pp_url");
         assert!(super::same_document_resource(&submitted, &viewform));
-        assert!(super::bound_tab_matches_open(&bound, "30", Some("30"), &submitted, &viewform));
-        let tabs = vec![json!({"id": 30, "url": submitted, "document_id": "doc-30", "active_for_open": false, "last_accessed": 500.0, "window_id": 1})];
-        assert_eq!(super::reusable_tab_for_url(&tabs, &viewform, None).map(|item| item.0), Some("30".into()));
+        assert!(super::bound_tab_matches_open(
+            &bound,
+            "30",
+            Some("30"),
+            &submitted,
+            &viewform
+        ));
+        let tabs = vec![
+            json!({"id": 30, "url": submitted, "document_id": "doc-30", "active_for_open": false, "last_accessed": 500.0, "window_id": 1}),
+        ];
+        assert_eq!(
+            super::reusable_tab_for_url(&tabs, &viewform, None).map(|item| item.0),
+            Some("30".into())
+        );
     }
 
     #[test]
@@ -1645,7 +1915,10 @@ mod route_telemetry_tests {
             json!({"id": 12, "url": "https://other.test/", "document_id": "doc-12", "active_for_open": false, "window_id": 2}),
             json!({"id": 14, "url": "chrome://settings/", "document_id": "doc-14", "window_id": 2}),
         ];
-        assert_eq!(super::selected_open_anchor_tab_id(&tabs, Some(1), Some("12")), Ok("12".into()));
+        assert_eq!(
+            super::selected_open_anchor_tab_id(&tabs, Some(1), Some("12")),
+            Ok("12".into())
+        );
         assert!(super::selected_open_anchor_tab_id(&tabs, Some(1), Some("99")).is_err());
         assert!(super::selected_open_anchor_tab_id(&tabs, Some(1), Some("14")).is_err());
         assert!(super::selected_open_anchor_tab_id(&tabs, Some(1), Some("012")).is_err());
@@ -1707,15 +1980,23 @@ fn selected_open_anchor_tab_id(
     last_focused_window_id: Option<u64>,
     requested: Option<&str>,
 ) -> Result<String, &'static str> {
-    let Some(requested) = requested else { return open_anchor_tab_id(tabs, last_focused_window_id); };
-    let requested_id = requested.parse::<u32>().map_err(|_| "requested chrome_tab_id must be decimal")?;
+    let Some(requested) = requested else {
+        return open_anchor_tab_id(tabs, last_focused_window_id);
+    };
+    let requested_id = requested
+        .parse::<u32>()
+        .map_err(|_| "requested chrome_tab_id must be decimal")?;
     if requested_id.to_string() != requested {
         return Err("requested chrome_tab_id must be canonical decimal");
     }
     tabs.iter()
-        .find(|tab| tab["id"].as_u64() == Some(u64::from(requested_id))
-            && tab["document_id"].as_str().is_some_and(|id| !id.is_empty())
-            && tab["url"].as_str().is_some_and(|url| url.starts_with("http://") || url.starts_with("https://")))
+        .find(|tab| {
+            tab["id"].as_u64() == Some(u64::from(requested_id))
+                && tab["document_id"].as_str().is_some_and(|id| !id.is_empty())
+                && tab["url"]
+                    .as_str()
+                    .is_some_and(|url| url.starts_with("http://") || url.starts_with("https://"))
+        })
         .map(|_| requested.to_owned())
         .ok_or("requested source tab is not a stable web tab in the fresh inventory")
 }
@@ -1777,20 +2058,27 @@ fn same_document_resource(candidate: &str, expected: &str) -> bool {
     if candidate.origin() != expected.origin() {
         return false;
     }
-    if let (Some((app, id)), Some((expected_app, expected_id))) =
-        (document_app_identity(&candidate), document_app_identity(&expected))
-    {
+    if let (Some((app, id)), Some((expected_app, expected_id))) = (
+        document_app_identity(&candidate),
+        document_app_identity(&expected),
+    ) {
         return app == expected_app && id == expected_id;
     }
     false
 }
 
-fn reusable_tab_for_url(tabs: &[Value], url: &str, requested: Option<&str>) -> Option<(String, Option<String>)> {
+fn reusable_tab_for_url(
+    tabs: &[Value],
+    url: &str,
+    requested: Option<&str>,
+) -> Option<(String, Option<String>)> {
     tabs.iter()
         .filter(|tab| {
             tab["id"].as_u64().is_some()
                 && tab["document_id"].as_str().is_some_and(|id| !id.is_empty())
-                && requested.is_none_or(|id| tab["id"].as_u64().map(|value| value.to_string()).as_deref() == Some(id))
+                && requested.is_none_or(|id| {
+                    tab["id"].as_u64().map(|value| value.to_string()).as_deref() == Some(id)
+                })
                 && tab["url"].as_str().is_some_and(|candidate| {
                     same_navigation_resource_url(candidate, url)
                         || same_document_resource(candidate, url)
@@ -1927,7 +2215,11 @@ impl Drop for ActiveTaskGuard {
 fn readiness_wait_expression(ready_when: &V3ReadyWhen) -> Result<String, rmcp::ErrorData> {
     const TIMEOUT_MS: u64 = 10_000;
     let (probe, event_driven, watch_shadow_roots) = match ready_when {
-        V3ReadyWhen::VisualStable { .. } => return Err(invalid("visual_stable readiness uses bounded screenshot sampling")),
+        V3ReadyWhen::VisualStable { .. } => {
+            return Err(invalid(
+                "visual_stable readiness uses bounded screenshot sampling",
+            ));
+        }
         V3ReadyWhen::Selector { selector } => {
             let selector =
                 serde_json::to_string(selector).map_err(|error| invalid(error.to_string()))?;
@@ -2158,8 +2450,16 @@ impl AppV3 {
         tab_id: &str,
         ready_when: &V3ReadyWhen,
     ) -> Result<bool, rmcp::ErrorData> {
-        if let V3ReadyWhen::VisualStable { region, quiet_ms, timeout_ms } = ready_when {
-            return Ok(self.wait_for_visual_stability(session_id, tab_id, *region, *quiet_ms, *timeout_ms).await?.stable);
+        if let V3ReadyWhen::VisualStable {
+            region,
+            quiet_ms,
+            timeout_ms,
+        } = ready_when
+        {
+            return Ok(self
+                .wait_for_visual_stability(session_id, tab_id, *region, *quiet_ms, *timeout_ms)
+                .await?
+                .stable);
         }
         if matches!(
             ready_when,
@@ -2229,43 +2529,116 @@ impl AppV3 {
             bounded_visual_region(region)?
         } else {
             let layout_result = tokio::time::timeout_at(deadline, async {
-                let shared = self.core.legacy.shared_sessions.lock().await.get(session_id).cloned()
+                let shared = self
+                    .core
+                    .legacy
+                    .shared_sessions
+                    .lock()
+                    .await
+                    .get(session_id)
+                    .cloned()
                     .ok_or_else(|| invalid("unknown shared session_id"))?;
                 let shared = shared.lock().await;
-                let connection = shared.connection.as_ref().ok_or_else(|| invalid("shared extension session has not been accepted"))?;
-                connection.command(shared.registry()?, &shared.handle, tab_id, "Page.getLayoutMetrics", json!({})).await
+                let connection = shared
+                    .connection
+                    .as_ref()
+                    .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
+                connection
+                    .command(
+                        shared.registry()?,
+                        &shared.handle,
+                        tab_id,
+                        "Page.getLayoutMetrics",
+                        json!({}),
+                    )
+                    .await
                     .map_err(|error| invalid(error.to_string()))
-            }).await;
+            })
+            .await;
             let layout = match layout_result {
                 Ok(Ok(layout)) => layout,
                 Ok(Err(error)) => return Err(error),
-                Err(_) => return Ok(crate::visual_stability::VisualStabilityResult {
-                    stable:false, reason_code:Some("visual_stability_timeout".into()),
-                    elapsed_ms:started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-                    samples:0, visual_revision:None,
-                }),
+                Err(_) => {
+                    return Ok(crate::visual_stability::VisualStabilityResult {
+                        stable: false,
+                        reason_code: Some("visual_stability_timeout".into()),
+                        elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                        samples: 0,
+                        visual_revision: None,
+                    });
+                }
             };
-            let viewport = layout.get("cssVisualViewport").unwrap_or(&layout["visualViewport"]);
-            let x = viewport["pageX"].as_f64().or_else(|| viewport["offsetX"].as_f64()).unwrap_or(0.0);
-            let y = viewport["pageY"].as_f64().or_else(|| viewport["offsetY"].as_f64()).unwrap_or(0.0);
-            let width = viewport["clientWidth"].as_f64().or_else(|| viewport["width"].as_f64()).unwrap_or(0.0);
-            let height = viewport["clientHeight"].as_f64().or_else(|| viewport["height"].as_f64()).unwrap_or(0.0);
-            bounded_visual_region(super::full::ProbeRegionArgs { x, y, width, height })?
+            let viewport = layout
+                .get("cssVisualViewport")
+                .unwrap_or(&layout["visualViewport"]);
+            let x = viewport["pageX"]
+                .as_f64()
+                .or_else(|| viewport["offsetX"].as_f64())
+                .unwrap_or(0.0);
+            let y = viewport["pageY"]
+                .as_f64()
+                .or_else(|| viewport["offsetY"].as_f64())
+                .unwrap_or(0.0);
+            let width = viewport["clientWidth"]
+                .as_f64()
+                .or_else(|| viewport["width"].as_f64())
+                .unwrap_or(0.0);
+            let height = viewport["clientHeight"]
+                .as_f64()
+                .or_else(|| viewport["height"].as_f64())
+                .unwrap_or(0.0);
+            bounded_visual_region(super::full::ProbeRegionArgs {
+                x,
+                y,
+                width,
+                height,
+            })?
         };
-        let mut source = V3VisualFrameSource { core: &self.core, session_id, tab_id, region: resolved_region, initial:None };
-        let placeholder = crate::visual_stability::VisualIdentity { session_id:session_id.to_owned(), tab_id:tab_id.to_owned(), document_id:String::new() };
-        let first_capture = tokio::time::timeout_at(deadline, crate::visual_stability::VisualFrameSource::capture(&mut source, &placeholder, None)).await;
+        let mut source = V3VisualFrameSource {
+            core: &self.core,
+            session_id,
+            tab_id,
+            region: resolved_region,
+            initial: None,
+        };
+        let placeholder = crate::visual_stability::VisualIdentity {
+            session_id: session_id.to_owned(),
+            tab_id: tab_id.to_owned(),
+            document_id: String::new(),
+        };
+        let first_capture = tokio::time::timeout_at(
+            deadline,
+            crate::visual_stability::VisualFrameSource::capture(&mut source, &placeholder, None),
+        )
+        .await;
         let first = match first_capture {
-            Err(_) => return Ok(crate::visual_stability::VisualStabilityResult {
-                stable:false, reason_code:Some("visual_stability_timeout".into()),
-                elapsed_ms:started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-                samples:0, visual_revision:None,
-            }),
-            Ok(Ok(sample)) => sample,
-            Ok(Err(error)) if matches!(error.reason_code, "stale_visual_reference" | "inactive_target" | "visual_stability_timeout") => {
-                return Ok(crate::visual_stability::VisualStabilityResult { stable:false, reason_code:Some(error.reason_code.into()), elapsed_ms:started.elapsed().as_millis().min(u64::MAX as u128) as u64, samples:1, visual_revision:None });
+            Err(_) => {
+                return Ok(crate::visual_stability::VisualStabilityResult {
+                    stable: false,
+                    reason_code: Some("visual_stability_timeout".into()),
+                    elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                    samples: 0,
+                    visual_revision: None,
+                });
             }
-            Ok(Err(error)) => return Err(invalid(format!("{}: {}", error.reason_code, error.message))),
+            Ok(Ok(sample)) => sample,
+            Ok(Err(error))
+                if matches!(
+                    error.reason_code,
+                    "stale_visual_reference" | "inactive_target" | "visual_stability_timeout"
+                ) =>
+            {
+                return Ok(crate::visual_stability::VisualStabilityResult {
+                    stable: false,
+                    reason_code: Some(error.reason_code.into()),
+                    elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                    samples: 1,
+                    visual_revision: None,
+                });
+            }
+            Ok(Err(error)) => {
+                return Err(invalid(format!("{}: {}", error.reason_code, error.message)));
+            }
         };
         let identity = first.identity.clone();
         source.initial = Some(first);
@@ -2273,14 +2646,21 @@ impl AppV3 {
             &mut source,
             &identity,
             crate::visual_stability::VisualStabilityConfig {
-                region: Some(crate::visual_stability::VisualRegion { x: resolved_region.x as u32, y: resolved_region.y as u32, width: resolved_region.width as u32, height: resolved_region.height as u32 }),
+                region: Some(crate::visual_stability::VisualRegion {
+                    x: resolved_region.x as u32,
+                    y: resolved_region.y as u32,
+                    width: resolved_region.width as u32,
+                    height: resolved_region.height as u32,
+                }),
                 quiet_ms,
                 timeout_ms,
                 poll_ms: 100,
             },
             started,
             deadline,
-        ).await.map_err(|error| invalid(format!("{}: {}", error.reason_code, error.message)))
+        )
+        .await
+        .map_err(|error| invalid(format!("{}: {}", error.reason_code, error.message)))
     }
 
     async fn wait_for_open_readiness_or_release(
@@ -2428,15 +2808,30 @@ impl AppV3 {
         let tab_id = args.chrome_tab_id.as_str();
         let action = args.action.as_str();
         let legacy = resolve_reference(&self.core, session_id, tab_id, reference).await?;
-        let (token, index) = legacy.rsplit_once(':').ok_or_else(|| invalid("invalid retained reference"))?;
-        let index = index.parse::<usize>().map_err(|_| invalid("invalid retained index"))?;
-        let live = self.core.legacy.shared_sessions.lock().await.get(session_id).cloned()
+        let (token, index) = legacy
+            .rsplit_once(':')
+            .ok_or_else(|| invalid("invalid retained reference"))?;
+        let index = index
+            .parse::<usize>()
+            .map_err(|_| invalid("invalid retained index"))?;
+        let live = self
+            .core
+            .legacy
+            .shared_sessions
+            .lock()
+            .await
+            .get(session_id)
+            .cloned()
             .ok_or_else(|| invalid("unknown shared session_id"))?;
         let mut live = live.lock().await;
         if live.handle.principal != self.core.legacy.principal.as_ref() {
             return Err(invalid("session is not owned by this server principal"));
         }
-        let snapshot = live.snapshots.get(tab_id).cloned().ok_or_else(|| invalid("take a fresh snapshot"))?;
+        let snapshot = live
+            .snapshots
+            .get(tab_id)
+            .cloned()
+            .ok_or_else(|| invalid("take a fresh snapshot"))?;
         // A workflow owns one snapshot for its whole run. The thread-local
         // allowance is unreliable across async hops, so also accept the lease
         // owner that the VM set on this call. Without this, the second action
@@ -2446,10 +2841,12 @@ impl AppV3 {
             Some(owner) => self.workflow_lease_owners.lock().await.contains(owner),
             None => false,
         };
-        let snapshot_reusable = super::internal_workflow_snapshot_allowed(&snapshot.token)
-            || workflow_owned;
-        if token != snapshot.token || index >= snapshot.count
-            || snapshot.consumed && !snapshot_reusable {
+        let snapshot_reusable =
+            super::internal_workflow_snapshot_allowed(&snapshot.token) || workflow_owned;
+        if token != snapshot.token
+            || index >= snapshot.count
+            || snapshot.consumed && !snapshot_reusable
+        {
             return Ok(json!({
                 "status":"not_dispatched","verified":false,"effect_verified":false,
                 "action":action,"outcome":json!(outcome),
@@ -2461,8 +2858,13 @@ impl AppV3 {
             }));
         }
         let before = {
-            let connection = live.connection.as_ref().ok_or_else(|| invalid("session not accepted"))?;
-            super::super::shared_frame_identity(connection, live.registry()?, &live.handle, tab_id).await.map_err(invalid)?
+            let connection = live
+                .connection
+                .as_ref()
+                .ok_or_else(|| invalid("session not accepted"))?;
+            super::super::shared_frame_identity(connection, live.registry()?, &live.handle, tab_id)
+                .await
+                .map_err(invalid)?
         };
         if before != snapshot.identity {
             return Ok(json!({
@@ -2477,8 +2879,14 @@ impl AppV3 {
         }
         // Consume the exact retained reference before dispatch; never find a
         // replacement node by a matching label in a different document.
-        live.snapshots.get_mut(tab_id).ok_or_else(|| invalid("snapshot disappeared"))?.consumed = true;
-        let connection = live.connection.as_ref().ok_or_else(|| invalid("session not accepted"))?;
+        live.snapshots
+            .get_mut(tab_id)
+            .ok_or_else(|| invalid("snapshot disappeared"))?
+            .consumed = true;
+        let connection = live
+            .connection
+            .as_ref()
+            .ok_or_else(|| invalid("session not accepted"))?;
         let response = connection.command(live.registry()?, &live.handle, tab_id, "Runtime.callFunctionOn", json!({
             "objectId":snapshot.object_id,
             "functionDeclaration":include_str!("../shared_page/background_action.js"),
@@ -2488,7 +2896,14 @@ impl AppV3 {
         let result = match response {
             Ok(response) => match super::super::shared_value(&response) {
                 Ok(value) => value,
-                Err(_) => return Ok(background_dispatch_unknown_receipt(action, outcome, "background_reply_invalid", false)),
+                Err(_) => {
+                    return Ok(background_dispatch_unknown_receipt(
+                        action,
+                        outcome,
+                        "background_reply_invalid",
+                        false,
+                    ));
+                }
             },
             Err(error) => {
                 // A CDP object ID dies when the SPA replaces the node even though
@@ -2504,13 +2919,20 @@ impl AppV3 {
                 {
                     return Ok(background_stale_reference_receipt(action, outcome));
                 }
-                return Ok(background_dispatch_unknown_receipt(action, outcome, "background_delivery_uncertain", false));
+                return Ok(background_dispatch_unknown_receipt(
+                    action,
+                    outcome,
+                    "background_delivery_uncertain",
+                    false,
+                ));
             }
         };
         let result = result.get("value").cloned().unwrap_or(result);
         let dispatched = result["dispatched"] == true;
         if result["ok"] != true {
-            let reason = result["reason"].as_str().unwrap_or("background_effect_not_verified");
+            let reason = result["reason"]
+                .as_str()
+                .unwrap_or("background_effect_not_verified");
             let event_seen = result.get("event_seen").cloned().unwrap_or(Value::Null);
             return Ok(json!({
                 "status":if dispatched {"unknown"} else {"not_dispatched"},
@@ -2532,7 +2954,9 @@ impl AppV3 {
         // navigation. Poll the document identity for the caller's bounded
         // timeout instead of reading once and reporting a successful submit as
         // unknown. Other outcomes settle inside background_action.js.
-        let mut after = super::super::shared_frame_identity(connection, live.registry()?, &live.handle, tab_id).await;
+        let mut after =
+            super::super::shared_frame_identity(connection, live.registry()?, &live.handle, tab_id)
+                .await;
         let mut navigation_verified = false;
         if let Some(BrowserClickOutcome::Navigation { url }) = outcome {
             let deadline = tokio::time::Instant::now()
@@ -2565,13 +2989,44 @@ impl AppV3 {
         // reporting a successful open as not_observed.
         let selector_verified = match outcome {
             Some(BrowserClickOutcome::Visible { selector }) => {
-                background_selector_state_polled(connection, live.registry()?, &live.handle, tab_id, selector, "visible", args.timeout_ms).await
+                background_selector_state_polled(
+                    connection,
+                    live.registry()?,
+                    &live.handle,
+                    tab_id,
+                    selector,
+                    "visible",
+                    args.timeout_ms,
+                )
+                .await
             }
-            Some(BrowserClickOutcome::Expanded { selector: Some(selector) }) => {
-                background_selector_state_polled(connection, live.registry()?, &live.handle, tab_id, selector, "expanded", args.timeout_ms).await
+            Some(BrowserClickOutcome::Expanded {
+                selector: Some(selector),
+            }) => {
+                background_selector_state_polled(
+                    connection,
+                    live.registry()?,
+                    &live.handle,
+                    tab_id,
+                    selector,
+                    "expanded",
+                    args.timeout_ms,
+                )
+                .await
             }
-            Some(BrowserClickOutcome::Selected { selector: Some(selector) }) => {
-                background_selector_state_polled(connection, live.registry()?, &live.handle, tab_id, selector, "selected", args.timeout_ms).await
+            Some(BrowserClickOutcome::Selected {
+                selector: Some(selector),
+            }) => {
+                background_selector_state_polled(
+                    connection,
+                    live.registry()?,
+                    &live.handle,
+                    tab_id,
+                    selector,
+                    "selected",
+                    args.timeout_ms,
+                )
+                .await
             }
             _ => false,
         };
@@ -2606,8 +3061,12 @@ impl AppV3 {
         let after_ref = after.as_ref().ok();
         let same_document = document_unchanged;
         let verified = match outcome {
-            Some(BrowserClickOutcome::Navigation { url }) => navigation_verified
-                || after_ref.is_some_and(|current| background_navigation_matches(&before, current, url.as_deref())),
+            Some(BrowserClickOutcome::Navigation { url }) => {
+                navigation_verified
+                    || after_ref.is_some_and(|current| {
+                        background_navigation_matches(&before, current, url.as_deref())
+                    })
+            }
             // A background DOM activation cannot prove a new tab exists; do
             // not turn a popup click into a false verified receipt.
             Some(BrowserClickOutcome::NewTab { .. }) => false,
@@ -2618,8 +3077,12 @@ impl AppV3 {
             Some(BrowserClickOutcome::Expanded { selector: Some(_) }) => selector_verified,
             Some(BrowserClickOutcome::Selected { selector: Some(_) }) => selector_verified,
             _ if same_document => match outcome {
-                Some(BrowserClickOutcome::Expanded { selector: None }) => result["expanded_after"] == true,
-                Some(BrowserClickOutcome::Selected { selector: None }) => result["selected_after"] == true,
+                Some(BrowserClickOutcome::Expanded { selector: None }) => {
+                    result["expanded_after"] == true
+                }
+                Some(BrowserClickOutcome::Selected { selector: None }) => {
+                    result["selected_after"] == true
+                }
                 Some(BrowserClickOutcome::Focused) => result["focused_after"] == true,
                 Some(_) => false,
                 // An undeclared click is verified by an observed state change,
@@ -2814,19 +3277,29 @@ impl AppV3 {
         let mut host_id = args.host_id.clone();
         let target_ids = match args.target_ids.clone() {
             Some(ids) => {
-                if args.chrome_tab_id.as_deref().is_some_and(|id| !ids.iter().any(|candidate| candidate == id)) {
-                    return Err(invalid("requested chrome_tab_id is not among the selected target_ids"));
+                if args
+                    .chrome_tab_id
+                    .as_deref()
+                    .is_some_and(|id| !ids.iter().any(|candidate| candidate == id))
+                {
+                    return Err(invalid(
+                        "requested chrome_tab_id is not among the selected target_ids",
+                    ));
                 }
                 ids
-            },
+            }
             None if crate::guard_reason::unrestricted_mode() => {
                 let snapshot = crate::native_setup::read_tabs().map_err(bridge_failure)?;
                 let tabs = snapshot["tabs"]
                     .as_array()
                     .ok_or_else(|| invalid("native tab inventory omitted tabs"))?;
                 vec![
-                    selected_open_anchor_tab_id(tabs, snapshot["last_focused_window_id"].as_u64(), args.chrome_tab_id.as_deref())
-                        .map_err(invalid)?,
+                    selected_open_anchor_tab_id(
+                        tabs,
+                        snapshot["last_focused_window_id"].as_u64(),
+                        args.chrome_tab_id.as_deref(),
+                    )
+                    .map_err(invalid)?,
                 ]
             }
             None if !crate::guard_reason::unrestricted_mode() => {
@@ -2987,7 +3460,10 @@ impl AppV3 {
         mode: crate::v3::BrowserMode,
         url: &str,
     ) -> Result<Option<(String, String, Option<String>)>, rmcp::ErrorData> {
-        if args.reuse_existing == Some(false) || args.target_policy.is_some() || args.window_id.is_some() {
+        if args.reuse_existing == Some(false)
+            || args.target_policy.is_some()
+            || args.window_id.is_some()
+        {
             return Ok(None);
         }
         let Json(discovery) = self
@@ -3007,7 +3483,9 @@ impl AppV3 {
         let tabs = discovery["snapshot"]["tabs"]
             .as_array()
             .ok_or_else(|| invalid("fresh guarded discovery omitted tabs"))?;
-        let Some((candidate, _candidate_window)) = reusable_tab_for_url(tabs, url, args.chrome_tab_id.as_deref()) else {
+        let Some((candidate, _candidate_window)) =
+            reusable_tab_for_url(tabs, url, args.chrome_tab_id.as_deref())
+        else {
             return Ok(None);
         };
         // A repeat open of a URL this server already attached must connect to
@@ -3057,7 +3535,9 @@ impl AppV3 {
             .insert(session_id.clone(), mode);
         if pair["native_bridge"] != true {
             self.release_cold_session(&session_id).await;
-            return Err(invalid("native Chrome bridge is unavailable for existing-tab reuse"));
+            return Err(invalid(
+                "native Chrome bridge is unavailable for existing-tab reuse",
+            ));
         }
         let accepted = self
             .core
@@ -3222,7 +3702,10 @@ fn click_verification_receipt(
     )
 }
 
-fn background_stale_reference_receipt(action: &str, outcome: Option<&BrowserClickOutcome>) -> Value {
+fn background_stale_reference_receipt(
+    action: &str,
+    outcome: Option<&BrowserClickOutcome>,
+) -> Value {
     json!({
         "status":"not_dispatched",
         "verified":false,
@@ -3351,8 +3834,7 @@ impl WorkflowLeaseGuard {
                 process_lease_coordinator()
                     .retain_on_unknown(&process_lease_key(&self.target), &self.owner);
             } else {
-                process_lease_coordinator()
-                    .release(&process_lease_key(&self.target), &self.owner);
+                process_lease_coordinator().release(&process_lease_key(&self.target), &self.owner);
             }
         }
         self.active = false;
@@ -3422,7 +3904,9 @@ async fn renew_workflow_lease(app: &AppV3, session_id: &str, tab_id: &str, owner
     let mut leases = app.leases.lock().await;
     // Read-only workflows hold shared reader leases, not the exclusive lease.
     leases.renew(&target, owner, now_ms(), 120_000).is_some()
-        || leases.renew_read(&target, owner, now_ms(), 120_000).is_some()
+        || leases
+            .renew_read(&target, owner, now_ms(), 120_000)
+            .is_some()
 }
 
 impl Drop for WorkflowLeaseGuard {
@@ -3458,11 +3942,12 @@ impl Drop for WorkflowLeaseGuard {
     {"if":{"properties":{"action":{"const":"transition_presentation"}},"required":["action"]},"then":{"required":["session_id","chrome_tab_id","mode"]}},
     {"if":{"properties":{"action":{"const":"adopt_popup"}},"required":["action"]},"then":{"required":["session_id","chrome_tab_id","url","candidate_tab_id","created_at_ms","since_ms","account_marker"]}},
     {"if":{"properties":{"action":{"const":"evidence_read"}},"required":["action"]},"then":{"required":["evidence_handle"]}},
+    {"if":{"properties":{"action":{"const":"diagnostics"}},"required":["action"]},"then":{"required":["session_id","chrome_tab_id"]}},
     {"if":{"properties":{"target_policy":{"enum":["existing_automation_window","existing_window"]}},"required":["target_policy"]},"then":{"required":["window_id"]}}
 ]))]
 struct V3BrowserArgs {
     tab_operation: Option<V3TabOperation>,
-    #[schemars(extend("enum" = ["accept_shared", "activate", "adopt_popup", "artifact_read", "artifact_register", "close_owned", "describe", "discover_shared_tabs", "evidence_read", "launch", "list", "move_owned", "open", "pair_shared", "release", "skill", "tabs", "task", "transition_presentation"]))]
+    #[schemars(extend("enum" = ["accept_shared", "activate", "adopt_popup", "artifact_read", "artifact_register", "close_owned", "describe", "diagnostics", "discover_shared_tabs", "evidence_read", "launch", "list", "move_owned", "open", "pair_shared", "release", "skill", "tabs", "task", "transition_presentation"]))]
     action: String,
     provider: Option<String>,
     session_id: Option<String>,
@@ -3474,7 +3959,9 @@ struct V3BrowserArgs {
     discover_domain: Option<String>,
     #[schemars(description = "headless for a private browser; omit for an existing session.")]
     mode: Option<String>,
-    #[schemars(description = "create_background_window, existing_automation_window, existing_window.")]
+    #[schemars(
+        description = "create_background_window, existing_automation_window, existing_window."
+    )]
     target_policy: Option<String>,
     #[schemars(description = "previously created by Controlla")]
     window_id: Option<u64>,
@@ -3486,20 +3973,20 @@ struct V3BrowserArgs {
     account_marker: Option<super::SecureAccountMarker>,
     #[schemars(description = "Tagged object document_committed.")]
     ready_when: Option<V3ReadyWhen>,
-    #[schemars(
-        description = "{\"kind\":\"research\"}; read-only research tasks without tab_ids."
-    )]
+    #[schemars(description = "{\"kind\":\"research\"}; read-only research tasks without tab_ids.")]
     task: Option<crate::v3_tasks::TaskPrimitive>,
     #[serde(default)]
-    #[schemars(
-        description = "Bounded task program via the workflow VM; exclusive with task."
-    )]
+    #[schemars(description = "Bounded task program via the workflow VM; exclusive with task.")]
     task_program: Option<crate::task_program::TaskProgram>,
     #[serde(default)]
     resume_key: Option<String>,
     max_bytes: Option<usize>,
     #[schemars(description = "Reason required.")]
     max_bytes_reason: Option<String>,
+    #[schemars(description = "diagnostics: 1..32 entries; default 16.")]
+    diagnostic_limit: Option<usize>,
+    #[schemars(description = "diagnostics: clear returned entries.")]
+    diagnostic_clear: Option<bool>,
     release_after_task: Option<bool>,
     #[schemars(description = "register")]
     skill_action: Option<String>,
@@ -3513,7 +4000,9 @@ struct V3BrowserArgs {
     bytes: Option<Vec<u8>>,
     bytes_base64: Option<String>,
     #[serde(default)]
-    #[schemars(description = "Explicitly approve reading file_path for upload staging; required for guarded foreground/shared sessions, never inferred.")]
+    #[schemars(
+        description = "Explicitly approve reading file_path for upload staging; required for guarded foreground/shared sessions, never inferred."
+    )]
     allow_local_file_path: Option<bool>,
     file_path: Option<String>,
     artifact_handle: Option<String>,
@@ -3539,7 +4028,12 @@ struct V3TabTarget {
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-enum V3TabKind { Group, Ungroup, Move, Close }
+enum V3TabKind {
+    Group,
+    Ungroup,
+    Move,
+    Close,
+}
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -3562,9 +4056,14 @@ struct V3TabOperation {
 }
 
 impl V3TabOperation {
-    fn targets(&self) -> &[V3TabTarget] { &self.targets }
+    fn targets(&self) -> &[V3TabTarget] {
+        &self.targets
+    }
     fn valid_shape(&self) -> bool {
-        let group_fields = self.group_id.is_some() || self.title.is_some() || self.color.is_some() || self.collapsed.is_some();
+        let group_fields = self.group_id.is_some()
+            || self.title.is_some()
+            || self.color.is_some()
+            || self.collapsed.is_some();
         let move_fields = self.window_id.is_some() || self.index.is_some();
         match self.kind {
             V3TabKind::Group => !move_fields,
@@ -3579,9 +4078,16 @@ impl V3TabOperation {
 enum V3ReadyWhen {
     DocumentCommitted,
     DomContentLoaded,
-    UrlPrefix { prefix: String },
-    Selector { selector: String },
-    SemanticMatch { query: String, role: Option<String> },
+    UrlPrefix {
+        prefix: String,
+    },
+    Selector {
+        selector: String,
+    },
+    SemanticMatch {
+        query: String,
+        role: Option<String>,
+    },
     VisualStable {
         region: Option<super::full::ProbeRegionArgs>,
         #[schemars(range(min = 150, max = 2_000))]
@@ -3642,7 +4148,9 @@ struct V3ActArgs {
     #[serde(default)]
     #[schemars(skip)]
     expected_visual_revision: Option<String>,
-    #[schemars(description = "Fresh @cN reference, or an exact role/name such as link ‘Buffalo Bills’ resolved on the selected tab before the action.")]
+    #[schemars(
+        description = "Fresh @cN reference, or an exact role/name such as link ‘Buffalo Bills’ resolved on the selected tab before the action."
+    )]
     reference: Option<String>,
     expected_value: Option<String>,
     #[schemars(
@@ -3651,15 +4159,13 @@ struct V3ActArgs {
     value: Option<String>,
     #[schemars(description = "Enable secure_fill on a fresh empty password field.")]
     allow_password: Option<bool>,
-    #[schemars(
-        description = "secure_fill: exact HTTPS origin."
-    )]
+    #[schemars(description = "secure_fill: exact HTTPS origin.")]
     expected_origin: Option<String>,
-    #[schemars(
-        description = "secure_fill: visible account marker; never put a password here."
-    )]
+    #[schemars(description = "secure_fill: visible account marker; never put a password here.")]
     account_marker: Option<super::SecureAccountMarker>,
-    #[schemars(description = "Final purchase controls require this exact order, total, account and action for a local user approval prompt before dispatch.")]
+    #[schemars(
+        description = "Final purchase controls require this exact order, total, account and action for a local user approval prompt before dispatch."
+    )]
     order_confirmation: Option<V3OrderConfirmation>,
     #[schemars(
         description = "press only: one key or chord (e.g. Control+A); supports Control, Shift, Alt and Meta."
@@ -3667,9 +4173,12 @@ struct V3ActArgs {
     key: Option<String>,
     outcome: Option<BrowserClickOutcome>,
     timeout_ms: Option<u64>,
+    #[schemars(
+        description = "Typing strategy. Omit or use auto for the fastest verified path; human_keys is explicit human pacing and is never selected automatically. block, fast_keys, and ime are explicit overrides."
+    )]
     typing_mode: Option<String>,
     #[schemars(
-        description = "human_keys mean delay per character in ms (0-600; default 280, about 40 WPM). Real per-key pauses vary around it and lengthen after punctuation."
+        description = "HumanKeys only: mean delay per character in ms (0-600; default 280, about 40 WPM). Real per-key pauses vary around it and lengthen after punctuation; auto and fast modes ignore it."
     )]
     delay_ms: Option<u64>,
     client_id: Option<String>,
@@ -3677,13 +4186,9 @@ struct V3ActArgs {
     page_tool_input: Option<Value>,
     #[schemars(description = "Act receipt size; capped at 1 MiB.")]
     max_bytes: Option<usize>,
-    #[schemars(
-        description = "Reason required when max_bytes exceeds 2 KiB."
-    )]
+    #[schemars(description = "Reason required when max_bytes exceeds 2 KiB.")]
     max_bytes_reason: Option<String>,
-    #[schemars(
-        description = "scroll: one axis, nonzero delta; scroll_to uses a fresh root ref."
-    )]
+    #[schemars(description = "scroll: one axis, nonzero delta; scroll_to uses a fresh root ref.")]
     delta_x: Option<i32>,
     delta_y: Option<i32>,
     #[schemars(
@@ -3693,7 +4198,9 @@ struct V3ActArgs {
     start_y: Option<f64>,
     end_x: Option<f64>,
     end_y: Option<f64>,
-    #[schemars(description = "multi_touch: fresh root ref, center/distances in CSS pixels; ratio 0.5..=2.")]
+    #[schemars(
+        description = "multi_touch: fresh root ref, center/distances in CSS pixels; ratio 0.5..=2."
+    )]
     center_x: Option<f64>,
     center_y: Option<f64>,
     start_distance: Option<f64>,
@@ -3780,7 +4287,9 @@ struct V3WorkflowArgs {
     )]
     max_bytes: Option<usize>,
     #[serde(default)]
-    #[schemars(description = "Explicitly retain up to 2.5 KiB of extracted page text per evidence item; may include sensitive data.")]
+    #[schemars(
+        description = "Explicitly retain up to 2.5 KiB of extracted page text per evidence item; may include sensitive data."
+    )]
     retain_text_evidence: bool,
     #[serde(default)]
     #[schemars(
@@ -3849,7 +4358,7 @@ struct V3SnapshotArgs {
     max_bytes: Option<usize>,
     #[serde(default)]
     #[schemars(
-        description = "Explain why a targeted snapshot above 12 KiB is needed; larger responses are capped at 1 MiB."
+        description = "Explain why a targeted snapshot above its 32 KiB default is needed; larger responses are capped at 1 MiB."
     )]
     max_bytes_reason: Option<String>,
     href_hint: Option<String>,
@@ -3878,12 +4387,12 @@ enum V3SnapshotProbe {
         timeout_ms: Option<u64>,
         #[serde(default)]
         #[schemars(
-            description = "Save the PNG to the session artifact store and a principal-scoped, one-hour visual evidence handle (270 KB max); defaults false."
+            description = "Save PNG to the session artifact store with a one-hour evidence handle; default false."
         )]
         save_artifact: bool,
         #[serde(default)]
         #[schemars(
-            description = "Omit Base64 when save_artifact=true; retrieve PNG later by handle."
+            description = "Omit Base64 when save_artifact=true; read it later by handle."
         )]
         omit_image_payload: bool,
     },
@@ -3893,12 +4402,12 @@ enum V3SnapshotProbe {
         timeout_ms: Option<u64>,
         #[serde(default)]
         #[schemars(
-            description = "Save the PNG to the session artifact store and a principal-scoped, one-hour visual evidence handle (270 KB max); defaults false."
+            description = "Save PNG to the session artifact store with a one-hour evidence handle; default false."
         )]
         save_artifact: bool,
         #[serde(default)]
         #[schemars(
-            description = "Omit Base64 when save_artifact=true; retrieve PNG later by handle."
+            description = "Omit Base64 when save_artifact=true; read it later by handle."
         )]
         omit_image_payload: bool,
     },
@@ -3920,7 +4429,9 @@ struct V3ArtifactRegisterArgs {
     bytes: Option<Vec<u8>>,
     bytes_base64: Option<String>,
     #[serde(default)]
-    #[schemars(description = "Explicitly approve reading the user-supplied local file_path for upload staging. Required for guarded foreground/shared sessions; never inferred from the path.")]
+    #[schemars(
+        description = "Explicitly approve reading the user-supplied local file_path for upload staging. Required for guarded foreground/shared sessions; never inferred from the path."
+    )]
     allow_local_file_path: Option<bool>,
     file_path: Option<String>,
 }
@@ -4079,7 +4590,7 @@ enum V3WorkflowStep {
         #[serde(default)]
         persisted: Option<Value>,
     },
-    /// Staged browser-file drops are a distinct guarded workflow contract.
+    /// Guarded browser-file drop contract.
     UploadDrop {
         artifact_handles: Vec<String>,
         #[serde(default)]
@@ -4123,14 +4634,14 @@ enum V3WorkflowStep {
     },
     CommitEvidence {
         reference: String,
-        /// Explicit fresh fact required before an observation can enter durable task memory.
+        /// Fresh fact required for durable task memory.
         predicate: BrowserPredicate,
     },
     PageTool {
         name: String,
         input: Value,
     },
-    /// Expand a registered app adapter into bounded generic workflow steps.
+    /// Expand an app adapter into workflow steps.
     AppAdapterPlan {
         #[schemars(
             description = "Canva, Drive picker or Classroom attachment; visible UI proof only."
@@ -4139,19 +4650,19 @@ enum V3WorkflowStep {
         #[schemars(description = "Versioned predicate for the selected adapter.")]
         predicate: Value,
         #[schemars(
-            description = "Required for google_classroom_attachment_v1: staged artifact handle."
+            description = "Classroom: staged artifact handle."
         )]
         artifact_handle: Option<String>,
         #[schemars(
-            description = "Required for google_classroom_attachment_v1: fresh upload-trigger reference."
+            description = "Classroom: fresh upload-trigger ref."
         )]
         trigger_reference: Option<String>,
         #[schemars(
-            description = "Required for google_classroom_attachment_v1: account identity selector."
+            description = "Classroom: account selector."
         )]
         account_selector: Option<String>,
         #[schemars(
-            description = "Required for google_classroom_attachment_v1: expected visible account identity."
+            description = "Classroom: expected account."
         )]
         account_expected: Option<String>,
     },
@@ -4211,8 +4722,8 @@ impl crate::workflow_vm::VmOperation for V3WorkflowStep {
     fn effect(&self) -> crate::workflow::EffectClass {
         use crate::workflow::EffectClass;
         match self {
-            Self::WaitStable { .. } |
-            Self::Snapshot { .. }
+            Self::WaitStable { .. }
+            | Self::Snapshot { .. }
             | Self::Find { .. }
             | Self::FindAll { .. }
             | Self::CollectVirtual { .. }
@@ -4318,7 +4829,15 @@ impl crate::workflow_vm::BrowserVmHost<V3WorkflowStep> for V3WorkflowHost<'_> {
             let detail = value.to_string();
             let status = value["status"].as_str();
             if effect != crate::workflow::EffectClass::ReadOnly
-                && matches!(status, Some("unknown" | "dispatched"))
+                && matches!(
+                    status,
+                    Some(
+                        "unknown"
+                            | "dispatched"
+                            | "dispatched_unverified"
+                            | "dispatched_pending_verification"
+                    )
+                )
             {
                 state.pending_readback = true;
                 state.unverified_effect = true;
@@ -4435,9 +4954,9 @@ fn tool_validation_result(error: rmcp::ErrorData) -> rmcp::model::CallToolResult
         "next_action":next_action,
         "bridge_kind":bridge_kind,
     });
-    let mut result = rmcp::model::CallToolResult::error(vec![
-        rmcp::model::ContentBlock::text(format!("{reason} Next action: {next_action}")),
-    ]);
+    let mut result = rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(
+        format!("{reason} Next action: {next_action}"),
+    )]);
     result.structured_content = Some(payload);
     result
 }
@@ -4450,21 +4969,46 @@ fn compact_shared_discovery(
     if query.is_some_and(|value| value.len() > 160 || value.chars().any(char::is_control))
         || domain.is_some_and(|value| value.len() > 253 || value.chars().any(char::is_control))
     {
-        return Err(invalid("discovery query/domain must be bounded printable text"));
+        return Err(invalid(
+            "discovery query/domain must be bounded printable text",
+        ));
     }
-    let snapshot = response.get_mut("snapshot").ok_or_else(|| invalid("tab discovery omitted its snapshot"))?;
-    let tabs = snapshot["tabs"].as_array().ok_or_else(|| invalid("tab discovery omitted tabs"))?;
-    let query = query.map(str::trim).filter(|value| !value.is_empty()).map(str::to_lowercase);
-    let domain = domain.map(str::trim).filter(|value| !value.is_empty()).map(str::to_lowercase);
+    let snapshot = response
+        .get_mut("snapshot")
+        .ok_or_else(|| invalid("tab discovery omitted its snapshot"))?;
+    let tabs = snapshot["tabs"]
+        .as_array()
+        .ok_or_else(|| invalid("tab discovery omitted tabs"))?;
+    let query = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let domain = domain
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
     let mut matches = Vec::new();
     for tab in tabs {
         let raw_url = tab["url"].as_str().unwrap_or_default();
-        let Ok(parsed) = url::Url::parse(raw_url) else { continue };
-        let Some(host) = parsed.host_str() else { continue };
-        if domain.as_deref().is_some_and(|expected| !host.eq_ignore_ascii_case(expected)) { continue; }
+        let Ok(parsed) = url::Url::parse(raw_url) else {
+            continue;
+        };
+        let Some(host) = parsed.host_str() else {
+            continue;
+        };
+        if domain
+            .as_deref()
+            .is_some_and(|expected| !host.eq_ignore_ascii_case(expected))
+        {
+            continue;
+        }
         let title = tab["title"].as_str().unwrap_or_default();
         if let Some(query) = &query
-            && !title.to_lowercase().contains(query) && !raw_url.to_lowercase().contains(query) { continue; }
+            && !title.to_lowercase().contains(query)
+            && !raw_url.to_lowercase().contains(query)
+        {
+            continue;
+        }
         matches.push(json!({
             "id":tab["id"],"document_id":tab["document_id"],
             "window_id":tab["window_id"],"group_id":tab["group_id"],
@@ -4494,23 +5038,54 @@ fn parse_semantic_text_reference(reference: &str) -> Option<(&'static str, Strin
     let input = reference.trim();
     let (role, name) = ["link", "button", "textbox", "tab", "checkbox", "option"]
         .into_iter()
-        .find_map(|role| input.strip_prefix(role).and_then(|name| name.strip_prefix(' ')).map(|name| (role, name)))?;
-    let name = name.trim().trim_matches(|character| matches!(character, '\'' | '"' | '‘' | '’' | '“' | '”')).trim();
-    if name.is_empty() || name.len() > 160 || name.chars().any(char::is_control) { return None; }
+        .find_map(|role| {
+            input
+                .strip_prefix(role)
+                .and_then(|name| name.strip_prefix(' '))
+                .map(|name| (role, name))
+        })?;
+    let name = name
+        .trim()
+        .trim_matches(|character| matches!(character, '\'' | '"' | '‘' | '’' | '“' | '”'))
+        .trim();
+    if name.is_empty() || name.len() > 160 || name.chars().any(char::is_control) {
+        return None;
+    }
     Some((role, name.to_owned()))
 }
 
 fn is_final_order_control(name: &str) -> bool {
-    let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-    ["place order", "submit order", "confirm order", "complete order", "buy now",
-        "pay now", "purchase now", "complete purchase", "confirm purchase", "submit payment"]
-        .iter().any(|label| normalized == *label || normalized.starts_with(&format!("{label} ")))
+    let normalized = name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    [
+        "place order",
+        "submit order",
+        "confirm order",
+        "complete order",
+        "buy now",
+        "pay now",
+        "purchase now",
+        "complete purchase",
+        "confirm purchase",
+        "submit payment",
+    ]
+    .iter()
+    .any(|label| normalized == *label || normalized.starts_with(&format!("{label} ")))
 }
 
-fn valid_order_confirmation(confirmation: &V3OrderConfirmation, origin: &str, action_name: &str) -> bool {
-    let bounded = |value: &str, limit: usize| !value.trim().is_empty()
-        && value.len() <= limit && !value.chars().any(char::is_control);
-    confirmation.expected_origin == origin && origin.starts_with("https://")
+fn valid_order_confirmation(
+    confirmation: &V3OrderConfirmation,
+    origin: &str,
+    action_name: &str,
+) -> bool {
+    let bounded = |value: &str, limit: usize| {
+        !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
+    };
+    confirmation.expected_origin == origin
+        && origin.starts_with("https://")
         && confirmation.final_action.trim() == action_name.trim()
         && bounded(&confirmation.item_summary, 512)
         && bounded(&confirmation.total, 128)
@@ -4526,13 +5101,24 @@ display dialog messageText buttons {"Cancel", "Approve"} default button "Cancel"
 if button returned of result is "Approve" then return "APPROVED"
 end run"#;
         let mut command = tokio::process::Command::new("/usr/bin/osascript");
-        command.arg("-e").arg(script).arg("--")
-            .arg(&confirmation.expected_origin).arg(&confirmation.item_summary)
-            .arg(&confirmation.total).arg(&confirmation.account).arg(&confirmation.final_action)
+        command
+            .arg("-e")
+            .arg(script)
+            .arg("--")
+            .arg(&confirmation.expected_origin)
+            .arg(&confirmation.item_summary)
+            .arg(&confirmation.total)
+            .arg(&confirmation.account)
+            .arg(&confirmation.final_action)
             .kill_on_drop(true);
-        tokio::time::timeout(Duration::from_secs(75), command.output()).await
-            .ok().and_then(Result::ok)
-            .is_some_and(|output| output.status.success() && String::from_utf8_lossy(&output.stdout).contains("APPROVED"))
+        tokio::time::timeout(Duration::from_secs(75), command.output())
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .is_some_and(|output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains("APPROVED")
+            })
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -4545,24 +5131,50 @@ const CHALLENGE_STATUS_EXPRESSION: &str = r#"(()=>{try{const visible=e=>{if(!e)r
 
 impl AppV3 {
     async fn challenge_handoff_kind(&self, session_id: &str, tab_id: &str) -> Option<String> {
-        let session = self.core.legacy.shared_sessions.lock().await.get(session_id).cloned()?;
+        let session = self
+            .core
+            .legacy
+            .shared_sessions
+            .lock()
+            .await
+            .get(session_id)
+            .cloned()?;
         let session = session.lock().await;
         let connection = session.connection.as_ref()?;
-        let response = connection.command(session.registry().ok()?, &session.handle, tab_id,
-            "Runtime.evaluate", json!({"expression":CHALLENGE_STATUS_EXPRESSION,"returnByValue":true})).await.ok()?;
+        let response = connection
+            .command(
+                session.registry().ok()?,
+                &session.handle,
+                tab_id,
+                "Runtime.evaluate",
+                json!({"expression":CHALLENGE_STATUS_EXPRESSION,"returnByValue":true}),
+            )
+            .await
+            .ok()?;
         let value = super::super::shared_value(&response).ok()?;
-        value["kind"].as_str().filter(|kind| !kind.is_empty()).map(str::to_owned)
+        value["kind"]
+            .as_str()
+            .filter(|kind| !kind.is_empty())
+            .map(str::to_owned)
     }
 }
 
 fn enrich_tool_error(mut result: rmcp::model::CallToolResult) -> rmcp::model::CallToolResult {
     if result.is_error == Some(true) && result.structured_content.is_none() {
-        let raw = result.content.iter().find_map(|block| block.as_text().map(|text| text.text.as_str())).unwrap_or("tool request failed");
+        let raw = result
+            .content
+            .iter()
+            .find_map(|block| block.as_text().map(|text| text.text.as_str()))
+            .unwrap_or("tool request failed");
         let reason = raw.split(", expected one of").next().unwrap_or(raw);
         let reason: String = reason.chars().take(512).collect();
         let next_action = "Correct the named argument or refresh the selected tab and document identity; inspect any uncertain mutation before retrying.";
-        result.content = vec![rmcp::model::ContentBlock::text(format!("{reason} Next action: {next_action}"))];
-        result.structured_content = Some(json!({"status":"error","reason_code":"invalid_tool_request","reason":reason,"dispatch_may_have_occurred":false,"next_action":next_action}));
+        result.content = vec![rmcp::model::ContentBlock::text(format!(
+            "{reason} Next action: {next_action}"
+        ))];
+        result.structured_content = Some(
+            json!({"status":"error","reason_code":"invalid_tool_request","reason":reason,"dispatch_may_have_occurred":false,"next_action":next_action}),
+        );
     }
     result
 }
@@ -4858,20 +5470,61 @@ async fn type_frame_reference(
 }
 
 async fn swipe_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
-    let reference=args.reference.as_deref().ok_or_else(||invalid("frame swipe requires a fresh frame reference"))?;
-    let parts=reference.strip_prefix("@f:").unwrap_or_default().splitn(3,':').collect::<Vec<_>>();
-    if parts.len()!=3||parts[0].is_empty()||parts[0].len()>256||parts[1].is_empty()||parts[1].len()>256 {
-        return Err(invalid("frame swipe requires @f:<frame>:<loader>:<backend-node>"));
+    let reference = args
+        .reference
+        .as_deref()
+        .ok_or_else(|| invalid("frame swipe requires a fresh frame reference"))?;
+    let parts = reference
+        .strip_prefix("@f:")
+        .unwrap_or_default()
+        .splitn(3, ':')
+        .collect::<Vec<_>>();
+    if parts.len() != 3
+        || parts[0].is_empty()
+        || parts[0].len() > 256
+        || parts[1].is_empty()
+        || parts[1].len() > 256
+    {
+        return Err(invalid(
+            "frame swipe requires @f:<frame>:<loader>:<backend-node>",
+        ));
     }
-    let backend_node_id=parts[2].parse::<i64>().ok().filter(|id|*id>0).ok_or_else(||invalid("frame swipe reference has an invalid backend node identity"))?;
-    let (Some(start_x),Some(start_y),Some(end_x),Some(end_y))=(args.start_x,args.start_y,args.end_x,args.end_y) else {return Err(invalid("frame swipe requires bounded child-frame viewport endpoints"));};
-    let presentation=presentation_state(app,&args.session_id,&args.chrome_tab_id).await;
-    let expected_activation_epoch=presentation.as_ref().and_then(|state|state["activation_epoch"].as_u64());
-    let expected_focus_epoch=presentation.as_ref().and_then(|state|state["focus_epoch"].as_u64());
-    let shared=app.core.legacy.shared_sessions.lock().await.get(&args.session_id).cloned().ok_or_else(||invalid("unknown shared session"))?;
-    let shared=shared.lock().await;
-    if shared.handle.principal!=app.core.legacy.principal.as_ref(){return Err(invalid("session is not owned by this server principal"));}
-    let connection=shared.connection.as_ref().ok_or_else(||invalid("shared extension session has not been accepted"))?;
+    let backend_node_id = parts[2]
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| invalid("frame swipe reference has an invalid backend node identity"))?;
+    let (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) =
+        (args.start_x, args.start_y, args.end_x, args.end_y)
+    else {
+        return Err(invalid(
+            "frame swipe requires bounded child-frame viewport endpoints",
+        ));
+    };
+    let presentation = presentation_state(app, &args.session_id, &args.chrome_tab_id).await;
+    let expected_activation_epoch = presentation
+        .as_ref()
+        .and_then(|state| state["activation_epoch"].as_u64());
+    let expected_focus_epoch = presentation
+        .as_ref()
+        .and_then(|state| state["focus_epoch"].as_u64());
+    let shared = app
+        .core
+        .legacy
+        .shared_sessions
+        .lock()
+        .await
+        .get(&args.session_id)
+        .cloned()
+        .ok_or_else(|| invalid("unknown shared session"))?;
+    let shared = shared.lock().await;
+    if shared.handle.principal != app.core.legacy.principal.as_ref() {
+        return Err(invalid("session is not owned by this server principal"));
+    }
+    let connection = shared
+        .connection
+        .as_ref()
+        .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
     let response=connection.command(shared.registry()?,&shared.handle,&args.chrome_tab_id,"Controlla.frameSwipe",json!({
         "frame_id":parts[0],"loader_id":parts[1],"backend_node_id":backend_node_id,
         "start_x":start_x,"start_y":start_y,"end_x":end_x,"end_y":end_y,
@@ -4879,36 +5532,87 @@ async fn swipe_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, r
         "expected_activation_epoch":expected_activation_epoch,"expected_focus_epoch":expected_focus_epoch
     })).await;
     match response {
-        Ok(response)=>{
-            let evidence=super::super::shared_value(&response).map_err(invalid)?;
-            let status=evidence["status"].as_str().unwrap_or("unknown");
-            Ok(json!({"status":status,"action":"swipe","reference":reference,"source_frame_id":parts[0],"coordinate_space":"child_frame_css_viewport",
+        Ok(response) => {
+            let evidence = super::super::shared_value(&response).map_err(invalid)?;
+            let status = evidence["status"].as_str().unwrap_or("unknown");
+            Ok(
+                json!({"status":status,"action":"swipe","reference":reference,"source_frame_id":parts[0],"coordinate_space":"child_frame_css_viewport",
                 "dispatch_acknowledged":evidence["dispatch_acknowledged"],"dispatch_may_have_occurred":evidence["dispatch_may_have_occurred"],
-                "reason_code":evidence["reason_code"],"reason":evidence["reason"],"meaningful_movement_observed":(status=="verified").then_some(true),"dispatch":evidence}))
+                "reason_code":evidence["reason_code"],"reason":evidence["reason"],"meaningful_movement_observed":(status=="verified").then_some(true),"dispatch":evidence}),
+            )
         }
-        Err(error)=>Ok(json!({"status":"unknown","action":"swipe","reference":reference,"source_frame_id":parts[0],"coordinate_space":"child_frame_css_viewport",
+        Err(error) => Ok(
+            json!({"status":"unknown","action":"swipe","reference":reference,"source_frame_id":parts[0],"coordinate_space":"child_frame_css_viewport",
             "dispatch_acknowledged":null,"dispatch_may_have_occurred":true,"reason_code":"frame_swipe_delivery_unknown",
-            "reason":format!("frame swipe delivery is uncertain; inspect the child frame before retrying: {error}")}))
+            "reason":format!("frame swipe delivery is uncertain; inspect the child frame before retrying: {error}")}),
+        ),
     }
 }
 
-async fn multi_touch_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
-    let reference=args.reference.as_deref().ok_or_else(||invalid("frame multi_touch requires a fresh frame reference"))?;
-    let parts=reference.strip_prefix("@f:").unwrap_or_default().splitn(3,':').collect::<Vec<_>>();
-    if parts.len()!=3||parts[0].is_empty()||parts[0].len()>256||parts[1].is_empty()||parts[1].len()>256 {
-        return Err(invalid("frame multi_touch requires @f:<frame>:<loader>:<backend-node>"));
+async fn multi_touch_frame_reference(
+    app: &AppV3,
+    args: &V3ActArgs,
+) -> Result<Value, rmcp::ErrorData> {
+    let reference = args
+        .reference
+        .as_deref()
+        .ok_or_else(|| invalid("frame multi_touch requires a fresh frame reference"))?;
+    let parts = reference
+        .strip_prefix("@f:")
+        .unwrap_or_default()
+        .splitn(3, ':')
+        .collect::<Vec<_>>();
+    if parts.len() != 3
+        || parts[0].is_empty()
+        || parts[0].len() > 256
+        || parts[1].is_empty()
+        || parts[1].len() > 256
+    {
+        return Err(invalid(
+            "frame multi_touch requires @f:<frame>:<loader>:<backend-node>",
+        ));
     }
-    let backend_node_id=parts[2].parse::<i64>().ok().filter(|id|*id>0).ok_or_else(||invalid("frame multi_touch reference has an invalid backend node identity"))?;
-    let (Some(center_x),Some(center_y),Some(start_distance),Some(end_distance))=(args.center_x,args.center_y,args.start_distance,args.end_distance) else {
-        return Err(invalid("frame multi_touch requires child-frame pinch geometry"));
+    let backend_node_id = parts[2]
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| {
+            invalid("frame multi_touch reference has an invalid backend node identity")
+        })?;
+    let (Some(center_x), Some(center_y), Some(start_distance), Some(end_distance)) = (
+        args.center_x,
+        args.center_y,
+        args.start_distance,
+        args.end_distance,
+    ) else {
+        return Err(invalid(
+            "frame multi_touch requires child-frame pinch geometry",
+        ));
     };
-    let presentation=presentation_state(app,&args.session_id,&args.chrome_tab_id).await;
-    let expected_activation_epoch=presentation.as_ref().and_then(|state|state["activation_epoch"].as_u64());
-    let expected_focus_epoch=presentation.as_ref().and_then(|state|state["focus_epoch"].as_u64());
-    let shared=app.core.legacy.shared_sessions.lock().await.get(&args.session_id).cloned().ok_or_else(||invalid("unknown shared session"))?;
-    let shared=shared.lock().await;
-    if shared.handle.principal!=app.core.legacy.principal.as_ref(){return Err(invalid("session is not owned by this server principal"));}
-    let connection=shared.connection.as_ref().ok_or_else(||invalid("shared extension session has not been accepted"))?;
+    let presentation = presentation_state(app, &args.session_id, &args.chrome_tab_id).await;
+    let expected_activation_epoch = presentation
+        .as_ref()
+        .and_then(|state| state["activation_epoch"].as_u64());
+    let expected_focus_epoch = presentation
+        .as_ref()
+        .and_then(|state| state["focus_epoch"].as_u64());
+    let shared = app
+        .core
+        .legacy
+        .shared_sessions
+        .lock()
+        .await
+        .get(&args.session_id)
+        .cloned()
+        .ok_or_else(|| invalid("unknown shared session"))?;
+    let shared = shared.lock().await;
+    if shared.handle.principal != app.core.legacy.principal.as_ref() {
+        return Err(invalid("session is not owned by this server principal"));
+    }
+    let connection = shared
+        .connection
+        .as_ref()
+        .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
     let response=connection.command(shared.registry()?,&shared.handle,&args.chrome_tab_id,"Controlla.frameMultiTouch",json!({
         "frame_id":parts[0],"loader_id":parts[1],"backend_node_id":backend_node_id,
         "center_x":center_x,"center_y":center_y,"start_distance":start_distance,"end_distance":end_distance,
@@ -4916,18 +5620,22 @@ async fn multi_touch_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Va
         "expected_activation_epoch":expected_activation_epoch,"expected_focus_epoch":expected_focus_epoch
     })).await;
     match response {
-        Ok(response)=>{
-            let evidence=super::super::shared_value(&response).map_err(invalid)?;
-            let status=evidence["status"].as_str().unwrap_or("unknown");
-            Ok(json!({"status":status,"action":"multi_touch","gesture":"two_finger_pinch","reference":reference,"source_frame_id":parts[0],
+        Ok(response) => {
+            let evidence = super::super::shared_value(&response).map_err(invalid)?;
+            let status = evidence["status"].as_str().unwrap_or("unknown");
+            Ok(
+                json!({"status":status,"action":"multi_touch","gesture":"two_finger_pinch","reference":reference,"source_frame_id":parts[0],
                 "coordinate_space":"child_frame_css_viewport",
                 "dispatch_acknowledged":evidence["dispatch_acknowledged"],"dispatch_may_have_occurred":evidence["dispatch_may_have_occurred"],
-                "reason_code":evidence["reason_code"],"reason":evidence["reason"],"dispatch":evidence}))
+                "reason_code":evidence["reason_code"],"reason":evidence["reason"],"dispatch":evidence}),
+            )
         }
-        Err(error)=>Ok(json!({"status":"unknown","action":"multi_touch","gesture":"two_finger_pinch","reference":reference,"source_frame_id":parts[0],
+        Err(error) => Ok(
+            json!({"status":"unknown","action":"multi_touch","gesture":"two_finger_pinch","reference":reference,"source_frame_id":parts[0],
             "coordinate_space":"child_frame_css_viewport","dispatch_acknowledged":null,"dispatch_may_have_occurred":true,
             "reason_code":"frame_multi_touch_delivery_unknown",
-            "reason":format!("frame multi_touch delivery is uncertain; inspect the child frame before retrying: {error}")}))
+            "reason":format!("frame multi_touch delivery is uncertain; inspect the child frame before retrying: {error}")}),
+        ),
     }
 }
 
@@ -4938,9 +5646,7 @@ async fn visual_click_impl(
     probe: &Value,
     point: Option<(f64, f64)>,
 ) -> Result<Value, rmcp::ErrorData> {
-    if app.browser_modes.lock().await.get(session_id)
-        == Some(&crate::v3::BrowserMode::Background)
-    {
+    if app.browser_modes.lock().await.get(session_id) == Some(&crate::v3::BrowserMode::Background) {
         let presentation = presentation_state(app, session_id, chrome_tab_id).await;
         if let Some(refusal) = background_pointer_refusal(presentation.as_ref()) {
             return Ok(refusal);
@@ -4983,14 +5689,10 @@ async fn visual_click_impl(
         .as_ref()
         .ok_or_else(|| invalid("shared browser connection is unavailable"))?;
     let registry = shared.registry()?;
-    let before = super::super::shared_frame_identity(
-        connection,
-        registry,
-        &shared.handle,
-        chrome_tab_id,
-    )
-    .await
-    .map_err(invalid)?;
+    let before =
+        super::super::shared_frame_identity(connection, registry, &shared.handle, chrome_tab_id)
+            .await
+            .map_err(invalid)?;
     if probe["visual_ref"]["frame_id"] != before.0
         || probe["visual_ref"]["loader_id"] != before.1
         || probe["visual_ref"]["url"] != before.2
@@ -5018,20 +5720,14 @@ async fn visual_click_impl(
             json!({"status":"not_dispatched","reason_code":"unsafe_or_obscured_coordinate_target","hit_test":hit}),
         );
     }
-    let fresh = super::super::shared_frame_identity(
-        connection,
-        registry,
-        &shared.handle,
-        chrome_tab_id,
-    )
-    .await
-    .map_err(invalid)?;
+    let fresh =
+        super::super::shared_frame_identity(connection, registry, &shared.handle, chrome_tab_id)
+            .await
+            .map_err(invalid)?;
     if fresh != before {
         return Ok(json!({"status":"not_dispatched","reason_code":"document_epoch_changed"}));
     }
-    if app.browser_modes.lock().await.get(session_id)
-        == Some(&crate::v3::BrowserMode::Background)
-    {
+    if app.browser_modes.lock().await.get(session_id) == Some(&crate::v3::BrowserMode::Background) {
         let presentation = connection
             .command(
                 registry,
@@ -5089,13 +5785,7 @@ async fn guarded_coordinate_click(
     x: f64,
     y: f64,
 ) -> Result<Value, rmcp::ErrorData> {
-    if !x.is_finite()
-        || !y.is_finite()
-        || x < 0.0
-        || y < 0.0
-        || x > 32_767.0
-        || y > 32_767.0
-    {
+    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 || x > 32_767.0 || y > 32_767.0 {
         return Ok(json!({"status":"not_dispatched","action":"click",
             "reason_code":"invalid_coordinate_click","dispatch_may_have_occurred":false,
             "reason":"center_x and center_y must be finite non-negative CSS pixels inside the viewport."}));
@@ -6320,9 +7010,9 @@ fn semantic_bool(value: &Value) -> Option<bool> {
 
 fn infer_click_outcome(item: &Value) -> Option<BrowserClickOutcome> {
     if item["tag"] == "a"
-        && item["href"].as_str().is_some_and(|href| {
-            href.starts_with("https://") || href.starts_with("http://")
-        })
+        && item["href"]
+            .as_str()
+            .is_some_and(|href| href.starts_with("https://") || href.starts_with("http://"))
     {
         return Some(BrowserClickOutcome::Navigation { url: None });
     }
@@ -6345,6 +7035,13 @@ fn infer_click_outcome(item: &Value) -> Option<BrowserClickOutcome> {
     // role=button (common in React design systems) does not receive focus from
     // DOM activation, so inferring `focused` turned every menu-opening click
     // into an unknown mutation and held the target lock.
+    // A submit control is expected to change the document, and a submit that
+    // re-renders or navigates never reports focus on the old node. Inferring
+    // `focused` there turned a successful Post into an unknown mutation; leave
+    // the outcome undeclared so an observed state change decides the receipt.
+    if item["control_type"].as_str() == Some("submit") {
+        return None;
+    }
     if matches!(
         role,
         Some("button" | "link" | "checkbox" | "radio" | "option" | "tab" | "menuitem")
@@ -6688,10 +7385,33 @@ fn fast_key_batch_failure(result: &Value, prior_key_events: u64) -> (&'static st
     }
 }
 
+fn failure_receipt_wants_diagnostics(value: &Value) -> bool {
+    matches!(
+        value.get("status").and_then(Value::as_str),
+        Some(
+            "failed"
+                | "unknown"
+                | "incomplete"
+                | "timed_out"
+                | "inconclusive"
+                | "dispatched_unverified"
+                | "dispatched_pending_verification"
+                | "completed_unverified"
+        )
+    )
+}
+
 fn workflow_should_stop(value: &Value) -> bool {
     matches!(
         value.get("status").and_then(Value::as_str),
-        Some("unknown" | "not_dispatched" | "failed" | "incomplete")
+        Some(
+            "unknown"
+                | "not_dispatched"
+                | "failed"
+                | "incomplete"
+                | "dispatched_unverified"
+                | "dispatched_pending_verification"
+        )
     )
 }
 
@@ -6722,8 +7442,15 @@ fn workflow_verification_passed(value: &Value) -> bool {
 }
 
 fn workflow_should_verify_next(value: &Value, next: Option<&V3WorkflowStep>) -> bool {
-    matches!(value["status"].as_str(), Some("unknown" | "dispatched"))
-        && matches!(next, Some(V3WorkflowStep::Verify { .. }))
+    matches!(
+        value["status"].as_str(),
+        Some(
+            "unknown"
+                | "dispatched"
+                | "dispatched_unverified"
+                | "dispatched_pending_verification"
+        )
+    ) && matches!(next, Some(V3WorkflowStep::Verify { .. }))
 }
 
 fn desktop_fallback_sequence_is_verified(steps: &[V3WorkflowStep]) -> bool {
@@ -7005,8 +7732,13 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         }
     }
     omitted.sort();
-    if !projected.contains_key("url") && let Some(url) = source_url.as_deref() {
-        projected.insert("url_prefix".into(), json!(url.chars().take(96).collect::<String>()));
+    if !projected.contains_key("url")
+        && let Some(url) = source_url.as_deref()
+    {
+        projected.insert(
+            "url_prefix".into(),
+            json!(url.chars().take(96).collect::<String>()),
+        );
         projected.insert("url_sha256".into(), json!(compact_v3_url_hash(url)));
         projected.insert("url_truncated".into(), json!(true));
     }
@@ -7345,7 +8077,14 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         // malformed receipt values cannot defeat the per-step wire ceiling.
         let kind = result["kind"].as_str().unwrap_or_default();
         let mut bounded = serde_json::Map::new();
-        for key in ["status", "kind", "action", "reason_code", "reason", "next_action"] {
+        for key in [
+            "status",
+            "kind",
+            "action",
+            "reason_code",
+            "reason",
+            "next_action",
+        ] {
             if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
                 let limit = match key {
                     "status" => 16,
@@ -7387,7 +8126,13 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         }
         // A verifier receipt is only useful with the expected predicate and
         // the fresh observation. Keep that proof in the hard fallback too.
-        for key in ["observer", "expected", "observed", "postcondition", "predicate"] {
+        for key in [
+            "observer",
+            "expected",
+            "observed",
+            "postcondition",
+            "predicate",
+        ] {
             if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
                 let value = compact_v3_evidence_field(key, value);
                 if v3_workflow_response_size(&value) > 160 {
@@ -7413,21 +8158,32 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         // Preserve a small, untrusted text proof for read/extract receipts even
         // when the fixed fallback is reached. This is the independent verifier's
         // postcondition, not page trust or executable instruction content.
-        if matches!(kind, "navigate" | "extract" | "snapshot" | "find_all" | "collect_virtual")
-            && let Some(url) = source_url.as_deref()
+        if matches!(
+            kind,
+            "navigate" | "extract" | "snapshot" | "find_all" | "collect_virtual"
+        ) && let Some(url) = source_url.as_deref()
         {
             if url.chars().count() <= 160 {
                 bounded.insert("url".into(), json!(url));
             } else {
-                bounded.insert("url_prefix".into(), json!(url.chars().take(96).collect::<String>()));
+                bounded.insert(
+                    "url_prefix".into(),
+                    json!(url.chars().take(96).collect::<String>()),
+                );
                 bounded.insert("url_sha256".into(), json!(compact_v3_url_hash(url)));
                 bounded.insert("url_truncated".into(), json!(true));
             }
         }
-        if matches!(kind, "extract" | "snapshot" | "find_all" | "collect_virtual") {
+        if matches!(
+            kind,
+            "extract" | "snapshot" | "find_all" | "collect_virtual"
+        ) {
             for key in ["title", "snippet", "text", "value"] {
                 if let Some(field) = result.get(key).filter(|field| !field.is_null()) {
-                    let bounded_value = compact_v3_bounded_string(field, if source_url.is_some() { 48 } else { 256 });
+                    let bounded_value = compact_v3_bounded_string(
+                        field,
+                        if source_url.is_some() { 48 } else { 256 },
+                    );
                     if !bounded_value.is_null() {
                         bounded.insert(key.to_owned(), bounded_value);
                     }
@@ -7732,21 +8488,25 @@ fn compact_v3_artifact_handle(value: &Value) -> Value {
     let valid_opaque = text
         .split_once('@')
         .map(|(opaque, scope)| {
-            opaque.strip_prefix("artifact_").is_some_and(|id| {
-                id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
-            }) && matches!(
-                scope,
-                "private_headless_session"
-                    | "local_unrestricted_shared_session"
-                    | "guarded_shared_session"
-            )
+            opaque
+                .strip_prefix("artifact_")
+                .is_some_and(|id| id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                && matches!(
+                    scope,
+                    "private_headless_session"
+                        | "local_unrestricted_shared_session"
+                        | "guarded_shared_session"
+                )
         })
         .unwrap_or_else(|| {
-            text.strip_prefix("artifact_").is_some_and(|id| {
-                id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
-            })
+            text.strip_prefix("artifact_")
+                .is_some_and(|id| id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()))
         });
-    json!(text.chars().take(if valid_opaque { 96 } else { 48 }).collect::<String>())
+    json!(
+        text.chars()
+            .take(if valid_opaque { 96 } else { 48 })
+            .collect::<String>()
+    )
 }
 
 fn compact_v3_sha256(value: &Value) -> String {
@@ -7833,10 +8593,7 @@ fn compact_v3_download_lifecycle(value: &Value) -> Value {
         lifecycle.insert("url_identity_matches".into(), json!(matches));
     }
     if let Some(hash) = url_hash {
-        lifecycle.insert(
-            "url_sha256".into(),
-            compact_v3_bounded_string(hash, 64),
-        );
+        lifecycle.insert("url_sha256".into(), compact_v3_bounded_string(hash, 64));
     }
     Value::Object(lifecycle)
 }
@@ -7858,7 +8615,13 @@ fn compact_v3_evidence_field(key: &str, value: &Value) -> Value {
                 recovery.insert(field.to_owned(), item.clone());
             }
         }
-        for field in ["automatic", "internal", "model_action_required", "resolved", "exhausted"] {
+        for field in [
+            "automatic",
+            "internal",
+            "model_action_required",
+            "resolved",
+            "exhausted",
+        ] {
             if let Some(item) = value.get(field).filter(|item| !item.is_null()) {
                 recovery.insert(field.to_owned(), item.clone());
             }
@@ -8002,10 +8765,7 @@ fn compact_v3_evidence_field(key: &str, value: &Value) -> Value {
             }
         }
         if let Some(transport) = value.get("transport").filter(|item| !item.is_null()) {
-            readback.insert(
-                "transport".into(),
-                compact_v3_bounded_string(transport, 32),
-            );
+            readback.insert("transport".into(), compact_v3_bounded_string(transport, 32));
         }
         return Value::Object(readback);
     }
@@ -8571,9 +9331,7 @@ fn compile_workflow_ops(
     compile_sequence(ops)
 }
 
-fn task_step_reference(
-    step: &crate::task_program::TaskStep,
-) -> Result<String, rmcp::ErrorData> {
+fn task_step_reference(step: &crate::task_program::TaskStep) -> Result<String, rmcp::ErrorData> {
     step.reference
         .clone()
         .or_else(|| step.target.clone())
@@ -8778,14 +9536,25 @@ fn task_program_ops(
 
 fn open_program_is_read_only(ops: &[V3WorkflowOp]) -> bool {
     ops.iter().all(|op| match op {
-        V3WorkflowOp::Step { step } => matches!(step,
-            V3WorkflowStep::WaitStable { .. } | V3WorkflowStep::Snapshot { .. }
-            | V3WorkflowStep::Find { .. } | V3WorkflowStep::FindAll { .. }
-            | V3WorkflowStep::Choose { .. } | V3WorkflowStep::Extract { .. }
-            | V3WorkflowStep::Verify { .. }),
-        V3WorkflowOp::If { then_branch, else_branch, .. } => open_program_is_read_only(then_branch) && open_program_is_read_only(else_branch),
+        V3WorkflowOp::Step { step } => matches!(
+            step,
+            V3WorkflowStep::WaitStable { .. }
+                | V3WorkflowStep::Snapshot { .. }
+                | V3WorkflowStep::Find { .. }
+                | V3WorkflowStep::FindAll { .. }
+                | V3WorkflowStep::Choose { .. }
+                | V3WorkflowStep::Extract { .. }
+                | V3WorkflowStep::Verify { .. }
+        ),
+        V3WorkflowOp::If {
+            then_branch,
+            else_branch,
+            ..
+        } => open_program_is_read_only(then_branch) && open_program_is_read_only(else_branch),
         V3WorkflowOp::Foreach { body, .. } => open_program_is_read_only(body),
-        V3WorkflowOp::TryFallback { primary, fallback } => open_program_is_read_only(primary) && open_program_is_read_only(fallback),
+        V3WorkflowOp::TryFallback { primary, fallback } => {
+            open_program_is_read_only(primary) && open_program_is_read_only(fallback)
+        }
         V3WorkflowOp::ParallelRead { ops } => open_program_is_read_only(ops),
     })
 }
@@ -8844,7 +9613,9 @@ fn validate_workflow_ops(ops: &[V3WorkflowOp], depth: usize) -> Result<(), rmcp:
                     consecutive_steps.clear();
                 }
                 if ops.is_empty() {
-                    return Err(invalid("parallel_read requires at least one read operation"));
+                    return Err(invalid(
+                        "parallel_read requires at least one read operation",
+                    ));
                 }
                 if !open_program_is_read_only(ops) {
                     return Err(invalid(
@@ -8989,11 +9760,9 @@ fn expand_app_adapter_ops(ops: Vec<V3WorkflowOp>) -> Result<Vec<V3WorkflowOp>, r
                     fallback: expand_app_adapter_ops(fallback)?,
                 })
             }
-            V3WorkflowOp::ParallelRead { ops } => {
-                expanded.push(V3WorkflowOp::ParallelRead {
-                    ops: expand_app_adapter_ops(ops)?,
-                })
-            }
+            V3WorkflowOp::ParallelRead { ops } => expanded.push(V3WorkflowOp::ParallelRead {
+                ops: expand_app_adapter_ops(ops)?,
+            }),
         }
         if expanded.len() > 40 {
             return Err(invalid(
@@ -9005,9 +9774,15 @@ fn expand_app_adapter_ops(ops: Vec<V3WorkflowOp>) -> Result<Vec<V3WorkflowOp>, r
 }
 
 fn dag_node_signature(session_id: &str, steps: &[V3WorkflowStep]) -> String {
-    let names = steps.iter().map(workflow_step_name).collect::<Vec<_>>().join(",");
+    let names = steps
+        .iter()
+        .map(workflow_step_name)
+        .collect::<Vec<_>>()
+        .join(",");
     sha2::Sha256::digest(format!("{session_id}|{names}").as_bytes())
-        .iter().map(|byte| format!("{byte:02x}")).collect()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn virtual_item_identity(item: &Value, fields: &[String]) -> Option<String> {
@@ -9079,9 +9854,9 @@ fn reject_research_extract(
 }
 
 fn fresh_visibility_result(snapshot: &Value, reference: &str) -> Value {
-    let found = snapshot["items"].as_array().is_some_and(|items| {
-        items.iter().any(|item| item["reference"] == reference)
-    });
+    let found = snapshot["items"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["reference"] == reference));
     let status = if found { "passed" } else { "incomplete" };
     json!({"status":status,"observer":"fresh_semantic_snapshot",
         "observed":{"visible":if found { json!(true) } else { Value::Null }},"scope_complete":snapshot["scope_complete"],
@@ -9306,7 +10081,12 @@ fn mutation_skill_template(task: &crate::v3_tasks::TaskPrimitive) -> Option<(Val
     let crate::v3_tasks::TaskPrimitive::Mutation { steps } = task else {
         return None;
     };
-    if steps.is_empty() || steps.len() > 32 || steps.iter().any(|step| matches!(step, crate::v3_tasks::MutationStep::VerifyVisible { .. })) {
+    if steps.is_empty()
+        || steps.len() > 32
+        || steps
+            .iter()
+            .any(|step| matches!(step, crate::v3_tasks::MutationStep::VerifyVisible { .. }))
+    {
         return None;
     }
     let mut value_slot = 0usize;
@@ -10104,7 +10884,7 @@ async fn shared_file_select_trigger(
                 complete,
             ) {
                 return Ok(
-                    json!({"status":if complete {"verified"} else {"selected"},"verified":complete,"dispatch_acknowledged":true,"chrome_selected_file":true,"selection_readback_verified":false,"file_input_consumed_by_page":true,"application_accepted":application_accepted,"persisted":persisted_evidence,"filename":files[0].filename,"size":files[0].size,"files":staged_upload_files_value(&files),"file_chooser_frame_id":parts[0],"upload_route":"frame_trigger","scope":if guarded_shared {"guarded_shared_session"} else {"local_unrestricted_shared_session"},"network_events":selection["network_events"],"network_observation_window_ms":selection["network_observation_window_ms"],"reason":"The picker consumed the file input; requested acceptance and persistence evidence are reported independently"}),
+                    json!({"status":if complete {"verified"} else {"selected"},"verified":complete,"dispatch_acknowledged":true,"chrome_selected_file":application_accepted,"selection_readback_verified":false,"file_input_consumed_by_page":input_consumed_by_page,"application_accepted":application_accepted,"persisted":persisted_evidence,"filename":files[0].filename,"size":files[0].size,"files":staged_upload_files_value(&files),"file_chooser_frame_id":parts[0],"upload_route":"frame_trigger","scope":if guarded_shared {"guarded_shared_session"} else {"local_unrestricted_shared_session"},"network_events":selection["network_events"],"network_observation_window_ms":selection["network_observation_window_ms"],"reason":"The application accepted the attachment even though the file input readback was empty; acceptance and persistence evidence are reported independently"}),
                 );
             }
             return Ok(
@@ -10242,7 +11022,14 @@ async fn shared_file_select_trigger(
                     && event["frame_id"].as_str().is_some()
                     && event["document_id"].as_str().is_some() =>
             {
-                (event, if lazy_route { "lazy_input_fallback" } else { "chooser_event" })
+                (
+                    event,
+                    if lazy_route {
+                        "lazy_input_fallback"
+                    } else {
+                        "chooser_event"
+                    },
+                )
             }
             _ => {
                 chooser_cleanup
@@ -11576,9 +12363,8 @@ fn presentation_transition_stable(before: &Value, after: &Value) -> bool {
 /// moment, so neither is a reason to refuse: CDP input and DOM input both reach
 /// an inactive tab. Only a discarded document cannot accept input.
 fn background_pointer_refusal(presentation: Option<&Value>) -> Option<Value> {
-    let discarded = presentation.is_some_and(|value| {
-        value["lifecycle"] == "discarded" || value["discarded"] == true
-    });
+    let discarded = presentation
+        .is_some_and(|value| value["lifecycle"] == "discarded" || value["discarded"] == true);
     if !discarded {
         return None;
     }
@@ -11662,7 +12448,10 @@ fn compact_background_presentation(state: &Value) -> Value {
             }),
         );
     }
-    if let Some(slot) = state.get("presentation_slot").filter(|value| !value.is_null()) {
+    if let Some(slot) = state
+        .get("presentation_slot")
+        .filter(|value| !value.is_null())
+    {
         compact.insert("presentation_slot".into(), slot.clone());
     }
     Value::Object(compact)
@@ -11957,8 +12746,10 @@ async fn headless_download(
         ));
     }
     #[cfg(unix)]
-    let download_directory = crate::artifacts::open_local_directory_nofollow(&directory)
-        .map_err(|_| invalid("private download directory could not be opened without following links"))?;
+    let download_directory =
+        crate::artifacts::open_local_directory_nofollow(&directory).map_err(|_| {
+            invalid("private download directory could not be opened without following links")
+        })?;
     let browser_connection = browser.connection().clone();
     if let Err(error) = browser_connection
         .command(
@@ -12102,7 +12893,9 @@ async fn headless_download(
     let bytes = match read_result {
         Ok(bytes) => bytes,
         Err(error) => {
-            return Ok(json!({"status":"failed","reason":format!("completed download is unavailable or failed bounded no-follow file verification: {error}")}));
+            return Ok(
+                json!({"status":"failed","reason":format!("completed download is unavailable or failed bounded no-follow file verification: {error}")}),
+            );
         }
     };
     if bytes.len() as u64 != completed_bytes {
@@ -12597,12 +13390,13 @@ async fn shared_browser_download_lifecycle(
         );
     }
     if let Some(path) = destination_path
-        && let Err(reason) = crate::artifacts::validate_local_destination(path) {
-            return Ok(
-                json!({"status":"not_dispatched","reason_code":"unsafe_local_destination",
+        && let Err(reason) = crate::artifacts::validate_local_destination(path)
+    {
+        return Ok(
+            json!({"status":"not_dispatched","reason_code":"unsafe_local_destination",
                 "dispatch_may_have_occurred":false,"downloaded_artifact_available":false,"reason":reason}),
-            );
-        }
+        );
+    }
     let _ = snapshot_impl(
         &app.core,
         &BrowserSnapshotArgs {
@@ -13397,8 +14191,10 @@ fn validate_workflow_steps(steps: &[V3WorkflowStep]) -> Result<(), rmcp::ErrorDa
                 .filter(|_| context.len() <= 4096)
                 .ok_or_else(|| invalid("probe evidence_context is not bounded valid JSON"))?;
             if parsed["kind"].as_str() != Some("canva_slide_capture")
-                || parsed["identity_scope"].as_str() != Some("runtime_verified_selection_before_and_after_capture")
-                || parsed["renderer_freshness"].as_str() != Some("two_animation_frames_before_compositor_capture")
+                || parsed["identity_scope"].as_str()
+                    != Some("runtime_verified_selection_before_and_after_capture")
+                || parsed["renderer_freshness"].as_str()
+                    != Some("two_animation_frames_before_compositor_capture")
                 || !parsed["design_url"].as_str().is_some_and(|url| {
                     url.starts_with("https://www.canva.com/design/") && url.len() <= 2048
                 })
@@ -14332,15 +15128,16 @@ fn bounded_retrievable_observation(
         if let Some(durable) = value
             .pointer("/visual_probe/durable_visual")
             .or_else(|| value.pointer("/durable_visual"))
-            && let Some(handle) = durable.get("visual_evidence_handle") {
-                retained.insert("visual_evidence_handle".into(), handle.clone());
-                retained.insert("visual_evidence_sha256".into(), durable["sha256"].clone());
-                retained.insert("visual_evidence_size".into(), durable["size"].clone());
-                retained.insert(
-                    "visual_evidence_expires_at_ms".into(),
-                    durable["expires_at_ms"].clone(),
-                );
-            }
+            && let Some(handle) = durable.get("visual_evidence_handle")
+        {
+            retained.insert("visual_evidence_handle".into(), handle.clone());
+            retained.insert("visual_evidence_sha256".into(), durable["sha256"].clone());
+            retained.insert("visual_evidence_size".into(), durable["size"].clone());
+            retained.insert(
+                "visual_evidence_expires_at_ms".into(),
+                durable["expires_at_ms"].clone(),
+            );
+        }
         if visual.get("dimensions").is_some() {
             retained.insert(
                 "dimensions".into(),
@@ -14364,15 +15161,14 @@ fn bounded_retrievable_observation(
             .pointer("/visual_probe/artifact/artifact_handle")
             .or_else(|| value.pointer("/artifact/artifact_handle"))
             .and_then(Value::as_str)
-            && let Some(object) = visual.as_object_mut() {
-                object.insert("artifact_handle".into(), json!(artifact_handle));
-                object.insert("artifact_session_id".into(), json!(session_id));
-            }
+            && let Some(object) = visual.as_object_mut()
+        {
+            object.insert("artifact_handle".into(), json!(artifact_handle));
+            object.insert("artifact_session_id".into(), json!(session_id));
+        }
         payload.insert("visual".into(), visual);
     }
-    if retain_text
-        && let Some(items) = value.get("items").and_then(Value::as_array)
-    {
+    if retain_text && let Some(items) = value.get("items").and_then(Value::as_array) {
         const MAX_TEXT_BYTES: usize = 2_500;
         let mut used = 0usize;
         let mut text_items = Vec::new();
@@ -14524,12 +15320,14 @@ fn typing_policy(
     requires_key_events: bool,
 ) -> Result<crate::v3::TypingPolicy, &'static str> {
     let mode = match mode {
-        None => crate::v3::TypingPolicy::choose(text, requires_key_events, false).mode,
+        None | Some("auto") => {
+            crate::v3::TypingPolicy::choose(text, requires_key_events, false).mode
+        }
         Some("block") => crate::v3::TypingMode::Block,
         Some("fast_keys") => crate::v3::TypingMode::FastKeys,
         Some("human_keys") => crate::v3::TypingMode::HumanKeys,
         Some("ime") => crate::v3::TypingMode::Ime,
-        _ => return Err("typing_mode must be block, fast_keys, human_keys, or ime"),
+        _ => return Err("typing_mode must be auto, block, fast_keys, human_keys, or ime"),
     };
     crate::v3::TypingPolicy::new(mode, delay_ms)
 }
@@ -14699,7 +15497,8 @@ async fn execute_page_copy(
     tab_id: &str,
     cutoff: tokio::time::Instant,
 ) -> bool {
-    let expression = "(()=>{try{return document.execCommand('copy')===true}catch(_){return false}})()";
+    let expression =
+        "(()=>{try{return document.execCommand('copy')===true}catch(_){return false}})()";
     match tokio::time::timeout_at(
         cutoff,
         connection.command(
@@ -14719,7 +15518,6 @@ async fn execute_page_copy(
     }
 }
 
-
 fn direct_action_budget(args: &V3ActArgs) -> crate::v3::CommandBudget {
     let mut budget = crate::v3::CommandBudget::interactive_default();
     let frame_target = args.action == "type"
@@ -14727,24 +15525,35 @@ fn direct_action_budget(args: &V3ActArgs) -> crate::v3::CommandBudget {
             .reference
             .as_deref()
             .is_some_and(|reference| reference.starts_with("@f:"));
-    let human_paced = args.typing_mode.as_deref() == Some("human_keys") || frame_target && args.typing_mode.is_none();
-    if args.action == "type" && (frame_target || human_paced) {
-        let count = args.value.as_deref().unwrap_or_default().chars().count().min(16_384);
-        let pacing = crate::v3::human_typing_timeout_ms(
-            count,
-            if human_paced {
-                args.delay_ms.unwrap_or(280).min(600)
-            } else {
-                0
-            },
-        );
+    // A child-frame target is not evidence that the caller wants human-paced
+    // typing. Human pacing is explicit; auto uses the same fast ladder as root.
+    let human_paced = args.typing_mode.as_deref() == Some("human_keys");
+    if args.action == "type" && human_paced {
+        let count = args
+            .value
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .count()
+            .min(16_384);
+        let pacing =
+            crate::v3::human_typing_timeout_ms(count, args.delay_ms.unwrap_or(280).min(600));
         budget.max_wall_ms = args.timeout_ms.unwrap_or(pacing).clamp(1_000, 900_000);
-        budget.max_browser_commands = budget
-            .max_browser_commands
-            .max((count * (if frame_target { 6 } else { 4 }) + 32) as u32);
-        budget.max_cdp_commands = budget
-            .max_cdp_commands
-            .max((count * (if frame_target { 24 } else { 12 }) + 64) as u32);
+        budget.max_browser_commands = budget.max_browser_commands.max((count * 4 + 32) as u32);
+        budget.max_cdp_commands = budget.max_cdp_commands.max((count * 12 + 64) as u32);
+    } else if args.action == "type" && frame_target {
+        // Frame routing costs more commands than a root field, but auto typing
+        // is still bulk insertion. Do not inherit the human key-event budget.
+        let count = args
+            .value
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .count()
+            .min(16_384);
+        budget.max_wall_ms = args.timeout_ms.unwrap_or(60_000).clamp(1_000, 900_000);
+        budget.max_browser_commands = budget.max_browser_commands.max((count * 6 + 32) as u32);
+        budget.max_cdp_commands = budget.max_cdp_commands.max((count * 24 + 64) as u32);
     }
     budget
 }
@@ -14777,11 +15586,14 @@ impl ActionLeaseGuard {
 
 impl Drop for ActionLeaseGuard {
     fn drop(&mut self) {
-        if !self.active { return; }
+        if !self.active {
+            return;
+        }
         // Fence other processes synchronously before scheduling local cleanup.
         // A cancelled future cannot prove whether its mutation completed.
         if self.owns_process {
-            process_lease_coordinator().retain_on_unknown(&process_lease_key(&self.target), &self.owner);
+            process_lease_coordinator()
+                .retain_on_unknown(&process_lease_key(&self.target), &self.owner);
         }
         let leases = self.leases.clone();
         let target = self.target.clone();
@@ -14789,7 +15601,9 @@ impl Drop for ActionLeaseGuard {
         if let Ok(mut table) = leases.try_lock() {
             table.release(&target, &owner);
         } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(async move { leases.lock().await.release(&target, &owner); });
+            runtime.spawn(async move {
+                leases.lock().await.release(&target, &owner);
+            });
         }
     }
 }
@@ -14800,17 +15614,28 @@ async fn acquire_lease(app: &AppV3, args: &V3ActArgs) -> Result<ActionLeaseGuard
     let active = !crate::guard_reason::unrestricted_mode();
     let nested = app.workflow_lease_owners.lock().await.contains(owner);
     let takeover = if active {
-        let (_, takeover) = acquire_queued_lease_with_admission(&app.leases, &target, owner, nested)
-            .await
-            .map_err(|lease| {
-                invalid(format!("target remained busy for up to {} seconds (current owner: {})",
-                    TARGET_LEASE_QUEUE_TIMEOUT.as_secs(), lease.owner))
-            })?;
+        let (_, takeover) =
+            acquire_queued_lease_with_admission(&app.leases, &target, owner, nested)
+                .await
+                .map_err(|lease| {
+                    invalid(format!(
+                        "target remained busy for up to {} seconds (current owner: {})",
+                        TARGET_LEASE_QUEUE_TIMEOUT.as_secs(),
+                        lease.owner
+                    ))
+                })?;
         takeover
     } else {
         None
     };
-    Ok(ActionLeaseGuard { leases: app.leases.clone(), target, owner: owner.to_owned(), owns_process: !nested, active, takeover })
+    Ok(ActionLeaseGuard {
+        leases: app.leases.clone(),
+        target,
+        owner: owner.to_owned(),
+        owns_process: !nested,
+        active,
+        takeover,
+    })
 }
 
 async fn block_type(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
@@ -15285,7 +16110,9 @@ fn human_keys_control_character(text: &str) -> Option<char> {
 /// Outcome of resolving a stale rich-editor reference immediately before
 /// dispatch. Rebinding is bounded to one attempt and must prove uniqueness.
 enum EditorRebind {
-    Rebound { object_id: String },
+    Rebound {
+        object_id: String,
+    },
     Refused {
         reason: &'static str,
         candidates: u64,
@@ -15310,7 +16137,10 @@ async fn editor_identity(
     reference: &str,
 ) -> Option<(String, String, String)> {
     let state = app.core.semantic.lock().await;
-    let item = state.get(&super::tab_key(session_id, tab_id))?.items.get(reference)?;
+    let item = state
+        .get(&super::tab_key(session_id, tab_id))?
+        .items
+        .get(reference)?;
     let role = item["role"].as_str()?.trim();
     let name = item["name"].as_str()?.trim();
     let tag = item["tag"].as_str()?.trim().to_ascii_uppercase();
@@ -15519,13 +16349,7 @@ async fn key_type(
         // document, immediately before dispatch. Refuse unless exactly one
         // editable candidate matches, so a rebind can never reach a different
         // control than the one that was observed.
-        let identity = editor_identity(
-            app,
-            &args.session_id,
-            &args.chrome_tab_id,
-            reference,
-        )
-        .await;
+        let identity = editor_identity(app, &args.session_id, &args.chrome_tab_id, reference).await;
         let (role, name, tag) = identity.unwrap_or_default();
         if role.is_empty() || name.is_empty() || tag.is_empty() {
             let mut receipt = pre_dispatch_stale_receipt("type", Some(mode_label));
@@ -15617,74 +16441,68 @@ async fn key_type(
     if preflight["ok"] != true
         && preflight["reason"].as_str() == Some("target_replaced")
         && !rebound_target
-        && let Some((role, name, tag)) = editor_identity(
-            app,
-            &args.session_id,
-            &args.chrome_tab_id,
-            reference,
-        )
-        .await
+        && let Some((role, name, tag)) =
+            editor_identity(app, &args.session_id, &args.chrome_tab_id, reference).await
         && let Some(connection) = shared.connection.as_ref()
     {
-            match rebind_editor_object(
-                connection,
-                shared.registry()?,
-                &shared.handle,
-                &args.chrome_tab_id,
-                &role,
-                &name,
-                &tag,
-            )
-            .await?
-            {
-                EditorRebind::Rebound { object_id } => {
-                    snapshot.object_id = object_id;
-                    resolution = json!({
-                        "status":"rebound",
-                        "by":"role_and_accessible_name",
-                        "role":role,
-                        "name":name,
-                        "tag":tag,
-                        "attempts":1,
-                        "epoch_changed":false,
-                        "trigger":"target_replaced"
-                    });
-                    preflight = complete_editor_guard(
-                        connection,
-                        shared.registry()?,
-                        &shared.handle,
-                        &args.chrome_tab_id,
-                        &snapshot.object_id,
-                        index,
-                        &progress,
-                        true,
-                        rich_editor,
-                        false,
-                        !unreadable_surface,
-                        deadline,
-                    )
-                    .await?
-                    .0;
-                }
-                EditorRebind::Refused {
-                    reason,
-                    candidates,
-                    editable,
-                } => {
-                    resolution = json!({
-                        "status":"not_rebound",
-                        "reason":reason,
-                        "candidates":candidates,
-                        "editable_surfaces":editable,
-                        "epoch_changed":false,
-                        "trigger":"target_replaced"
-                    });
-                }
+        match rebind_editor_object(
+            connection,
+            shared.registry()?,
+            &shared.handle,
+            &args.chrome_tab_id,
+            &role,
+            &name,
+            &tag,
+        )
+        .await?
+        {
+            EditorRebind::Rebound { object_id } => {
+                snapshot.object_id = object_id;
+                resolution = json!({
+                    "status":"rebound",
+                    "by":"role_and_accessible_name",
+                    "role":role,
+                    "name":name,
+                    "tag":tag,
+                    "attempts":1,
+                    "epoch_changed":false,
+                    "trigger":"target_replaced"
+                });
+                preflight = complete_editor_guard(
+                    connection,
+                    shared.registry()?,
+                    &shared.handle,
+                    &args.chrome_tab_id,
+                    &snapshot.object_id,
+                    index,
+                    &progress,
+                    true,
+                    rich_editor,
+                    false,
+                    !unreadable_surface,
+                    deadline,
+                )
+                .await?
+                .0;
             }
+            EditorRebind::Refused {
+                reason,
+                candidates,
+                editable,
+            } => {
+                resolution = json!({
+                    "status":"not_rebound",
+                    "reason":reason,
+                    "candidates":candidates,
+                    "editable_surfaces":editable,
+                    "epoch_changed":false,
+                    "trigger":"target_replaced"
+                });
+            }
+        }
     }
     if preflight["ok"] != true {
-        let mut receipt =
-            json!({"status":"not_dispatched","action":"type","reason":preflight["reason"],"readback":preflight});
+        let mut receipt = json!({"status":"not_dispatched","action":"type","reason":preflight["reason"],"readback":preflight});
         // Answer "why" in the same receipt. Without it the caller only learns
         // that the control was refused, which is exactly the loop that made a
         // canvas editor look untypeable.
@@ -16207,9 +17025,10 @@ async fn press(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> 
         .map_err(|_| "key event timed out; delivery is uncertain".to_owned())
         .and_then(|result| result.map_err(|error| error.to_string()));
         if sent.is_ok()
-            && let Some(release) = &release {
-                acknowledged_downs.push(release.clone());
-            }
+            && let Some(release) = &release
+        {
+            acknowledged_downs.push(release.clone());
+        }
         if let Err(error) = sent {
             let mut cleanup_confirmed = true;
             // A command error can mean delivery was lost after Chrome applied
@@ -16504,6 +17323,83 @@ fn browser_tool_result(mut value: Value) -> rmcp::model::CallToolResult {
 /// deliberately left untouched because it is untrusted input.
 fn normalize_receipt_outcomes(value: &mut Value) {
     super::normalize_unknown_receipts(value);
+    backfill_missing_reason_codes(value);
+}
+
+/// Every non-success receipt must name its cause. An extension refusal that only
+/// carried `reason`, or a refusal built without a code, used to reach the caller as
+/// `reason_code: null`, which is not actionable and cannot be retried safely.
+fn backfill_missing_reason_codes(value: &mut Value) {
+    backfill_reason_codes_at(value, true);
+}
+
+/// Receipt containers only. Page content (`page_data`, `items`, `text`, `value`,
+/// readbacks) is never rewritten: a diagnostic must not mutate observed data.
+fn backfill_reason_codes_at(value: &mut Value, root: bool) {
+    match value {
+        Value::Object(map) => {
+            if root || map.contains_key("step") || map.contains_key("dispatch_acknowledged") || map.contains_key("action") {
+                backfill_status_reason_code(map);
+            }
+            for (key, nested) in map.iter_mut() {
+                if matches!(
+                    key.as_str(),
+                    "receipts" | "nodes" | "verification" | "steps" | "result" | "upload" | "task" | "workflow" | "diagnostics"
+                ) {
+                    backfill_reason_codes_at(nested, false);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                backfill_reason_codes_at(item, false);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn backfill_status_reason_code(map: &mut serde_json::Map<String, Value>) {
+    {
+            let status = map.get("status").and_then(Value::as_str).map(str::to_owned);
+            let missing = map
+                .get("reason_code")
+                .is_none_or(Value::is_null);
+            if missing {
+                if let Some(reason) = map.get("reason").and_then(Value::as_str) {
+                    let code = reason
+                        .split(':')
+                        .next()
+                        .unwrap_or(reason)
+                        .trim()
+                        .chars()
+                        .map(|ch| {
+                            if ch.is_ascii_alphanumeric() {
+                                ch.to_ascii_lowercase()
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect::<String>();
+                    let code = code.trim_matches('_').to_owned();
+                    if !code.is_empty() && code.len() <= 64 {
+                        map.insert("reason_code".into(), Value::String(code));
+                    }
+                }
+                if map.get("reason_code").is_none_or(Value::is_null) {
+                    let fallback = match status.as_deref() {
+                        Some("not_dispatched") => Some("precondition_failed"),
+                        Some("unknown") => Some("outcome_not_observed"),
+                        Some("dispatched_unver") => Some("outcome_not_declared"),
+                        Some("error") => Some("request_rejected"),
+                        _ => None,
+                    };
+                    if let Some(fallback) = fallback {
+                        map.insert("reason_code".into(), Value::String(fallback.into()));
+                    }
+                }
+            }
+        }
 }
 
 async fn call_page_tool(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
@@ -16856,7 +17752,7 @@ async fn call_page_tool(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::Er
 #[tool_router]
 impl AppV3 {
     #[tool(
-        description = "action=task supports read-only research; one-call private headless mode: read-only Research task without tab_ids.",
+        description = "action=task supports read-only research; one-call private headless mode: read-only Research task without tab_ids. action=diagnostics returns bounded redacted console and failed-network events for a session and tab.",
         output_schema = rmcp::handler::server::tool::schema_for_type::<std::collections::BTreeMap<String, Value>>()
     )]
     async fn browser(
@@ -16945,6 +17841,8 @@ impl AppV3 {
         let wall_limit = Duration::from_millis(budget.max_wall_ms);
         let browser_started = std::time::Instant::now();
         let compact_task_response = args.action == "task";
+        let diagnostic_session_id = args.session_id.clone();
+        let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
         let response_max_bytes = args.max_bytes;
         let response_max_bytes_reason = args.max_bytes_reason.clone();
         let result = measured_receipt(controlla_browser::scheduler::telemetry::with_browser_command_budget(
@@ -16963,7 +17861,10 @@ impl AppV3 {
             && let Some(cohort) = receipt.pointer("/execution_route/cost_cohort")
         {
             let origin = cohort["origin_key"].as_str().unwrap_or_default().to_owned();
-            let environment = cohort["environment"].as_str().unwrap_or_default().to_owned();
+            let environment = cohort["environment"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let intent = cohort["intent"].as_str().unwrap_or_default().to_owned();
             let warmth = cohort["warmth"].as_str().unwrap_or("unknown").to_owned();
             let task_size = cohort["task_size"].as_str().unwrap_or_default().to_owned();
@@ -17004,17 +17905,40 @@ impl AppV3 {
                 }
             });
         }
-        result.map(|Json(mut value)| {
-            value["page_content_is_untrusted"] = json!(true);
-            if compact_task_response {
-                value = bound_v3_workflow_response(
-                    value,
-                    response_max_bytes,
-                    response_max_bytes_reason.as_deref(),
-                );
+        let Json(mut value) = result?;
+        value["page_content_is_untrusted"] = json!(true);
+        if compact_task_response {
+            value = bound_v3_workflow_response(
+                value,
+                response_max_bytes,
+                response_max_bytes_reason.as_deref(),
+            );
+            let session_id = diagnostic_session_id
+                .as_deref()
+                .or_else(|| value["session_id"].as_str())
+                .map(str::to_owned);
+            let chrome_tab_id = diagnostic_chrome_tab_id
+                .as_deref()
+                .or_else(|| value["chrome_tab_id"].as_str())
+                .map(str::to_owned);
+            if value.get("private_session_released") != Some(&json!(true))
+                && let (Some(session_id), Some(chrome_tab_id)) = (session_id, chrome_tab_id)
+            {
+                let failure_budget = value
+                    .pointer("/response_budget/max_bytes")
+                    .and_then(Value::as_u64)
+                    .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes)
+                    as usize;
+                self.attach_failure_diagnostics(
+                    &mut value,
+                    &session_id,
+                    &chrome_tab_id,
+                    failure_budget,
+                )
+                .await;
             }
-            browser_tool_result(value)
-        })
+        }
+        Ok(browser_tool_result(value))
     }
 
     async fn maybe_replay_research_skill(
@@ -17304,10 +18228,10 @@ impl AppV3 {
                 start_y: None,
                 end_x: None,
                 end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                center_x: None,
+                center_y: None,
+                start_distance: None,
+                end_distance: None,
             }))
             .await?
             .0;
@@ -17510,10 +18434,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                 }))
                 .await?
                 .0;
@@ -17570,10 +18494,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                 }))
                 .await?
                 .0;
@@ -17754,10 +18678,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                 }))
                 .await?
                 .0;
@@ -17929,10 +18853,10 @@ impl AppV3 {
                         start_y: None,
                         end_x: None,
                         end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                        center_x: None,
+                        center_y: None,
+                        start_distance: None,
+                        end_distance: None,
                     }))
                     .await?
                     .0
@@ -17973,10 +18897,10 @@ impl AppV3 {
                         start_y: None,
                         end_x: None,
                         end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                        center_x: None,
+                        center_y: None,
+                        start_distance: None,
+                        end_distance: None,
                     }))
                     .await?
                     .0
@@ -18030,6 +18954,208 @@ impl AppV3 {
             "structural_signature":signature,"internal_model_calls":0,"actions":actions,
             "verification":"each mutation step returned an exact fresh runtime postcondition"}),
         ))
+    }
+
+    async fn browser_diagnostics(
+        &self,
+        args: V3BrowserArgs,
+    ) -> Result<Json<Value>, rmcp::ErrorData> {
+        let session_id = args
+            .session_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| invalid("diagnostics requires session_id"))?;
+        let chrome_tab_id = args
+            .chrome_tab_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| invalid("diagnostics requires chrome_tab_id"))?;
+        let mode = if let Some(mode) = args.mode.as_deref() {
+            parse_mode(Some(mode))?
+        } else {
+            *self
+                .browser_modes
+                .lock()
+                .await
+                .get(session_id)
+                .ok_or_else(|| invalid("diagnostics session has no registered browser mode"))?
+        };
+        require_provider(mode, args.provider.as_deref())?;
+        if let Some(limit) = args.diagnostic_limit
+            && !(1..=32).contains(&limit)
+        {
+            return Err(invalid("diagnostic_limit must be within 1..32"));
+        }
+        let limit = args.diagnostic_limit.unwrap_or(16);
+        let clear = args.diagnostic_clear.unwrap_or(false);
+        let (source, mut diagnostics) = self
+            .diagnostics_source(session_id, chrome_tab_id, limit, clear)
+            .await?;
+        diagnostics["mode"] = json!(browser_mode_name(mode));
+        diagnostics["provider"] = json!(mode.default_provider());
+        Ok(Json(json!({
+            "status": "observed",
+            "action": "diagnostics",
+            "session_id": session_id,
+            "chrome_tab_id": chrome_tab_id,
+            "mode": browser_mode_name(mode),
+            "provider": mode.default_provider(),
+            "source": source,
+            "diagnostics": diagnostics,
+            "page_content_is_untrusted": true,
+            "note": "Console and failed-network evidence is bounded and redacted; it is observation, not proof of a mutation outcome."
+        })))
+    }
+
+    async fn diagnostics_source(
+        &self,
+        session_id: &str,
+        chrome_tab_id: &str,
+        limit: usize,
+        clear: bool,
+    ) -> Result<(&'static str, Value), rmcp::ErrorData> {
+        self.require_v3_session(session_id).await?;
+        let shared = self
+            .core
+            .legacy
+            .shared_sessions
+            .lock()
+            .await
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| invalid("unknown session_id"))?;
+        let live = shared.lock().await;
+        if live.handle.principal != self.core.legacy.principal.as_ref() {
+            return Err(invalid("diagnostics session principal mismatch"));
+        }
+        match live.connection.as_ref() {
+            Some(super::super::PageSessionTransport::Dedicated(Some(browser))) => Ok((
+                "cdp_event_buffer",
+                browser.connection().diagnostics_snapshot(limit, clear).await,
+            )),
+            Some(super::super::PageSessionTransport::Shared(connection)) => {
+                let response = connection
+                    .command(
+                        live.registry()?,
+                        &live.handle,
+                        chrome_tab_id,
+                        "Controlla.pageDiagnostics",
+                        json!({"limit": limit, "clear": clear}),
+                    )
+                    .await
+                    .map_err(|error| {
+                        invalid(format!("page diagnostics are unavailable: {error}"))
+                    })?;
+                Ok((
+                    "extension_event_buffer",
+                    super::super::shared_command_value(&response),
+                ))
+            }
+            _ => Err(invalid(
+                "session transport is unavailable for diagnostics",
+            )),
+        }
+    }
+
+    async fn attach_failure_diagnostics(
+        &self,
+        value: &mut Value,
+        session_id: &str,
+        chrome_tab_id: &str,
+        max_bytes: usize,
+    ) {
+        if !failure_receipt_wants_diagnostics(value) || value.get("diagnostics").is_some() {
+            return;
+        }
+        let probe = tokio::time::timeout(
+            Duration::from_millis(750),
+            self.diagnostics_source(session_id, chrome_tab_id, 4, false),
+        )
+        .await;
+        let diagnostics = match probe {
+            Ok(Ok((source, diagnostics))) => json!({
+                "status":"observed",
+                "attached_for":"failure_receipt",
+                "source":source,
+                "captured":diagnostics["captured"],
+                "returned":diagnostics["returned"],
+                "omitted_by_limit":diagnostics["omitted_by_limit"],
+                "dropped":diagnostics["dropped"],
+                "truncated":diagnostics["truncated"],
+                "entries":diagnostics["entries"],
+                "redacted":true
+            }),
+            Ok(Err(_)) => json!({
+                "status":"unavailable",
+                "attached_for":"failure_receipt",
+                "reason":"diagnostics_not_available"
+            }),
+            Err(_) => json!({
+                "status":"unavailable",
+                "attached_for":"failure_receipt",
+                "reason":"diagnostics_timeout"
+            }),
+        };
+        value["diagnostics"] = diagnostics;
+        if let Some(object) = value.as_object_mut() {
+            object.remove("diagnostics_omitted");
+        }
+        let mut dropped_metrics = false;
+        let mut dropped_route_budget = false;
+        while v3_workflow_response_size(value) > max_bytes {
+            if !dropped_metrics && value.get("metrics").is_some() {
+                value
+                    .as_object_mut()
+                    .expect("receipt object")
+                    .remove("metrics");
+                value["metrics_omitted"] = json!(true);
+                dropped_metrics = true;
+                continue;
+            }
+            if !dropped_route_budget && value.get("route_budget").is_some() {
+                value
+                    .as_object_mut()
+                    .expect("receipt object")
+                    .remove("route_budget");
+                value["route_budget_omitted"] = json!(true);
+                dropped_route_budget = true;
+                continue;
+            }
+            let trimmed = value
+                .get_mut("diagnostics")
+                .and_then(Value::as_object_mut)
+                .and_then(|diagnostics| {
+                    let entries = diagnostics.get_mut("entries")?.as_array_mut()?;
+                    if entries.is_empty() {
+                        return None;
+                    }
+                    entries.remove(0);
+                    diagnostics["returned"] = json!(entries.len());
+                    if let Some(omitted) = diagnostics["omitted_by_limit"].as_u64() {
+                        diagnostics["omitted_by_limit"] = json!(omitted.saturating_add(1));
+                    }
+                    diagnostics["truncated"] = json!(true);
+                    Some(())
+                })
+                .is_some();
+            if trimmed {
+                continue;
+            }
+            let minimal = json!({
+                "status":"unavailable",
+                "attached_for":"failure_receipt",
+                "reason":"response_budget"
+            });
+            value["diagnostics"] = minimal;
+            if v3_workflow_response_size(value) > max_bytes {
+                value
+                    .as_object_mut()
+                    .expect("receipt object")
+                    .remove("diagnostics");
+                value["diagnostics_omitted"] = json!(true);
+            }
+            break;
+        }
     }
 
     async fn browser_skill(&self, args: V3BrowserArgs) -> Result<Value, rmcp::ErrorData> {
@@ -18137,11 +19263,10 @@ impl AppV3 {
             let workflow: crate::browser_workflow::BrowserWorkflowDefinition =
                 serde_json::from_value(definition.workflow.clone())
                     .map_err(|error| invalid(format!("invalid skill workflow: {error}")))?;
-            let execution_plan = crate::execution_plan::ExecutionPlan::for_skill_workflow(
-                &workflow,
-            )
-            .map_err(invalid)?
-            .receipt();
+            let execution_plan =
+                crate::execution_plan::ExecutionPlan::for_skill_workflow(&workflow)
+                    .map_err(invalid)?
+                    .receipt();
             let current_url = self.readiness_url(session_id, tab_id).await?;
             let selector = workflow.steps.iter().find_map(|step| match step {
                 crate::browser_workflow::BrowserWorkflowStep::Extract { selector, .. } => Some(selector.clone()),
@@ -18216,8 +19341,9 @@ impl AppV3 {
                     .replay(skill_id, &site_scope, &structural_signature, now_ms())
                     .map_err(|error| invalid(error.to_string()))?
             };
-            let execution_plan = crate::execution_plan::ExecutionPlan::for_skill_replay(&replay.workflow)
-                .map(|plan| plan.receipt());
+            let execution_plan =
+                crate::execution_plan::ExecutionPlan::for_skill_replay(&replay.workflow)
+                    .map(|plan| plan.receipt());
             return Ok(
                 json!({"status":"qualified_hit","route":"qualified_skill","internal_model_calls":0,"skill_id":replay.skill_id,"version":replay.version,"workflow":replay.workflow,"execution_plan":execution_plan}),
             );
@@ -18415,7 +19541,9 @@ impl AppV3 {
     }
 
     async fn browser_inner(&self, mut args: V3BrowserArgs) -> Result<Json<Value>, rmcp::ErrorData> {
-        if args.tab_operation.is_some() && args.action != "tabs" { return Err(invalid("tab_operation requires action=tabs")); }
+        if args.tab_operation.is_some() && args.action != "tabs" {
+            return Err(invalid("tab_operation requires action=tabs"));
+        }
         if (args.steps.is_some() || args.program.is_some())
             && args.action != "open"
             && args.action != "task"
@@ -18432,11 +19560,20 @@ impl AppV3 {
                 "ready_when is supported only by browser action=open",
             ));
         }
-        if let Some(V3ReadyWhen::VisualStable { region, quiet_ms, timeout_ms }) = args.ready_when.as_ref() {
+        if let Some(V3ReadyWhen::VisualStable {
+            region,
+            quiet_ms,
+            timeout_ms,
+        }) = args.ready_when.as_ref()
+        {
             if !(150..=2_000).contains(quiet_ms) || timeout_ms < quiet_ms || *timeout_ms > 10_000 {
-                return Err(invalid("visual_stable timing requires quiet_ms 150..2000 and timeout_ms from quiet_ms through 10000"));
+                return Err(invalid(
+                    "visual_stable timing requires quiet_ms 150..2000 and timeout_ms from quiet_ms through 10000",
+                ));
             }
-            if let Some(region) = region { bounded_visual_region(*region)?; }
+            if let Some(region) = region {
+                bounded_visual_region(*region)?;
+            }
         }
         if args.action == "adopt_popup" {
             let session_id = args
@@ -18575,10 +19712,9 @@ impl AppV3 {
                         "provide steps/program or task/task_program, not both",
                     ));
                 }
-                let session_id = args
-                    .session_id
-                    .clone()
-                    .ok_or_else(|| invalid("steps on action=task require an existing session_id"))?;
+                let session_id = args.session_id.clone().ok_or_else(|| {
+                    invalid("steps on action=task require an existing session_id")
+                })?;
                 let chrome_tab_id = args.chrome_tab_id.clone().ok_or_else(|| {
                     invalid("steps on action=task require the exact chrome_tab_id to act on")
                 })?;
@@ -18600,7 +19736,9 @@ impl AppV3 {
                     .await
                 {
                     Ok(value) => value.structured_content.unwrap_or(Value::Null),
-                    Err(error) => json!({"status":"failed","stage":"workflow","reason":error.to_string()}),
+                    Err(error) => {
+                        json!({"status":"failed","stage":"workflow","reason":error.to_string()})
+                    }
                 };
                 let status = workflow["status"].clone();
                 return Ok(Json(json!({
@@ -18620,8 +19758,12 @@ impl AppV3 {
             }
             // Clone the small task envelope so the same args can also drive
             // automatic tab binding without a partial move.
-            let task = args.task.clone().ok_or_else(|| invalid("task is required"))?;
-            let auto_headless = args.session_id.is_none() && args.mode.as_deref() == Some("headless");
+            let task = args
+                .task
+                .clone()
+                .ok_or_else(|| invalid("task is required"))?;
+            let auto_headless =
+                args.session_id.is_none() && args.mode.as_deref() == Some("headless");
             // A read-only task with no session may bind one uniquely matching
             // existing tab in this call. This is the routine path: callers with
             // one open document should not need discover -> pair -> task.
@@ -18629,7 +19771,11 @@ impl AppV3 {
             let task_mode = if auto_headless {
                 crate::v3::BrowserMode::Headless
             } else if args.session_id.is_none() {
-                if args.mode.as_deref().is_some_and(|mode| mode != "background") {
+                if args
+                    .mode
+                    .as_deref()
+                    .is_some_and(|mode| mode != "background")
+                {
                     return Err(invalid(
                         "session_id is required unless action=task uses mode=headless, mode=background, or a uniquely matching read-only task",
                     ));
@@ -18666,7 +19812,12 @@ impl AppV3 {
                 (session_id, tab_id)
             } else if args.session_id.is_none() {
                 match self.auto_bind_read_only_task(&args, &task).await? {
-                    AutoBindOutcome::Bound { session_id, tab_id, matched_by, url } => {
+                    AutoBindOutcome::Bound {
+                        session_id,
+                        tab_id,
+                        matched_by,
+                        url,
+                    } => {
                         auto_binding = Some(json!({
                             "auto_bound": true,
                             "session_id": session_id,
@@ -18687,7 +19838,10 @@ impl AppV3 {
                             "next_action":"retry with session_id and chrome_tab_id for one candidate"
                         })));
                     }
-                    AutoBindOutcome::NoMatch { inspected, hint_count } => {
+                    AutoBindOutcome::NoMatch {
+                        inspected,
+                        hint_count,
+                    } => {
                         return Ok(Json(json!({
                             "status":"not_available",
                             "action":"task",
@@ -18713,7 +19867,8 @@ impl AppV3 {
                 (session_id.to_owned(), tab_id.to_owned())
             };
             let auto_bound = auto_binding.is_some();
-            let release_after_task = auto_headless || auto_bound || args.release_after_task.unwrap_or(false);
+            let release_after_task =
+                auto_headless || auto_bound || args.release_after_task.unwrap_or(false);
             if release_after_task
                 && !auto_bound
                 && self.browser_modes.lock().await.get(&session_id)
@@ -18833,6 +19988,9 @@ impl AppV3 {
                 }))
                 .await;
         }
+        if args.action == "diagnostics" {
+            return self.browser_diagnostics(args).await;
+        }
         if args.action == "describe" {
             let tools = AppV3::tool_router().list_all();
             let mut surface = tools
@@ -18905,16 +20063,40 @@ impl AppV3 {
         require_provider(mode, provider.as_deref())?;
         require_browser_operation(mode, &args.action)?;
         if args.action == "tabs" {
-            let session_id = args.session_id.as_deref().ok_or_else(|| invalid("session_id is required"))?;
-            let anchor = args.chrome_tab_id.as_deref().ok_or_else(|| invalid("chrome_tab_id is required as the command anchor"))?;
-            let operation = args.tab_operation.as_ref().ok_or_else(|| invalid("tab_operation is required"))?;
-            if !operation.valid_shape() { return Err(invalid("tab_operation fields do not match its kind")); }
+            let session_id = args
+                .session_id
+                .as_deref()
+                .ok_or_else(|| invalid("session_id is required"))?;
+            let anchor = args
+                .chrome_tab_id
+                .as_deref()
+                .ok_or_else(|| invalid("chrome_tab_id is required as the command anchor"))?;
+            let operation = args
+                .tab_operation
+                .as_ref()
+                .ok_or_else(|| invalid("tab_operation is required"))?;
+            if !operation.valid_shape() {
+                return Err(invalid("tab_operation fields do not match its kind"));
+            }
             let targets = operation.targets();
             let mut ids = std::collections::BTreeSet::new();
-            if targets.is_empty() || targets.len() > 16 || targets.iter().any(|target| {
-                target.tab_id.parse::<u32>().ok().is_none_or(|id| id == 0 || id.to_string() != target.tab_id)
-                    || target.document_id.is_empty() || target.document_id.len() > 512 || !ids.insert(target.tab_id.clone())
-            }) { return Err(invalid("tabs requires 1–16 unique decimal tab IDs with fresh document IDs")); }
+            if targets.is_empty()
+                || targets.len() > 16
+                || targets.iter().any(|target| {
+                    target
+                        .tab_id
+                        .parse::<u32>()
+                        .ok()
+                        .is_none_or(|id| id == 0 || id.to_string() != target.tab_id)
+                        || target.document_id.is_empty()
+                        || target.document_id.len() > 512
+                        || !ids.insert(target.tab_id.clone())
+                })
+            {
+                return Err(invalid(
+                    "tabs requires 1–16 unique decimal tab IDs with fresh document IDs",
+                ));
+            }
             if self.browser_modes.lock().await.get(session_id) != Some(&mode) {
                 return Err(invalid("session was not created in the requested mode"));
             }
@@ -18923,11 +20105,25 @@ impl AppV3 {
             if !crate::guard_reason::unrestricted_mode() {
                 for id in &ids {
                     let target = lease_target_key(session_id, id);
-                    if acquire_queued_lease(&self.leases, &target, &owner, false).await.is_err() {
-                        for guard in guards { ActionLeaseGuard::release(guard, false).await; }
-                        return Ok(Json(json!({"status":"not_dispatched","reason_code":"tab_target_busy","dispatch_may_have_occurred":false})));
+                    if acquire_queued_lease(&self.leases, &target, &owner, false)
+                        .await
+                        .is_err()
+                    {
+                        for guard in guards {
+                            ActionLeaseGuard::release(guard, false).await;
+                        }
+                        return Ok(Json(
+                            json!({"status":"not_dispatched","reason_code":"tab_target_busy","dispatch_may_have_occurred":false}),
+                        ));
                     }
-                    guards.push(ActionLeaseGuard { leases:self.leases.clone(),target,owner:owner.clone(),owns_process:true,active:true,takeover:None });
+                    guards.push(ActionLeaseGuard {
+                        leases: self.leases.clone(),
+                        target,
+                        owner: owner.clone(),
+                        owns_process: true,
+                        active: true,
+                        takeover: None,
+                    });
                 }
             }
             let result = async {
@@ -18944,7 +20140,9 @@ impl AppV3 {
                 }
             }.await;
             let unknown = result.as_ref().is_ok_and(value_has_unknown);
-            for guard in guards { guard.release(unknown).await; }
+            for guard in guards {
+                guard.release(unknown).await;
+            }
             let mut semantic = self.core.semantic.lock().await;
             for id in ids {
                 if let Some(state) = semantic.get_mut(&super::tab_key(session_id, &id)) {
@@ -19149,14 +20347,20 @@ impl AppV3 {
                 }
             };
             if args.window_id.is_some()
-                && !matches!(args.target_policy.as_deref(), Some("existing_automation_window" | "existing_window"))
+                && !matches!(
+                    args.target_policy.as_deref(),
+                    Some("existing_automation_window" | "existing_window")
+                )
             {
                 return Err(invalid(
                     "window_id requires target_policy=existing_automation_window or existing_window",
                 ));
             }
-            if args.target_policy.as_deref() == Some("existing_window") && args.session_id.is_some() {
-                return Err(invalid("existing_window creates a fresh owned tab; omit session_id and provide the exact window_id"));
+            if args.target_policy.as_deref() == Some("existing_window") && args.session_id.is_some()
+            {
+                return Err(invalid(
+                    "existing_window creates a fresh owned tab; omit session_id and provide the exact window_id",
+                ));
             }
             let url = args
                 .url
@@ -19190,11 +20394,15 @@ impl AppV3 {
             if let Some(program) = args.program.as_ref() {
                 let expanded = expand_app_adapter_ops(program.clone())?;
                 if expanded.is_empty() || expanded.len() > 40 {
-                    return Err(invalid("workflow program requires 1..40 top-level operations"));
+                    return Err(invalid(
+                        "workflow program requires 1..40 top-level operations",
+                    ));
                 }
                 validate_workflow_ops(&expanded, 0)?;
                 if !open_program_is_read_only(&expanded) {
-                    return Err(invalid("one-call open programs currently support read-only operations only"));
+                    return Err(invalid(
+                        "one-call open programs currently support read-only operations only",
+                    ));
                 }
                 let _ = compile_workflow_ops(expanded)?;
             }
@@ -19242,7 +20450,9 @@ impl AppV3 {
                         shared
                             .connection
                             .as_ref()
-                            .ok_or_else(|| invalid("shared extension session has not been accepted"))?
+                            .ok_or_else(|| {
+                                invalid("shared extension session has not been accepted")
+                            })?
                             .selected_targets()
                             .to_vec()
                     };
@@ -19270,8 +20480,7 @@ impl AppV3 {
                         let window_focused = tab["window_id"].as_u64().is_some_and(|window| {
                             inventory["windows"].as_array().is_some_and(|windows| {
                                 windows.iter().any(|entry| {
-                                    entry["id"].as_u64() == Some(window)
-                                        && entry["focused"] == true
+                                    entry["id"].as_u64() == Some(window) && entry["focused"] == true
                                 })
                             })
                         });
@@ -19357,13 +20566,32 @@ impl AppV3 {
                 } else {
                     if args.target_ids.is_none() {
                         let inventory = crate::native_setup::read_tabs().map_err(invalid)?;
-                        let host_id = inventory["host_id"].as_str().ok_or_else(|| invalid("native inventory omitted host ID"))?.to_owned();
-                        let key = format!("{}:{}", args.client_id.as_deref().unwrap_or("local-stdio"),
-                            args.idempotency_key.as_deref().unwrap_or_default());
-                        let mut created = crate::native_setup::create_owned_tab(&host_id, url, &key,
-                            mode == crate::v3::BrowserMode::Foreground || args.target_policy.as_deref() == Some("existing_automation_window"),
-                            create_background_window, args.window_id, args.target_policy.as_deref()).await.map_err(invalid)?;
-                        let tab_id = created["tab_id"].as_str().ok_or_else(|| invalid("owned tab creation omitted tab ID"))?.to_owned();
+                        let host_id = inventory["host_id"]
+                            .as_str()
+                            .ok_or_else(|| invalid("native inventory omitted host ID"))?
+                            .to_owned();
+                        let key = format!(
+                            "{}:{}",
+                            args.client_id.as_deref().unwrap_or("local-stdio"),
+                            args.idempotency_key.as_deref().unwrap_or_default()
+                        );
+                        let mut created = crate::native_setup::create_owned_tab(
+                            &host_id,
+                            url,
+                            &key,
+                            mode == crate::v3::BrowserMode::Foreground
+                                || args.target_policy.as_deref()
+                                    == Some("existing_automation_window"),
+                            create_background_window,
+                            args.window_id,
+                            args.target_policy.as_deref(),
+                        )
+                        .await
+                        .map_err(invalid)?;
+                        let tab_id = created["tab_id"]
+                            .as_str()
+                            .ok_or_else(|| invalid("owned tab creation omitted tab ID"))?
+                            .to_owned();
                         let candidates = inventory["tabs"].as_array().map(|tabs| tabs.iter().take(8).map(|tab| json!({
                             "tab_id":tab["id"],"accepted":false,"reason_code":"user_tab_not_used_as_transport",
                             "reason":"new URL creation does not borrow an existing user tab"
@@ -19386,18 +20614,50 @@ impl AppV3 {
             } else if let Some((_, reused_tab, source_tab)) = reused_target.as_ref() {
                 let mut activation_verified = mode == crate::v3::BrowserMode::Background;
                 if mode == crate::v3::BrowserMode::Foreground && source_tab.is_some() {
-                        let Json(activation) = self.core.legacy.shared_tab(Parameters(super::SharedTabArgs {
-                            session_id: session_id.clone(), action: "activate_owned".into(),
-                            chrome_tab_id: Some(reused_tab.clone()), url: String::new(), idempotency_key: args.idempotency_key.clone(),
-                            active: None, wait_until: None, create_background_window: None, target_window_id: None,
-                            candidate_tab_id: None, created_at_ms: None, since_ms: None, account_marker_selector: None, account_marker_text: None,
-                        })).await?;
-                    activation_verified = activation["status"] == "activated" && activation["verified"] == true;
+                    let Json(activation) = self
+                        .core
+                        .legacy
+                        .shared_tab(Parameters(super::SharedTabArgs {
+                            session_id: session_id.clone(),
+                            action: "activate_owned".into(),
+                            chrome_tab_id: Some(reused_tab.clone()),
+                            url: String::new(),
+                            idempotency_key: args.idempotency_key.clone(),
+                            active: None,
+                            wait_until: None,
+                            create_background_window: None,
+                            target_window_id: None,
+                            candidate_tab_id: None,
+                            created_at_ms: None,
+                            since_ms: None,
+                            account_marker_selector: None,
+                            account_marker_text: None,
+                        }))
+                        .await?;
+                    activation_verified =
+                        activation["status"] == "activated" && activation["verified"] == true;
                 }
                 let inventory = crate::native_setup::read_tabs().map_err(invalid)?;
-                let tab = inventory["tabs"].as_array().and_then(|tabs| tabs.iter().find(|tab| tab["id"].as_u64().map(|id| id.to_string()).as_deref() == Some(reused_tab.as_str()))).cloned().unwrap_or(Value::Null);
+                let tab = inventory["tabs"]
+                    .as_array()
+                    .and_then(|tabs| {
+                        tabs.iter().find(|tab| {
+                            tab["id"].as_u64().map(|id| id.to_string()).as_deref()
+                                == Some(reused_tab.as_str())
+                        })
+                    })
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 let window_id = tab["window_id"].as_u64();
-                let window_focused = window_id.and_then(|id| inventory["windows"].as_array().and_then(|windows| windows.iter().find(|window| window["id"].as_u64() == Some(id)))).is_some_and(|window| window["focused"] == true);
+                let window_focused = window_id
+                    .and_then(|id| {
+                        inventory["windows"].as_array().and_then(|windows| {
+                            windows
+                                .iter()
+                                .find(|window| window["id"].as_u64() == Some(id))
+                        })
+                    })
+                    .is_some_and(|window| window["focused"] == true);
                 let tab_active = tab["active_for_open"] == true || tab["active"] == true;
                 if mode == crate::v3::BrowserMode::Foreground && source_tab.is_none() {
                     // The tab already belongs to a live session, and that session
@@ -19434,7 +20694,8 @@ impl AppV3 {
                         )
                     }),
                     active: Some(
-                        mode == crate::v3::BrowserMode::Foreground || args.target_policy.as_deref() == Some("existing_automation_window"),
+                        mode == crate::v3::BrowserMode::Foreground
+                            || args.target_policy.as_deref() == Some("existing_automation_window"),
                     ),
                     create_background_window: Some(create_background_window),
                     wait_until: Some(
@@ -19504,7 +20765,8 @@ impl AppV3 {
                 }
             }
             if let Some(requested_window_id) = args.window_id
-                && args.target_policy.as_deref() == Some("existing_automation_window") {
+                && args.target_policy.as_deref() == Some("existing_automation_window")
+            {
                 let invariant = selected_automation_window_invariant(&result, requested_window_id);
                 result["selected_automation_window_invariant"] = json!(invariant);
                 if !invariant {
@@ -19527,30 +20789,53 @@ impl AppV3 {
                 result["status"] = json!("not_dispatched");
                 result["reason_code"] = json!("requested_window_identity_unverified");
                 result["workflow_steps_dispatched"] = json!(false);
-                result["next_action"] = json!("Inspect the new tab and window before retrying with the same idempotency key.");
+                result["next_action"] = json!(
+                    "Inspect the new tab and window before retrying with the same idempotency key."
+                );
                 return Ok(Json(result));
             }
             if let Some(ready_when) = args.ready_when.as_ref() {
                 let ready_started = std::time::Instant::now();
-                let (ready, readiness) = if let V3ReadyWhen::VisualStable { region, quiet_ms, timeout_ms } = ready_when {
-                    let visual = self.wait_for_visual_stability(
-                        result["session_id"].as_str().unwrap_or_default(),
-                        result["tab_id"].as_str().unwrap_or_default(),
-                        *region,
-                        *quiet_ms,
-                        *timeout_ms,
-                    ).await?;
-                    (visual.stable, json!({
-                        "condition":ready_when.label(), "ready":visual.stable, "quiet_ms":quiet_ms,
-                        "timeout_ms":timeout_ms, "elapsed_ms":visual.elapsed_ms, "samples":visual.samples,
-                        "visual_revision":visual.visual_revision, "reason_code":visual.reason_code
-                    }))
+                let (ready, readiness) = if let V3ReadyWhen::VisualStable {
+                    region,
+                    quiet_ms,
+                    timeout_ms,
+                } = ready_when
+                {
+                    let visual = self
+                        .wait_for_visual_stability(
+                            result["session_id"].as_str().unwrap_or_default(),
+                            result["tab_id"].as_str().unwrap_or_default(),
+                            *region,
+                            *quiet_ms,
+                            *timeout_ms,
+                        )
+                        .await?;
+                    (
+                        visual.stable,
+                        json!({
+                            "condition":ready_when.label(), "ready":visual.stable, "quiet_ms":quiet_ms,
+                            "timeout_ms":timeout_ms, "elapsed_ms":visual.elapsed_ms, "samples":visual.samples,
+                            "visual_revision":visual.visual_revision, "reason_code":visual.reason_code
+                        }),
+                    )
                 } else {
-                    let ready = match self.wait_for_open_readiness_or_release(
-                        result["session_id"].as_str().unwrap_or_default(),
-                        result["tab_id"].as_str().unwrap_or_default(), ready_when, cold,
-                    ).await { Ok(ready) => ready, Err(error) => return Err(error) };
-                    (ready, json!({"condition":ready_when.label(),"ready":ready,"timeout_ms":10_000}))
+                    let ready = match self
+                        .wait_for_open_readiness_or_release(
+                            result["session_id"].as_str().unwrap_or_default(),
+                            result["tab_id"].as_str().unwrap_or_default(),
+                            ready_when,
+                            cold,
+                        )
+                        .await
+                    {
+                        Ok(ready) => ready,
+                        Err(error) => return Err(error),
+                    };
+                    (
+                        ready,
+                        json!({"condition":ready_when.label(),"ready":ready,"timeout_ms":10_000}),
+                    )
                 };
                 controlla_browser::scheduler::telemetry::record_phase(
                     controlla_browser::scheduler::telemetry::OperationPhase::Readiness,
@@ -19559,9 +20844,15 @@ impl AppV3 {
                 .await;
                 result["readiness"] = readiness;
                 if !ready {
-                    if cold { self.release_cold_session(&session_id).await; }
+                    if cold {
+                        self.release_cold_session(&session_id).await;
+                    }
                     result["status"] = json!("incomplete");
-                    result["reason_code"] = result["readiness"]["reason_code"].as_str().map_or_else(|| json!("application_readiness_timeout"), |value| json!(value));
+                    result["reason_code"] =
+                        result["readiness"]["reason_code"].as_str().map_or_else(
+                            || json!("application_readiness_timeout"),
+                            |value| json!(value),
+                        );
                     result["next_action"] =
                         json!("inspect the opened tab; workflow steps were not dispatched");
                     result["elapsed_ms"] = json!(open_started.elapsed().as_millis() as u64);
@@ -19575,11 +20866,16 @@ impl AppV3 {
                 result["reason_code"] = json!("challenge_handoff_required");
                 result["challenge_kind"] = json!(kind);
                 result["workflow_steps_dispatched"] = json!(false);
-                result["next_action"] = json!("Let the user complete the challenge in Chrome; observe the same tab again before resuming. Do not attempt to bypass or replay the challenge.");
+                result["next_action"] = json!(
+                    "Let the user complete the challenge in Chrome; observe the same tab again before resuming. Do not attempt to bypass or replay the challenge."
+                );
                 return Ok(Json(result));
             }
             if args.steps.is_some() || args.program.is_some() {
-                let step_count = args.steps.as_ref().map_or_else(|| args.program.as_ref().map_or(0, Vec::len), Vec::len);
+                let step_count = args
+                    .steps
+                    .as_ref()
+                    .map_or_else(|| args.program.as_ref().map_or(0, Vec::len), Vec::len);
                 let steps = args.steps.unwrap_or_default();
                 let tab_id = result["tab_id"]
                     .as_str()
@@ -19791,18 +21087,45 @@ impl AppV3 {
                 goal: args.goal.clone(),
                 max_scan_nodes: args.max_scan_nodes,
             };
+            let baseline_matches = if args.since_snapshot_id.is_some() {
+                let current = self
+                    .core
+                    .semantic
+                    .lock()
+                    .await
+                    .get(&super::tab_key(&args.session_id, &args.chrome_tab_id))
+                    .map(|state| state.snapshot_id.clone())
+                    .unwrap_or_default();
+                snapshot_baseline_matches_current(&current, args.since_snapshot_id.as_deref())
+            } else {
+                false
+            };
+            let cached = if baseline_matches && args.probe.is_none() {
+                super::replay_unchanged_snapshot(
+                    &self.core,
+                    &base,
+                    args.since_snapshot_id.as_deref().unwrap_or_default(),
+                )
+                .await?
+            } else {
+                None
+            };
             // A snapshot racing a document commit is read-only and retryable.
             // Without this bound, a normal navigation makes the next snapshot
             // fail with an internal batch error instead of returning the new page.
             let mut attempt = 0u32;
-            let mut snapshot = loop {
-                match snapshot_impl(&self.core, &base).await {
-                    Ok(value) => break value,
-                    Err(error) if attempt < 4 && snapshot_retryable_error(&error) => {
-                        attempt += 1;
-                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let mut snapshot = if let Some(cached) = cached {
+                cached
+            } else {
+                loop {
+                    match snapshot_impl(&self.core, &base).await {
+                        Ok(value) => break value,
+                        Err(error) if attempt < 4 && snapshot_retryable_error(&error) => {
+                            attempt += 1;
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        }
+                        Err(error) => return Err(error),
                     }
-                    Err(error) => return Err(error),
                 }
             };
             snapshot["snapshot_fence"] = json!({
@@ -19816,7 +21139,8 @@ impl AppV3 {
                 "contract":"discard this fence after a document identity change; a stale reference must be reacquired from a fresh snapshot"
             });
             if args.since_snapshot_id.is_some() {
-                shape_incremental_snapshot(&mut snapshot);
+                shape_incremental_snapshot(&mut snapshot, baseline_matches);
+                snapshot["baseline_snapshot_id"] = json!(args.since_snapshot_id);
             }
             if let Some(probe) = args.probe {
                 let (reference, region, full_page, max_bytes, timeout_ms, save_artifact, omit_image_payload) = match probe {
@@ -19916,8 +21240,12 @@ impl AppV3 {
             args.client_id = Some(next_direct_act_owner());
         }
         let mut budget = direct_action_budget(&args);
-        if args.order_confirmation.is_some() { budget.max_wall_ms = budget.max_wall_ms.max(90_000); }
+        if args.order_confirmation.is_some() {
+            budget.max_wall_ms = budget.max_wall_ms.max(90_000);
+        }
         let wall_limit = Duration::from_millis(budget.max_wall_ms);
+        let diagnostic_session_id = args.session_id.clone();
+        let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
         let result = measured_receipt_with_budget(budget, controlla_browser::scheduler::telemetry::with_browser_command_budget(
             budget.max_browser_commands as u64,
             budget.max_cdp_commands as u64,
@@ -19930,39 +21258,60 @@ impl AppV3 {
                 }
             },
         )).await;
-        result.map(|Json(mut value)| {
-            normalize_receipt_outcomes(&mut value);
-            value["page_content_is_untrusted"] = json!(true);
-            value = bound_v3_workflow_response(
-                value,
-                response_max_bytes,
-                response_max_bytes_reason.as_deref(),
-            );
-            let returned_observations = u64::from(contains_returned_page_evidence(&value));
-            attach_observation_boundary(&mut value, returned_observations);
-            Json(value)
-        })
+        let Json(mut value) = result?;
+        normalize_receipt_outcomes(&mut value);
+        value["page_content_is_untrusted"] = json!(true);
+        value = bound_v3_workflow_response(
+            value,
+            response_max_bytes,
+            response_max_bytes_reason.as_deref(),
+        );
+        let failure_budget = value
+            .pointer("/response_budget/max_bytes")
+            .and_then(Value::as_u64)
+            .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes) as usize;
+        let returned_observations = u64::from(contains_returned_page_evidence(&value));
+        attach_observation_boundary(&mut value, returned_observations);
+        self.attach_failure_diagnostics(
+            &mut value,
+            &diagnostic_session_id,
+            &diagnostic_chrome_tab_id,
+            failure_budget,
+        )
+        .await;
+        Ok(Json(value))
     }
 
     async fn act_inner(&self, mut args: V3ActArgs) -> Result<Json<Value>, rmcp::ErrorData> {
         self.require_v3_session(&args.session_id).await?;
-        if let Some(kind) = self.challenge_handoff_kind(&args.session_id, &args.chrome_tab_id).await {
-            return Ok(Json(json!({"status":"not_dispatched","reason_code":"challenge_handoff_required",
+        if let Some(kind) = self
+            .challenge_handoff_kind(&args.session_id, &args.chrome_tab_id)
+            .await
+        {
+            return Ok(Json(
+                json!({"status":"not_dispatched","reason_code":"challenge_handoff_required",
                 "challenge_kind":kind,"dispatch_may_have_occurred":false,
-                "next_action":"Let the user complete the challenge in the same Chrome tab, then observe it again before resuming."})));
+                "next_action":"Let the user complete the challenge in the same Chrome tab, then observe it again before resuming."}),
+            ));
         }
         if args.action == "desktop_fallback" {
             let (Some(action), Some(mode), Some(expected_visual_revision)) = (
-                args.desktop_action.take(), args.desktop_mode, args.expected_visual_revision.take()
+                args.desktop_action.take(),
+                args.desktop_mode,
+                args.expected_visual_revision.take(),
             ) else {
-                return Ok(Json(json!({"status":"not_dispatched","action":"desktop_fallback",
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"desktop_fallback",
                     "reason_code":"desktop_fallback_arguments_required","dispatch_may_have_occurred":false,
-                    "retry_class":"invalid_request","next_action":"provide desktop_action, desktop_mode=foreground, expected_visual_revision, and an exact text or URL outcome"})));
+                    "retry_class":"invalid_request","next_action":"provide desktop_action, desktop_mode=foreground, expected_visual_revision, and an exact text or URL outcome"}),
+                ));
             };
             if args.order_confirmation.is_some() {
-                return Ok(Json(json!({"status":"not_dispatched","action":"desktop_fallback",
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"desktop_fallback",
                     "reason_code":"native_order_confirmation_requires_semantic_target","dispatch_may_have_occurred":false,
-                    "retry_class":"policy_denied","next_action":"coordinate-based native actions cannot bind approval to an exact order control; use action=click with a fresh semantic reference and order_confirmation so Controlla validates the origin, account, items, total, and final action before prompting the user"})));
+                    "retry_class":"policy_denied","next_action":"coordinate-based native actions cannot bind approval to an exact order control; use action=click with a fresh semantic reference and order_confirmation so Controlla validates the origin, account, items, total, and final action before prompting the user"}),
+                ));
             }
             if args.value.is_some()
                 || args.key.is_some()
@@ -19971,89 +21320,155 @@ impl AppV3 {
                 || args.account_marker.is_some()
                 || mode != crate::desktop_fallback::DesktopMode::Foreground
             {
-                return Ok(Json(json!({"status":"not_dispatched","action":"desktop_fallback",
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"desktop_fallback",
                     "reason_code":"desktop_fallback_policy_denied","dispatch_may_have_occurred":false,
-                    "retry_class":"policy_denied","next_action":"native fallback accepts only a fresh foreground visual reference; secrets, order confirmation, and background activation are excluded"})));
+                    "retry_class":"policy_denied","next_action":"native fallback accepts only a fresh foreground visual reference; secrets, order confirmation, and background activation are excluded"}),
+                ));
             }
             let predicate = match args.outcome.take() {
-                Some(BrowserClickOutcome::Navigation { url: Some(url) }) => BrowserPredicate::Url { equals: url },
-                Some(BrowserClickOutcome::Text { selector, text }) => BrowserPredicate::TextPresent { scope: Some(selector), text },
-                _ => return Ok(Json(json!({"status":"not_dispatched","action":"desktop_fallback",
+                Some(BrowserClickOutcome::Navigation { url: Some(url) }) => {
+                    BrowserPredicate::Url { equals: url }
+                }
+                Some(BrowserClickOutcome::Text { selector, text }) => {
+                    BrowserPredicate::TextPresent {
+                        scope: Some(selector),
+                        text,
+                    }
+                }
+                _ => {
+                    return Ok(Json(
+                        json!({"status":"not_dispatched","action":"desktop_fallback",
                     "reason_code":"desktop_postcondition_required","dispatch_may_have_occurred":false,
-                    "retry_class":"invalid_request","next_action":"supply an exact destination URL or visible text postcondition"}))),
+                    "retry_class":"invalid_request","next_action":"supply an exact destination URL or visible text postcondition"}),
+                    ));
+                }
             };
             let steps = vec![
                 V3WorkflowStep::Probe {
-                    reference: None, selector: None, region: None, full_page: false,
-                    max_bytes: None, timeout_ms: Some(5_000), save_artifact: false,
-                    omit_image_payload: true, evidence_context: None, save_as: Some("desktop_probe".into()),
+                    reference: None,
+                    selector: None,
+                    region: None,
+                    full_page: false,
+                    max_bytes: None,
+                    timeout_ms: Some(5_000),
+                    save_artifact: false,
+                    omit_image_payload: true,
+                    evidence_context: None,
+                    save_as: Some("desktop_probe".into()),
                 },
-                V3WorkflowStep::RegisterVisual { from: "desktop_probe".into(), save_as: "desktop_visual".into() },
+                V3WorkflowStep::RegisterVisual {
+                    from: "desktop_probe".into(),
+                    save_as: "desktop_visual".into(),
+                },
                 V3WorkflowStep::DesktopFallback {
-                    reference: "$desktop_visual".into(), action, mode,
+                    reference: "$desktop_visual".into(),
+                    action,
+                    mode,
                     expected_visual_revision: Some(expected_visual_revision),
                 },
                 V3WorkflowStep::Verify { predicate },
             ];
-            let response = self.workflow(Parameters(V3WorkflowArgs {
-                session_id: args.session_id,
-                chrome_tab_id: args.chrome_tab_id,
-                operation_id: None,
-                cancel: false,
-                steps,
-                program: None,
-                client_id: args.client_id,
-                dag: None,
-                max_bytes: args.max_bytes,
-                max_bytes_reason: args.max_bytes_reason,
-                retain_text_evidence: false,
-            })).await?;
+            let response = self
+                .workflow(Parameters(V3WorkflowArgs {
+                    session_id: args.session_id,
+                    chrome_tab_id: args.chrome_tab_id,
+                    operation_id: None,
+                    cancel: false,
+                    steps,
+                    program: None,
+                    client_id: args.client_id,
+                    dag: None,
+                    max_bytes: args.max_bytes,
+                    max_bytes_reason: args.max_bytes_reason,
+                    retain_text_evidence: false,
+                }))
+                .await?;
             return Ok(Json(response.structured_content.unwrap_or(Value::Null)));
         }
-        if args.desktop_action.is_some() || args.desktop_mode.is_some() || args.expected_visual_revision.is_some() {
-            return Err(invalid("desktop_action, desktop_mode, and expected_visual_revision are only accepted with action=desktop_fallback"));
+        if args.desktop_action.is_some()
+            || args.desktop_mode.is_some()
+            || args.expected_visual_revision.is_some()
+        {
+            return Err(invalid(
+                "desktop_action, desktop_mode, and expected_visual_revision are only accepted with action=desktop_fallback",
+            ));
         }
         if args.action != "secure_fill"
-            && let Some((role, name)) = args.reference.as_deref().and_then(parse_semantic_text_reference)
+            && let Some((role, name)) = args
+                .reference
+                .as_deref()
+                .and_then(parse_semantic_text_reference)
         {
-            let found = find_impl(&self.core, &BrowserFindArgs {
-                session_id: args.session_id.clone(), chrome_tab_id: args.chrome_tab_id.clone(),
-                query: name, role: Some(role.into()), limit: Some(2), max_matches: Some(2),
-                match_mode: Some("exact".into()), within_reference: None, href_hint: None,
-            }).await?;
+            let found = find_impl(
+                &self.core,
+                &BrowserFindArgs {
+                    session_id: args.session_id.clone(),
+                    chrome_tab_id: args.chrome_tab_id.clone(),
+                    query: name,
+                    role: Some(role.into()),
+                    limit: Some(2),
+                    max_matches: Some(2),
+                    match_mode: Some("exact".into()),
+                    within_reference: None,
+                    href_hint: None,
+                },
+            )
+            .await?;
             args.reference = Some(workflow_find_reference(&found)?);
         }
         if matches!(args.action.as_str(), "click" | "double_click" | "press") {
             let selected = {
                 let state = self.core.semantic.lock().await;
-                state.get(&super::tab_key(&args.session_id, &args.chrome_tab_id)).and_then(|state| {
-                    let item = args.reference.as_deref().and_then(|reference| state.items.get(reference))?.clone();
-                    let origin = state.document.as_ref().and_then(|document| url::Url::parse(&document.url).ok())
-                        .map(|url| url.origin().ascii_serialization())?;
-                    Some((item, origin))
-                })
+                state
+                    .get(&super::tab_key(&args.session_id, &args.chrome_tab_id))
+                    .and_then(|state| {
+                        let item = args
+                            .reference
+                            .as_deref()
+                            .and_then(|reference| state.items.get(reference))?
+                            .clone();
+                        let origin = state
+                            .document
+                            .as_ref()
+                            .and_then(|document| url::Url::parse(&document.url).ok())
+                            .map(|url| url.origin().ascii_serialization())?;
+                        Some((item, origin))
+                    })
             };
-            let final_order = selected.as_ref().is_some_and(|(item, _)| item["name"].as_str().is_some_and(is_final_order_control));
+            let final_order = selected
+                .as_ref()
+                .is_some_and(|(item, _)| item["name"].as_str().is_some_and(is_final_order_control));
             if final_order {
                 let (item, origin) = selected.as_ref().expect("final order target exists");
                 let action_name = item["name"].as_str().unwrap_or_default();
                 let Some(confirmation) = args.order_confirmation.as_ref() else {
-                    return Ok(Json(json!({"status":"not_dispatched","reason_code":"order_confirmation_required",
-                        "dispatch_may_have_occurred":false,"next_action":"Ask the user to confirm the exact items, total, account and final action; then provide order_confirmation for a local approval prompt."})));
+                    return Ok(Json(
+                        json!({"status":"not_dispatched","reason_code":"order_confirmation_required",
+                        "dispatch_may_have_occurred":false,"next_action":"Ask the user to confirm the exact items, total, account and final action; then provide order_confirmation for a local approval prompt."}),
+                    ));
                 };
                 if !valid_order_confirmation(confirmation, origin, action_name) {
-                    return Ok(Json(json!({"status":"not_dispatched","reason_code":"order_confirmation_mismatch",
-                        "dispatch_may_have_occurred":false,"next_action":"Refresh the order page and supply its exact HTTPS origin, items, total, account and final action."})));
+                    return Ok(Json(
+                        json!({"status":"not_dispatched","reason_code":"order_confirmation_mismatch",
+                        "dispatch_may_have_occurred":false,"next_action":"Refresh the order page and supply its exact HTTPS origin, items, total, account and final action."}),
+                    ));
                 }
                 if !user_approves_order(confirmation).await {
-                    return Ok(Json(json!({"status":"not_dispatched","reason_code":"order_confirmation_declined",
-                        "dispatch_may_have_occurred":false,"next_action":"The user did not approve this specific order; do not submit it."})));
+                    return Ok(Json(
+                        json!({"status":"not_dispatched","reason_code":"order_confirmation_declined",
+                        "dispatch_may_have_occurred":false,"next_action":"The user did not approve this specific order; do not submit it."}),
+                    ));
                 }
             } else if args.order_confirmation.is_some() {
-                return Err(invalid("order_confirmation is accepted only for an exact final-order control"));
+                return Err(invalid(
+                    "order_confirmation is accepted only for an exact final-order control",
+                ));
             }
         } else if args.order_confirmation.is_some() {
-            return Err(invalid("order_confirmation is accepted only for a final click or press"));
+            return Err(invalid(
+                "order_confirmation is accepted only for a final click or press",
+            ));
         }
         let mode = self
             .browser_modes
@@ -20197,19 +21612,42 @@ impl AppV3 {
             ));
         }
         if args.action == "multi_touch" {
-            let (Some(cx),Some(cy),Some(start_distance),Some(end_distance))=(args.center_x,args.center_y,args.start_distance,args.end_distance) else {
-                return Ok(Json(json!({"status":"not_dispatched","action":"multi_touch","reason_code":"pinch_arguments_required","dispatch_may_have_occurred":false})));
+            let (Some(cx), Some(cy), Some(start_distance), Some(end_distance)) = (
+                args.center_x,
+                args.center_y,
+                args.start_distance,
+                args.end_distance,
+            ) else {
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"multi_touch","reason_code":"pinch_arguments_required","dispatch_may_have_occurred":false}),
+                ));
             };
-            if args.value.is_some()||args.expected_value.is_some()||args.key.is_some()||args.delta_x.is_some()||args.delta_y.is_some() {
-                return Ok(Json(json!({"status":"not_dispatched","action":"multi_touch","reason_code":"unexpected_pinch_arguments","dispatch_may_have_occurred":false})));
+            if args.value.is_some()
+                || args.expected_value.is_some()
+                || args.key.is_some()
+                || args.delta_x.is_some()
+                || args.delta_y.is_some()
+            {
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"multi_touch","reason_code":"unexpected_pinch_arguments","dispatch_may_have_occurred":false}),
+                ));
             }
             if args.outcome.is_none() {
-                return Ok(Json(json!({"status":"not_dispatched","action":"multi_touch","reason_code":"pinch_outcome_required","dispatch_may_have_occurred":false})));
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"multi_touch","reason_code":"pinch_outcome_required","dispatch_may_have_occurred":false}),
+                ));
             }
-            if let Err(reason)=super::super::validate_pinch(cx,cy,start_distance,end_distance) {
-                return Ok(Json(json!({"status":"not_dispatched","action":"multi_touch","reason_code":"invalid_pinch_arguments","dispatch_may_have_occurred":false,"reason":reason})));
+            if let Err(reason) = super::super::validate_pinch(cx, cy, start_distance, end_distance)
+            {
+                return Ok(Json(
+                    json!({"status":"not_dispatched","action":"multi_touch","reason_code":"invalid_pinch_arguments","dispatch_may_have_occurred":false,"reason":reason}),
+                ));
             }
-        } else if args.center_x.is_some()||args.center_y.is_some()||args.start_distance.is_some()||args.end_distance.is_some() {
+        } else if args.center_x.is_some()
+            || args.center_y.is_some()
+            || args.start_distance.is_some()
+            || args.end_distance.is_some()
+        {
             // A click may name a point instead of a reference. It is admitted here
             // and bound to a fresh visual revision inside the action route, which
             // hit-tests the live document before dispatch. Nothing is replayed
@@ -20341,7 +21779,10 @@ impl AppV3 {
                 "reason":"Background action requires readable activation and focus epochs before dispatch."})));
         }
         if background_mutation
-            && matches!(args.action.as_str(), "touch" | "swipe" | "multi_touch" | "hover")
+            && matches!(
+                args.action.as_str(),
+                "touch" | "swipe" | "multi_touch" | "hover"
+            )
             && let Some(refusal) = background_pointer_refusal(presentation_before.as_ref())
         {
             return Ok(Json(refusal));
@@ -20652,7 +22093,7 @@ impl AppV3 {
                     if args.reference.as_deref().is_some_and(|reference| reference.starts_with("@f:")) {
                         let text = args.value.as_deref().unwrap_or_default();
                         let policy = typing_policy(
-                            Some(args.typing_mode.as_deref().unwrap_or("human_keys")),
+                            args.typing_mode.as_deref(),
                             args.delay_ms,
                             text,
                             true,
@@ -20945,6 +22386,8 @@ impl AppV3 {
         }
         let wall_limit =
             Duration::from_millis(crate::v3::CommandBudget::interactive_default().max_wall_ms);
+        let diagnostic_session_id = args.session_id.clone();
+        let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
         let result = measured_receipt(controlla_browser::scheduler::telemetry::with_browser_command_budget(
             crate::v3::CommandBudget::interactive_default().max_browser_commands as u64,
             crate::v3::CommandBudget::interactive_default().max_cdp_commands as u64,
@@ -20958,15 +22401,26 @@ impl AppV3 {
             })),
         )).await;
         self.workflow_operations.lock().await.remove(&key);
-        result.map(|Json(mut value)| {
-            value["operation_id"] = json!(operation_id);
-            value["page_content_is_untrusted"] = json!(true);
-            browser_tool_result(bound_v3_workflow_response(
-                value,
-                response_max_bytes,
-                response_reason.as_deref(),
-            ))
-        })
+        let Json(mut value) = result?;
+        value["operation_id"] = json!(operation_id);
+        value["page_content_is_untrusted"] = json!(true);
+        let mut value = bound_v3_workflow_response(
+            value,
+            response_max_bytes,
+            response_reason.as_deref(),
+        );
+        let failure_budget = value
+            .pointer("/response_budget/max_bytes")
+            .and_then(Value::as_u64)
+            .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes) as usize;
+        self.attach_failure_diagnostics(
+            &mut value,
+            &diagnostic_session_id,
+            &diagnostic_chrome_tab_id,
+            failure_budget,
+        )
+        .await;
+        Ok(browser_tool_result(value))
     }
 
     async fn execute_v3_workflow_step(
@@ -21006,89 +22460,203 @@ impl AppV3 {
                     .map_err(invalid)
             };
         let value = match step {
-            V3WorkflowStep::DesktopFallback { reference, action, mode, expected_visual_revision } => {
+            V3WorkflowStep::DesktopFallback {
+                reference,
+                action,
+                mode,
+                expected_visual_revision,
+            } => {
                 let reference = resolve(reference, vars)?;
-                let probe = state.visual_refs.get(&reference).cloned().ok_or_else(|| invalid("desktop fallback requires a fresh registered visual reference"))?;
+                let probe = state.visual_refs.get(&reference).cloned().ok_or_else(|| {
+                    invalid("desktop fallback requires a fresh registered visual reference")
+                })?;
                 if expected_visual_revision.as_deref().is_some_and(|expected| {
                     probe["visual_ref"]["content_hash"].as_str() != Some(expected)
                 }) {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"the current screenshot does not match expected_visual_revision; inspect a fresh screenshot before retrying"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"the current screenshot does not match expected_visual_revision; inspect a fresh screenshot before retrying"}),
+                        None,
+                    ));
                 }
-                let observed = probe["visual_ref"]["observed_at_ms"].as_u64().ok_or_else(|| invalid("visual reference has no observation time"))?;
+                let observed = probe["visual_ref"]["observed_at_ms"]
+                    .as_u64()
+                    .ok_or_else(|| invalid("visual reference has no observation time"))?;
                 if observed > now_ms() || now_ms().saturating_sub(observed) > 5_000 {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture and register a fresh bounded visual reference"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture and register a fresh bounded visual reference"}),
+                        None,
+                    ));
                 }
-                if probe["visual_ref"]["chrome_tab_id"].as_str() != Some(args.chrome_tab_id.as_str()) {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"register visual evidence for the current tab"}), None));
+                if probe["visual_ref"]["chrome_tab_id"].as_str()
+                    != Some(args.chrome_tab_id.as_str())
+                {
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"register visual evidence for the current tab"}),
+                        None,
+                    ));
                 }
                 if mode != crate::desktop_fallback::DesktopMode::Foreground
-                    || self.browser_modes.lock().await.get(&args.session_id) != Some(&crate::v3::BrowserMode::Foreground)
+                    || self.browser_modes.lock().await.get(&args.session_id)
+                        != Some(&crate::v3::BrowserMode::Foreground)
                 {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"activation_forbidden","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"use semantic page control or explicitly request foreground interaction"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"activation_forbidden","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"use semantic page control or explicitly request foreground interaction"}),
+                        None,
+                    ));
                 }
                 let owned_session = {
                     let sessions = self.core.legacy.shared_sessions.lock().await;
                     let Some(shared) = sessions.get(&args.session_id).cloned() else {
-                        return Ok((json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"use a live Controlla-owned tab in a foreground session"}), None));
+                        return Ok((
+                            json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"use a live Controlla-owned tab in a foreground session"}),
+                            None,
+                        ));
                     };
                     let shared = shared.lock().await;
                     shared.handle.principal == self.core.legacy.principal.as_ref()
                         && shared.handle.mode != controlla_browser::sessions::SessionMode::Headless
-                        && shared
-                            .registry()
-                            .is_ok_and(|registry| registry.owns_target(&shared.handle, &args.chrome_tab_id))
+                        && shared.registry().is_ok_and(|registry| {
+                            registry.owns_target(&shared.handle, &args.chrome_tab_id)
+                        })
                 };
                 if !owned_session {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"native input is limited to a provider-created tab in the current server-owned session"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"native input is limited to a provider-created tab in the current server-owned session"}),
+                        None,
+                    ));
                 }
                 let expected_process_id = {
                     let sessions = self.core.legacy.shared_sessions.lock().await;
                     let Some(shared) = sessions.get(&args.session_id).cloned() else {
-                        return Ok((json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"reacquire the provider-owned tab in its live session"}), None));
+                        return Ok((
+                            json!({"status":"not_dispatched","reason_code":"unowned_session","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"reacquire the provider-owned tab in its live session"}),
+                            None,
+                        ));
                     };
                     let shared = shared.lock().await;
-                    shared.native_pairing.as_ref()
-                        .and_then(|(host_id, _)| crate::native_setup::browser_process_id_for_host(host_id).ok())
+                    shared.native_pairing.as_ref().and_then(|(host_id, _)| {
+                        crate::native_setup::browser_process_id_for_host(host_id).ok()
+                    })
                 };
                 let Some(expected_process_id) = expected_process_id else {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"browser_process_identity_unavailable","dispatch_may_have_occurred":false,"retry_class":"refresh_session","next_action":"re-pair through the live Chrome native host, then refresh visual evidence"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"browser_process_identity_unavailable","dispatch_may_have_occurred":false,"retry_class":"refresh_session","next_action":"re-pair through the live Chrome native host, then refresh visual evidence"}),
+                        None,
+                    ));
                 };
-                let before_presentation = match presentation_state(self, &args.session_id, &args.chrome_tab_id).await {
-                    Some(state) if state["tab_active"] == true && state["window_focused"] == true => state,
-                    _ => return Ok((json!({"status":"not_dispatched","reason_code":"foreground_window_not_verified","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"focus the selected Controlla tab in Chrome and capture fresh visual evidence"}), None)),
+                let before_presentation = match presentation_state(
+                    self,
+                    &args.session_id,
+                    &args.chrome_tab_id,
+                )
+                .await
+                {
+                    Some(state)
+                        if state["tab_active"] == true && state["window_focused"] == true =>
+                    {
+                        state
+                    }
+                    _ => {
+                        return Ok((
+                            json!({"status":"not_dispatched","reason_code":"foreground_window_not_verified","dispatch_may_have_occurred":false,"retry_class":"policy_denied","next_action":"focus the selected Controlla tab in Chrome and capture fresh visual evidence"}),
+                            None,
+                        ));
+                    }
                 };
                 let (frame_id, loader_id, _) = {
-                    let shared = self.core.legacy.shared_sessions.lock().await.get(&args.session_id).cloned().ok_or_else(|| invalid("unknown shared session_id"))?;
+                    let shared = self
+                        .core
+                        .legacy
+                        .shared_sessions
+                        .lock()
+                        .await
+                        .get(&args.session_id)
+                        .cloned()
+                        .ok_or_else(|| invalid("unknown shared session_id"))?;
                     let shared = shared.lock().await;
-                    let connection = shared.connection.as_ref().ok_or_else(|| invalid("shared extension session has not been accepted"))?;
-                    super::super::shared_frame_identity(connection, shared.registry()?, &shared.handle, &args.chrome_tab_id).await.map_err(invalid)?
+                    let connection = shared
+                        .connection
+                        .as_ref()
+                        .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
+                    super::super::shared_frame_identity(
+                        connection,
+                        shared.registry()?,
+                        &shared.handle,
+                        &args.chrome_tab_id,
+                    )
+                    .await
+                    .map_err(invalid)?
                 };
                 let saved_frame = probe["visual_ref"]["frame_id"].as_str().unwrap_or_default();
-                let saved_loader = probe["visual_ref"]["loader_id"].as_str().unwrap_or_default();
+                let saved_loader = probe["visual_ref"]["loader_id"]
+                    .as_str()
+                    .unwrap_or_default();
                 if frame_id != saved_frame || loader_id != saved_loader {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}),
+                        None,
+                    ));
                 }
-                let width = probe["pixel_dimensions"]["width"].as_u64().and_then(|value| u32::try_from(value).ok()).unwrap_or(0);
-                let height = probe["pixel_dimensions"]["height"].as_u64().and_then(|value| u32::try_from(value).ok()).unwrap_or(0);
+                let width = probe["pixel_dimensions"]["width"]
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .unwrap_or(0);
+                let height = probe["pixel_dimensions"]["height"]
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .unwrap_or(0);
                 if width == 0 || height == 0 {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"invalid_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot with valid viewport geometry"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"invalid_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot with valid viewport geometry"}),
+                        None,
+                    ));
                 }
                 let current_identity = crate::visual_stability::VisualIdentity {
-                    session_id: args.session_id.clone(), tab_id: args.chrome_tab_id.clone(), document_id: String::new(),
+                    session_id: args.session_id.clone(),
+                    tab_id: args.chrome_tab_id.clone(),
+                    document_id: String::new(),
                 };
                 let mut source = V3VisualFrameSource {
-                    core: &self.core, session_id: &args.session_id, tab_id: &args.chrome_tab_id,
-                    region: super::full::ProbeRegionArgs { x: 0.0, y: 0.0, width: width as f64, height: height as f64 }, initial: None,
+                    core: &self.core,
+                    session_id: &args.session_id,
+                    tab_id: &args.chrome_tab_id,
+                    region: super::full::ProbeRegionArgs {
+                        x: 0.0,
+                        y: 0.0,
+                        width: width as f64,
+                        height: height as f64,
+                    },
+                    initial: None,
                 };
-                let current_visual = match crate::visual_stability::VisualFrameSource::capture(&mut source, &current_identity, None).await {
+                let current_visual = match crate::visual_stability::VisualFrameSource::capture(
+                    &mut source,
+                    &current_identity,
+                    None,
+                )
+                .await
+                {
                     Ok(sample) => sample,
-                    Err(_) => return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}), None)),
+                    Err(_) => {
+                        return Ok((
+                            json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}),
+                            None,
+                        ));
+                    }
                 };
-                if current_visual.visual_revision != probe["visual_ref"]["content_hash"].as_str().unwrap_or_default()
-                    || current_visual.geometry.width != width || current_visual.geometry.height != height {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"register a fresh screenshot for the current viewport"}), None));
+                if current_visual.visual_revision
+                    != probe["visual_ref"]["content_hash"]
+                        .as_str()
+                        .unwrap_or_default()
+                    || current_visual.geometry.width != width
+                    || current_visual.geometry.height != height
+                {
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"register a fresh screenshot for the current viewport"}),
+                        None,
+                    ));
                 }
-                let after_presentation = presentation_state(self, &args.session_id, &args.chrome_tab_id).await;
+                let after_presentation =
+                    presentation_state(self, &args.session_id, &args.chrome_tab_id).await;
                 if after_presentation.as_ref().is_none_or(|state| {
                     state["tab_active"] != true
                         || state["window_focused"] != true
@@ -21096,45 +22664,100 @@ impl AppV3 {
                         || state["activation_epoch"] != before_presentation["activation_epoch"]
                         || state["focus_epoch"] != before_presentation["focus_epoch"]
                 }) {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"foreground_window_changed","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"restore the selected tab as the focused Chrome window and register fresh visual evidence"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"foreground_window_changed","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"restore the selected tab as the focused Chrome window and register fresh visual evidence"}),
+                        None,
+                    ));
                 }
                 let expected_identity = crate::desktop_fallback::DesktopVisualIdentity {
-                    session_id: args.session_id.clone(), tab_id: args.chrome_tab_id.clone(),
+                    session_id: args.session_id.clone(),
+                    tab_id: args.chrome_tab_id.clone(),
                     document_id: format!("{frame_id}:{loader_id}"),
                     visual_revision: current_visual.visual_revision.clone(),
                 };
                 let probe_identity = crate::desktop_fallback::DesktopVisualIdentity {
-                    session_id: args.session_id.clone(), tab_id: args.chrome_tab_id.clone(),
-                    document_id: format!("{}:{}", probe["visual_ref"]["frame_id"].as_str().unwrap_or_default(), probe["visual_ref"]["loader_id"].as_str().unwrap_or_default()),
-                    visual_revision: probe["visual_ref"]["content_hash"].as_str().unwrap_or_default().to_owned(),
+                    session_id: args.session_id.clone(),
+                    tab_id: args.chrome_tab_id.clone(),
+                    document_id: format!(
+                        "{}:{}",
+                        probe["visual_ref"]["frame_id"].as_str().unwrap_or_default(),
+                        probe["visual_ref"]["loader_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                    ),
+                    visual_revision: probe["visual_ref"]["content_hash"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
                 };
                 if expected_identity != probe_identity {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"stale_visual_reference","dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":"capture a fresh screenshot for the current document"}),
+                        None,
+                    ));
                 }
                 let capability = match &action {
-                    crate::desktop_fallback::DesktopAction::Move { .. } | crate::desktop_fallback::DesktopAction::Scroll { .. } => crate::desktop_fallback::DesktopCapability::DesktopPointer,
-                    crate::desktop_fallback::DesktopAction::Key { .. } => crate::desktop_fallback::DesktopCapability::DesktopKeyboard,
+                    crate::desktop_fallback::DesktopAction::Move { .. }
+                    | crate::desktop_fallback::DesktopAction::Scroll { .. } => {
+                        crate::desktop_fallback::DesktopCapability::DesktopPointer
+                    }
+                    crate::desktop_fallback::DesktopAction::Key { .. } => {
+                        crate::desktop_fallback::DesktopCapability::DesktopKeyboard
+                    }
                 };
                 let envelope = crate::desktop_fallback::DesktopActionEnvelope {
-                    version: 1, request_id: format!("workflow-{}", now_ms()), lease_id: format!("{}:{}", args.session_id, args.chrome_tab_id), capability,
-                    mode, visual_identity: probe_identity,
-                    expected_url: probe["visual_ref"]["url"].as_str().unwrap_or_default().to_owned(),
+                    version: 1,
+                    request_id: format!("workflow-{}", now_ms()),
+                    lease_id: format!("{}:{}", args.session_id, args.chrome_tab_id),
+                    capability,
+                    mode,
+                    visual_identity: probe_identity,
+                    expected_url: probe["visual_ref"]["url"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
                     expected_process_id,
-                    viewport_width: width, viewport_height: height, action,
+                    viewport_width: width,
+                    viewport_height: height,
+                    action,
                 };
                 let provider = crate::desktop_platform::PlatformDesktopProvider::default();
                 use crate::desktop_fallback::DesktopFallbackProvider as _;
                 if !provider.capability_available(capability) {
-                    return Ok((json!({"status":"not_dispatched","reason_code":"capability_unavailable","dispatch_may_have_occurred":false,"retry_class":"unsupported_capability","next_action":"use semantic page control; native desktop input is unavailable until an owned-window and foreground permission adapter is installed"}), None));
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":"capability_unavailable","dispatch_may_have_occurred":false,"retry_class":"unsupported_capability","next_action":"use semantic page control; native desktop input is unavailable until an owned-window and foreground permission adapter is installed"}),
+                        None,
+                    ));
                 }
-                if let Err(error) = crate::desktop_fallback::validate_desktop_envelope(&envelope, owned_session, &expected_identity, width, height) {
-                    return Ok((json!({"status":"not_dispatched","reason_code":error.reason_code,"dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":error.next_action}), None));
+                if let Err(error) = crate::desktop_fallback::validate_desktop_envelope(
+                    &envelope,
+                    owned_session,
+                    &expected_identity,
+                    width,
+                    height,
+                ) {
+                    return Ok((
+                        json!({"status":"not_dispatched","reason_code":error.reason_code,"dispatch_may_have_occurred":false,"retry_class":"refresh_visual","next_action":error.next_action}),
+                        None,
+                    ));
                 }
                 let receipt = provider.dispatch(&envelope).await;
                 serde_json::to_value(receipt).map_err(|error| invalid(error.to_string()))?
             }
-            V3WorkflowStep::WaitStable { region, quiet_ms, timeout_ms } => {
-                let result = self.wait_for_visual_stability(&args.session_id, &args.chrome_tab_id, region, quiet_ms, timeout_ms).await?;
+            V3WorkflowStep::WaitStable {
+                region,
+                quiet_ms,
+                timeout_ms,
+            } => {
+                let result = self
+                    .wait_for_visual_stability(
+                        &args.session_id,
+                        &args.chrome_tab_id,
+                        region,
+                        quiet_ms,
+                        timeout_ms,
+                    )
+                    .await?;
                 json!({
                     "status":if result.stable {"stable"} else {"incomplete"},
                     "stable":result.stable,
@@ -21159,14 +22782,16 @@ impl AppV3 {
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         selector: None,
                         max_items: max_items.or(Some(DEFAULT_V3_WORKFLOW_SNAPSHOT_ITEMS)),
-                        max_text_chars: max_text_chars.or(Some(DEFAULT_V3_WORKFLOW_SNAPSHOT_TEXT_CHARS)),
+                        max_text_chars: max_text_chars
+                            .or(Some(DEFAULT_V3_WORKFLOW_SNAPSHOT_TEXT_CHARS)),
                         max_bytes: None,
                         max_bytes_reason: None,
                         href_hint: href_hint.clone(),
                         frame_id: None,
                         include_frames: None,
                         goal,
-                        max_scan_nodes: max_scan_nodes.or(Some(DEFAULT_V3_WORKFLOW_SNAPSHOT_SCAN_NODES)),
+                        max_scan_nodes: max_scan_nodes
+                            .or(Some(DEFAULT_V3_WORKFLOW_SNAPSHOT_SCAN_NODES)),
                     },
                 )
                 .await?;
@@ -21328,7 +22953,14 @@ impl AppV3 {
                     .visual_refs
                     .get(&resolved)
                     .ok_or_else(|| invalid("unknown or stale visual coordinate reference"))?;
-                visual_click_impl(self, &args.session_id, &args.chrome_tab_id, registered, None).await?
+                visual_click_impl(
+                    self,
+                    &args.session_id,
+                    &args.chrome_tab_id,
+                    registered,
+                    None,
+                )
+                .await?
             }
             V3WorkflowStep::Widget {
                 reference,
@@ -21506,10 +23138,10 @@ impl AppV3 {
                             start_y: None,
                             end_x: None,
                             end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                            center_x: None,
+                            center_y: None,
+                            start_distance: None,
+                            end_distance: None,
                         }))
                         .await?
                         .0;
@@ -21567,10 +23199,10 @@ impl AppV3 {
                             start_y: None,
                             end_x: None,
                             end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                            center_x: None,
+                            center_y: None,
+                            start_distance: None,
+                            end_distance: None,
                         }))
                         .await?
                         .0;
@@ -21677,10 +23309,10 @@ impl AppV3 {
                             start_y: None,
                             end_x: None,
                             end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                            center_x: None,
+                            center_y: None,
+                            start_distance: None,
+                            end_distance: None,
                         }))
                         .await?
                         .0;
@@ -21728,10 +23360,10 @@ impl AppV3 {
                         start_y: None,
                         end_x: None,
                         end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                        center_x: None,
+                        center_y: None,
+                        start_distance: None,
+                        end_distance: None,
                     }))
                     .await?
                     .0;
@@ -21810,10 +23442,10 @@ impl AppV3 {
                             start_y: None,
                             end_x: None,
                             end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                            center_x: None,
+                            center_y: None,
+                            start_distance: None,
+                            end_distance: None,
                         }))
                         .await?
                         .0;
@@ -22249,7 +23881,8 @@ impl AppV3 {
             }
             V3WorkflowStep::Navigate { url } => {
                 let url = resolve(url, vars)?;
-                super::super::validate_shared_url(&url).map_err(|error| invalid(error.to_string()))?;
+                super::super::validate_shared_url(&url)
+                    .map_err(|error| invalid(error.to_string()))?;
                 task_navigate(self, &args.session_id, &args.chrome_tab_id, &url).await
             }
             V3WorkflowStep::NavigateSelected { from } => {
@@ -22310,10 +23943,10 @@ impl AppV3 {
                         start_y: None,
                         end_x: None,
                         end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                        center_x: None,
+                        center_y: None,
+                        start_distance: None,
+                        end_distance: None,
 
                         allow_password: None,
                         expected_origin: None,
@@ -22422,10 +24055,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                     allow_password: None,
                     expected_origin: None,
                     account_marker: None,
@@ -22462,10 +24095,10 @@ impl AppV3 {
                     max_bytes_reason: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                     allow_password: None,
                     expected_origin: None,
                     account_marker: None,
@@ -22476,9 +24109,11 @@ impl AppV3 {
             }
             V3WorkflowStep::Hover { reference } => {
                 let reference = resolve(reference, vars)?;
-                self.act(Parameters(V3ActArgs::from_workflow(args, "hover", reference)))
-                    .await?
-                    .0
+                self.act(Parameters(V3ActArgs::from_workflow(
+                    args, "hover", reference,
+                )))
+                .await?
+                .0
             }
             V3WorkflowStep::DoubleClick { reference, outcome } => {
                 let reference = resolve(reference, vars)?;
@@ -22494,9 +24129,11 @@ impl AppV3 {
             }
             V3WorkflowStep::Touch { reference } => {
                 let reference = resolve(reference, vars)?;
-                self.act(Parameters(V3ActArgs::from_workflow(args, "touch", reference)))
-                    .await?
-                    .0
+                self.act(Parameters(V3ActArgs::from_workflow(
+                    args, "touch", reference,
+                )))
+                .await?
+                .0
             }
             V3WorkflowStep::Swipe {
                 reference,
@@ -22646,7 +24283,10 @@ impl AppV3 {
                             artifact_handles: &artifact_handles,
                             trigger_reference: &trigger_reference,
                             account_marker: &account_marker,
-                            evidence: UploadEvidencePredicates { acceptance, persisted },
+                            evidence: UploadEvidencePredicates {
+                                acceptance,
+                                persisted,
+                            },
                         },
                     ),
                 )
@@ -22690,10 +24330,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
 
                     allow_password: None,
                     expected_origin: None,
@@ -22735,10 +24375,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
                     allow_password: None,
                     expected_origin: None,
                     account_marker: None,
@@ -22784,10 +24424,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
 
                     allow_password: None,
                     expected_origin: None,
@@ -22825,10 +24465,10 @@ impl AppV3 {
                     start_y: None,
                     end_x: None,
                     end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                    center_x: None,
+                    center_y: None,
+                    start_distance: None,
+                    end_distance: None,
 
                     allow_password: None,
                     expected_origin: None,
@@ -22999,10 +24639,10 @@ impl AppV3 {
                         start_y: None,
                         end_x: None,
                         end_y: None,
-            center_x: None,
-            center_y: None,
-            start_distance: None,
-            end_distance: None,
+                        center_x: None,
+                        center_y: None,
+                        start_distance: None,
+                        end_distance: None,
 
                         allow_password: None,
                         expected_origin: None,
@@ -23232,7 +24872,13 @@ impl AppV3 {
                         && receipt["receipts"].as_array().is_some_and(|steps| {
                             !steps.is_empty() && steps.iter().all(|step| step["verified"] == true)
                         });
-                    crate::workflow_dag::DagCostHistory::record_node_async(self.dag_costs.clone(), signature, elapsed_ms, verified).await;
+                    crate::workflow_dag::DagCostHistory::record_node_async(
+                        self.dag_costs.clone(),
+                        signature,
+                        elapsed_ms,
+                        verified,
+                    )
+                    .await;
                     durations.push(elapsed_ms);
                     receipts.insert(id, receipt);
                 }
@@ -23240,7 +24886,12 @@ impl AppV3 {
                 let overhead_ms = (wave_started.elapsed().as_millis() as u64)
                     .saturating_sub(max_node_ms)
                     .max(1);
-                crate::workflow_dag::DagCostHistory::record_setup_async(self.dag_costs.clone(), durations.len(), overhead_ms).await;
+                crate::workflow_dag::DagCostHistory::record_setup_async(
+                    self.dag_costs.clone(),
+                    durations.len(),
+                    overhead_ms,
+                )
+                .await;
             } else {
                 serial_layers += 1;
                 for planned in layer {
@@ -23271,7 +24922,13 @@ impl AppV3 {
                             !steps.is_empty() && steps.iter().all(|step| step["verified"] == true)
                         });
                     if effect == crate::workflow_dag::DagEffect::ReadOnly {
-                        crate::workflow_dag::DagCostHistory::record_node_async(self.dag_costs.clone(), signature, elapsed_ms, verified).await;
+                        crate::workflow_dag::DagCostHistory::record_node_async(
+                            self.dag_costs.clone(),
+                            signature,
+                            elapsed_ms,
+                            verified,
+                        )
+                        .await;
                     }
                     receipts.insert(node.id, result.0);
                 }
@@ -23346,10 +25003,10 @@ impl AppV3 {
         // not fence another reader behind the mutation lease.
         let shared = args.program.is_none()
             && args.dag.is_none()
-            && args
-                .steps
-                .iter()
-                .all(|step| crate::workflow_vm::VmOperation::effect(step) == crate::workflow::EffectClass::ReadOnly);
+            && args.steps.iter().all(|step| {
+                crate::workflow_vm::VmOperation::effect(step)
+                    == crate::workflow::EffectClass::ReadOnly
+            });
         if shared {
             acquire_queued_read_lease(&self.leases, &target, &owner)
                 .await
@@ -23445,7 +25102,9 @@ impl AppV3 {
         }
         validate_workflow_steps(&args.steps)?;
         if !desktop_fallback_sequence_is_verified(&args.steps) {
-            return Err(invalid("desktop_fallback must be followed immediately by a read-only verify step"));
+            return Err(invalid(
+                "desktop_fallback must be followed immediately by a read-only verify step",
+            ));
         }
         let started = std::time::Instant::now();
         let mut receipts: Vec<Value> = Vec::with_capacity(args.steps.len());
@@ -23475,8 +25134,8 @@ impl AppV3 {
             );
             let is_mutation = matches!(
                 &step,
-            V3WorkflowStep::Click { .. }
-                | V3WorkflowStep::DesktopFallback { .. }
+                V3WorkflowStep::Click { .. }
+                    | V3WorkflowStep::DesktopFallback { .. }
                     | V3WorkflowStep::Scroll { .. }
                     | V3WorkflowStep::ScrollTo { .. }
                     | V3WorkflowStep::Hover { .. }
@@ -23627,7 +25286,14 @@ impl AppV3 {
                 workflow_should_verify_next(&value, steps.peek()) && stop_status.is_none();
             state.unverified_effect |= matches!(
                 value["status"].as_str(),
-                Some("unknown" | "dispatched" | "not_dispatched" | "failed")
+                Some(
+                    "unknown"
+                        | "dispatched"
+                        | "not_dispatched"
+                        | "failed"
+                        | "dispatched_unverified"
+                        | "dispatched_pending_verification"
+                )
             );
             drop(state);
             step_ms.push(elapsed_ms);
@@ -23686,9 +25352,9 @@ impl AppV3 {
                 retain_text_evidence: false,
             }))
             .await?;
-        let mut value = result.structured_content.ok_or_else(|| {
-            invalid("task program execution returned no structured receipt")
-        })?;
+        let mut value = result
+            .structured_content
+            .ok_or_else(|| invalid("task program execution returned no structured receipt"))?;
         value["execution_plan"] = plan.receipt();
         if value["status"] == "completed" || value["status"] == "completed_unverified" {
             value["task_program"] = json!({
@@ -23966,7 +25632,9 @@ impl AppV3 {
                 .ok_or_else(|| invalid("durable task checkpoints are unavailable"))?;
             let task_digest = crate::task_checkpoints::task_digest(&args.task).map_err(invalid)?;
             let scoped_key = format!("{}\u{1f}{}", args.session_id, key);
-            checkpoints.bind(&scoped_key, &task_digest).await
+            checkpoints
+                .bind(&scoped_key, &task_digest)
+                .await
                 .map_err(invalid)?;
             Some(TaskResumeContext {
                 key: scoped_key,
@@ -24003,7 +25671,10 @@ impl AppV3 {
         ) {
             let value = &receipt.0;
             let origin = cohort["origin_key"].as_str().unwrap_or_default().to_owned();
-            let environment = cohort["environment"].as_str().unwrap_or_default().to_owned();
+            let environment = cohort["environment"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let intent = cohort["intent"].as_str().unwrap_or_default().to_owned();
             let warmth = cohort["warmth"].as_str().unwrap_or("unknown").to_owned();
             let task_size = cohort["task_size"].as_str().unwrap_or_default().to_owned();
@@ -24320,8 +25991,7 @@ impl AppV3 {
         route_receipt["task_conditioned_filter"] =
             crate::task_observation::TaskObservationFilter::for_task(&args.task).receipt();
         if let Some((origin, intent, size)) = cost_context.as_ref() {
-            route_receipt["cost_cohort"] =
-                json!({"origin_key":origin,"intent":intent,"warmth":cost_warmth,"task_size":size,"environment":args.session_id});
+            route_receipt["cost_cohort"] = json!({"origin_key":origin,"intent":intent,"warmth":cost_warmth,"task_size":size,"environment":args.session_id});
         }
         let mut plan = crate::execution_plan::ExecutionPlan::from_primitive(
             args.task.clone(),
@@ -24329,7 +25999,8 @@ impl AppV3 {
             available_routes.clone(),
         );
         if selected_by_history.is_some() {
-            plan = plan.with_empirical_route(execution_route.selected, execution_route.expected_cost);
+            plan =
+                plan.with_empirical_route(execution_route.selected, execution_route.expected_cost);
         }
         route_receipt["execution_plan"] = plan.receipt();
         if let crate::v3_tasks::TaskPrimitive::Research { urls, tab_ids, .. } = &args.task {
@@ -25701,7 +27372,9 @@ impl ServerHandler for AppV3 {
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
         use rmcp::handler::server::tool::ToolCallContext;
-        let routed = Self::tool_router().call(ToolCallContext::new(self, request, context)).await;
+        let routed = Self::tool_router()
+            .call(ToolCallContext::new(self, request, context))
+            .await;
         match routed {
             Ok(rmcp::model::CallToolResponse::Complete(result)) => {
                 Ok(enrich_tool_error(result).into())
@@ -25752,20 +27425,21 @@ pub(super) async fn run() -> Result<(), String> {
         }
     });
     let result = async {
-    let journal = crate::jobs::Journal::open(state_dir.join("operations.sqlite"))
-        .map_err(|error| error.to_string())?;
-    journal
-        .recover_after_restart()
-        .map_err(|error| error.to_string())?;
-    let legacy = super::super::App::with_journal(journal);
-    let app = AppV3::new(AppV2::new(legacy));
-    let service = app
-        .serve(rmcp::transport::io::stdio())
-        .await
-        .map_err(|error| error.to_string())?;
-    service.waiting().await.map_err(|error| error.to_string())?;
-    Ok(())
-    }.await;
+        let journal = crate::jobs::Journal::open(state_dir.join("operations.sqlite"))
+            .map_err(|error| error.to_string())?;
+        journal
+            .recover_after_restart()
+            .map_err(|error| error.to_string())?;
+        let legacy = super::super::App::with_journal(journal);
+        let app = AppV3::new(AppV2::new(legacy));
+        let service = app
+            .serve(rmcp::transport::io::stdio())
+            .await
+            .map_err(|error| error.to_string())?;
+        service.waiting().await.map_err(|error| error.to_string())?;
+        Ok(())
+    }
+    .await;
     heartbeat.abort();
     let _ = std::fs::remove_file(state_dir.join("stdio-runtime.json"));
     result
@@ -25774,3 +27448,6 @@ pub(super) async fn run() -> Result<(), String> {
 #[cfg(test)]
 #[path = "v3_batch_delivery_tests.rs"]
 mod v3_batch_delivery_tests;
+
+#[path = "v3_fastpath_tests.rs"]
+mod v3_fastpath_tests;

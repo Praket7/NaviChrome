@@ -695,6 +695,7 @@ const extensionLibraryAssets = [
   "lib/navigation-url.js",
   "lib/frame-multitouch.js",
   "lib/owned-open.js",
+  "lib/page-diagnostics.js",
 ];
 function stripModuleSyntax(source) {
   return source.replace(/^import[^;]*;[ \t]*$/gm, "").replace(/^export default /gm, "").replace(/^export /gm, "");
@@ -2365,7 +2366,7 @@ async function waitFor(predicate, description) {
   await waitFor(() => nativePorts[2].sent.some(message => message.type === "capabilities"), "verified extension build capabilities");
   const capabilities = nativePorts[2].sent.find(message => message.type === "capabilities");
   assert.equal(capabilities.contract_version, 3, "extension advertises the shared protocol contract version");
-  assert.equal(capabilities.authorized_method_count, 25, "extension advertises the bounded shared method inventory");
+  assert.equal(capabilities.authorized_method_count, 26, "extension advertises the bounded shared method inventory");
   assert.equal((await message({ type: "native-status" })).error, undefined, "ready clears stale native error");
   nativePorts[2].disconnect();
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -2437,6 +2438,9 @@ async function waitFor(predicate, description) {
   }) });
   assert.ok(debuggerCalls.some(call => call.method === "Emulation.setFocusEmulationEnabled" && call.target.tabId === 18 && call.params?.enabled === true),
     "a shared-tab target enables focus emulation before page input");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(debuggerCalls.some(call => call.target.tabId === 18 && call.method === "Network.enable"),
+    "pairing warms diagnostics capture before exact command-count measurements");
   const callsBeforeBlocked = debuggerCalls.length;
   await activeSocket.onmessage({ data: JSON.stringify({
     type: "command", id: "blocked", target_id: "18", method: "Browser.getVersion", params: {}
@@ -2655,6 +2659,26 @@ async function waitFor(predicate, description) {
     expected_urls: expectedUrls([66]), expected_document_ids: expectedDocuments([66]) });
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(liveNative.sent.at(-1).type, "paired");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  for (const method of ["Runtime.enable", "Log.enable", "Network.enable"]) {
+    assert.ok(debuggerCalls.some(call => call.target.tabId === 66 && call.method === method), `pairing warms ${method} before the first diagnostics read`);
+  }
+  debuggerEvent({ tabId: 66 }, "Runtime.consoleAPICalled", { type: "error", args: [{ type: "string", value: "checkout failed password=hunter2" }] });
+  debuggerEvent({ tabId: 66 }, "Network.requestWillBeSent", { requestId: "diag-ok", type: "Fetch", request: { method: "GET", url: "https://api.example.test/items" } });
+  debuggerEvent({ tabId: 66 }, "Network.responseReceived", { requestId: "diag-ok", response: { status: 503, statusText: "Unavailable" } });
+  debuggerEvent({ tabId: 66 }, "Network.requestWillBeSent", { requestId: "diag-fail", type: "XHR", request: { method: "POST", url: "https://user:pass@api.example.test/upload?token=fixture-secret" } });
+  debuggerEvent({ tabId: 66 }, "Network.loadingFailed", { requestId: "diag-fail", errorText: "net::ERR_FAILED" });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  liveNative.hostMessage({ type: "command", id: "diagnostics-read", target_id: "66", method: "Controlla.pageDiagnostics", params: { limit: 8 } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const diagnostics = liveNative.sent.at(-1).result;
+  assert.equal(diagnostics.status, "observed");
+  assert.equal(diagnostics.captured, 3, "console, failed request, and failed response are retained");
+  assert.equal(diagnostics.entries[1].host, "api.example.test", "failed network diagnostics retain host identity");
+  assert.equal(diagnostics.entries[1].status, 503, "HTTP error status is retained");
+  assert.equal(diagnostics.entries[2].error, "net::ERR_FAILED", "network failure reason is retained");
+  const diagnosticText = JSON.stringify(diagnostics);
+  assert.doesNotMatch(diagnosticText, /hunter2|fixture-secret|user:pass/, "diagnostic values and URL credentials are redacted");
   liveNative.hostMessage({ type: "command", id: "page-enable-file-chooser-events", target_id: "66", method: "Page.enable", params: {} });
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(liveNative.sent.at(-1).error, undefined, "Page.enable is allowlisted so foreground upload can receive chooser events");

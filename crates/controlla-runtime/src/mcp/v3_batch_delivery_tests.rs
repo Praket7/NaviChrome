@@ -2595,7 +2595,7 @@ fn compact_surface_routes_tasks_and_receipts_do_not_dump_page_state() {
                 .next()
                 .unwrap_or(capability.action)
         })
-        .chain(["describe", "evidence_read"])
+        .chain(["describe", "diagnostics", "evidence_read"])
         .collect::<Vec<_>>();
     contract_actions.sort_unstable();
     contract_actions.dedup();
@@ -2610,6 +2610,23 @@ fn compact_surface_routes_tasks_and_receipts_do_not_dump_page_state() {
             .iter()
             .any(|action| action == "activate")
     );
+    assert!(browser_schema["properties"]["diagnostic_limit"].is_object());
+    assert!(browser_schema["properties"]["diagnostic_clear"].is_object());
+    let diagnostics_condition = browser_schema["allOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|condition| condition["if"]["properties"]["action"]["const"] == "diagnostics")
+        .unwrap();
+    for required in ["session_id", "chrome_tab_id"] {
+        assert!(
+            diagnostics_condition["then"]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == required)
+        );
+    }
     let activate_condition = browser_schema["allOf"]
         .as_array()
         .unwrap()
@@ -3152,9 +3169,13 @@ fn consumed_picker_input_is_reported_as_accepted_only_after_app_confirmation() {
         &json!({"status":"unknown","dispatch_acknowledged":false,"reason":"File input did not retain one selected file for readback."})
     ));
     assert!(upload_input_selection_confirmed(true, true, true, true));
+    // A Drive-backed picker clears the input it consumed, so acceptance without
+    // a retained file selection is still confirmation when identity matches.
+    assert!(upload_input_selection_confirmed(false, true, true, true));
     assert!(!upload_input_selection_confirmed(true, true, true, false));
     assert!(!upload_input_selection_confirmed(true, false, true, true));
     assert!(!upload_input_selection_confirmed(true, true, false, true));
+    assert!(!upload_input_selection_confirmed(false, true, true, false));
     assert_eq!(
         upload_selection_reason_code(&json!("unknown")),
         "file_selection_unverified"
@@ -3288,6 +3309,12 @@ fn workflow_stops_after_uncertain_or_undispatched_actions() {
     assert!(workflow_should_stop(&json!({"status":"not_dispatched"})));
     assert!(workflow_should_stop(&json!({"status":"failed"})));
     assert!(workflow_should_stop(&json!({"status":"incomplete","reason_code":"visual_stability_timeout"})));
+    assert!(workflow_should_stop(
+        &json!({"status":"dispatched_unverified"})
+    ));
+    assert!(workflow_should_stop(
+        &json!({"status":"dispatched_pending_verification"})
+    ));
     assert!(!workflow_should_stop(&json!({"status":"verified"})));
 }
 
@@ -4115,6 +4142,14 @@ fn uncertain_click_can_continue_to_read_only_verification() {
     ));
     assert!(workflow_should_verify_next(
         &json!({"status":"dispatched"}),
+        Some(&next)
+    ));
+    assert!(workflow_should_verify_next(
+        &json!({"status":"dispatched_unverified"}),
+        Some(&next)
+    ));
+    assert!(workflow_should_verify_next(
+        &json!({"status":"dispatched_pending_verification"}),
         Some(&next)
     ));
     assert!(workflow_should_stop_before_next(

@@ -1,4 +1,5 @@
 import { createBoundedTransport } from "./lib/transport.js";
+import { boundedUploadUrl, createPageDiagnostics } from "./lib/page-diagnostics.js";
 import { FrameTreeRegistry } from "./lib/frame-tree.js";
 import { DebuggerSessionManager } from "./lib/debugger-sessions.js";
 import { typeTextTransaction } from "./lib/input.js";
@@ -55,14 +56,14 @@ const CONTROLLA_PROTOCOL_CONTRACT = Object.freeze({
     "Input.dispatchTouchEvent", "Input.dispatchKeyEvent", "Input.imeSetComposition", "Input.insertText",
     "DOM.getDocument", "DOM.querySelector", "DOM.enable", "DOM.describeNode", "DOM.resolveNode",
     "DOM.setFileInputFiles", "Page.enable", "Page.setInterceptFileChooserDialog", "Accessibility.getPartialAXTree",
-    "Accessibility.getFullAXTree", "Controlla.waitForFileChooser", "Controlla.downloadLifecycle", "Controlla.scrollToTarget"
+    "Accessibility.getFullAXTree", "Controlla.waitForFileChooser", "Controlla.downloadLifecycle", "Controlla.scrollToTarget", "Controlla.pageDiagnostics"
   ])
 });
 const MAX_DOWNLOAD_OBSERVERS_PER_TAB = 4;
 const MAX_DOWNLOAD_OBSERVERS = 64;
 function uploadInputPolicyFunction() { return "function(names){const e=this;if(!e||e.nodeName!=='INPUT'||e.type!=='file')return {ok:false,reason:'target_not_file_input'};const accept=(e.getAttribute('accept')||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);const mime=n=>({txt:'text/plain',csv:'text/csv',json:'application/json',pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp3:'audio/mpeg',mp4:'video/mp4',html:'text/html',xml:'application/xml'})[String(n).split('.').pop().toLowerCase()];if(names.length>1&&!e.multiple)return {ok:false,reason:'multiple_files_not_allowed'};for(const name of names){const lower=String(name).toLowerCase(),ext='.'+lower.split('.').pop(),type=mime(name);if(accept.length&&!accept.some(a=>a.startsWith('.')?lower.endsWith(a):a.endsWith('/*')?!!type&&type.startsWith(a.slice(0,-1)):a.includes('/')?a===type:false))return {ok:false,reason:'accept_filter_mismatch',filename:name};}return {ok:true,accept,multiple:!!e.multiple}}"; }
 const DOWNLOAD_OBSERVER_TTL_MS = 60000;
-const CONTROLLA_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js", "lib/frame-multitouch.js", "lib/owned-open.js"];
+const CONTROLLA_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js",    "lib/frame-multitouch.js", "lib/owned-open.js", "lib/page-diagnostics.js"];
 const CONTROLLA_EXTENSION_BUILD_ID_PROMISE = (async () => {
   const runtimeFallback = `controlla-chrome-extension:${chrome.runtime.getManifest().version}:runtime`;
   const compute = (async () => {
@@ -88,10 +89,14 @@ const CONTROLLA_EXTENSION_BUILD_ID_PROMISE = (async () => {
 })();
 const SCREENSHOT_CHUNK_CHARS = 512 * 1024;
 const SHARED_COMMAND_METHODS = new Set(["Page.getFrameTree", "Page.getLayoutMetrics", "Page.captureScreenshot", "Runtime.evaluate", "Runtime.callFunctionOn", "Runtime.releaseObject",
-  "Input.dispatchMouseEvent", "Input.dispatchDragEvent", "Input.dispatchTouchEvent", "Input.dispatchKeyEvent", "Input.imeSetComposition", "Input.insertText", "DOM.getDocument", "DOM.querySelector", "DOM.enable", "DOM.describeNode", "DOM.resolveNode", "DOM.setFileInputFiles", "Page.enable", "Page.setInterceptFileChooserDialog", "Accessibility.getPartialAXTree", "Accessibility.getFullAXTree", "Controlla.waitForFileChooser", "Controlla.downloadLifecycle", "Controlla.scrollToTarget"]);
+  "Input.dispatchMouseEvent", "Input.dispatchDragEvent", "Input.dispatchTouchEvent", "Input.dispatchKeyEvent", "Input.imeSetComposition", "Input.insertText", "DOM.getDocument", "DOM.querySelector", "DOM.enable", "DOM.describeNode", "DOM.resolveNode", "DOM.setFileInputFiles", "Page.enable", "Page.setInterceptFileChooserDialog", "Accessibility.getPartialAXTree", "Accessibility.getFullAXTree", "Controlla.waitForFileChooser", "Controlla.downloadLifecycle", "Controlla.scrollToTarget", "Controlla.pageDiagnostics"]);
 const cdpTransport = createBoundedTransport({
   sendCommand: (target, method, params) => chrome.debugger.sendCommand(target, method, params),
   onCommand: noteCdpCommand,
+});
+const pageDiagnostics = createPageDiagnostics({
+  sendCommand: (target, method, params) => sendCdpCommand(target, method, params),
+  documentIdForTab: tabId => pairedTabDocumentIds.get(tabId),
 });
 const frameTreeRegistry = new FrameTreeRegistry();
 const debuggerSessions = new DebuggerSessionManager({
@@ -732,6 +737,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   if (Number.isSafeInteger(source?.tabId)) {
     const tabId = source.tabId;
     captureUploadNetworkEvent(tabId, source, method, params || {});
+    pageDiagnostics.record(tabId, method, params || {});
     debuggerSessions.handleDebuggerEvent(source, method, params || {});
     if (method === "Target.attachedToTarget" && params?.targetInfo?.type === "iframe" && typeof params.sessionId === "string") {
       recordFrameSession(tabId, params.targetInfo.targetId, params.sessionId);
@@ -779,15 +785,14 @@ function trackTabDetach(tabId, current) {
   current.then(cleanup, cleanup);
 }
 async function performDebuggerDetach(tabId) {
+  pageDiagnostics.clear(tabId);
   await focusEmulation.disable(tabId);
   try { await chrome.debugger.detach({ tabId }); } catch {}
 }
 async function attachDebugger(tabId) {
   await (pendingTabDetaches.get(tabId) || Promise.resolve()).catch(() => {});
   const attached = await chrome.debugger.attach({ tabId }, "1.3");
-  // Auto-attach is warmed by the first frame operation and then stays on for
-  // the life of this attachment; pairing itself stays command-free. Focus
-  // emulation is likewise lazy: the first page read/input enables it.
+  // Auto-attach and focus emulation stay lazy; pairing dispatches no commands.
   debuggerSessions.markAttached(tabId);
   return attached;
 }
@@ -1295,7 +1300,7 @@ async function pairNative(port, portGeneration, message) {
     // point. Until then the reconnect journal must remain durable.
     nativeRecoveryPending = false;
     await persistNativeLeaseJournal();
-    sendNative(port, portGeneration, { type: "paired", request_id: message.request_id, lease_id: leaseId, targets: [...lease.tabs].map(String).sort(), extension_version: chrome.runtime.getManifest().version, extension_build_id: extensionBuildId, protocol_version: 2, document_identity: true, batch_execution: true, batch_deadline: true });
+    sendNative(port, portGeneration, { type: "paired", request_id: message.request_id, lease_id: leaseId, targets: [...lease.tabs].map(String).sort(), extension_version: chrome.runtime.getManifest().version, extension_build_id: extensionBuildId, protocol_version: 2, document_identity: true, batch_execution: true, batch_deadline: true }); pageDiagnostics.warmSoon([...lease.tabs]);
   } catch (error) {
     if (attemptGeneration !== undefined) await detachNativeLease(typeof message.lease_id === "string" && message.lease_id ? message.lease_id : message.request_id);
     if (reservation) for (const tabId of requested || []) { if (manualAttachedTabs.has(tabId)) continue; pairedTabUrls.delete(tabId); pairedTabDocumentIds.delete(tabId); clearPairedTabTopology(tabId); }
@@ -1333,20 +1338,13 @@ async function dispatchBatch(request, isAuthorized, respond, nativeRoute = false
   }
   respond({ type: "batch_result", id: request.id, result: { receipts, completed: actions.length, stopped_before: null, host_round_trips: 1, in_browser_actions: actions.length, elapsed_ms: performance.now() - startedAt } });
 }
-function boundedUploadNetworkUrl(value) {
-  try {
-    const url = new URL(value);
-    if (!/(^|\.)(google\.com|googleapis\.com|googleusercontent\.com)$/.test(url.hostname)) return null;
-    return { host: url.hostname, path: url.pathname.replace(/[A-Za-z0-9_-]{24,}/g, "<redacted>").slice(0, 160) };
-  } catch { return null; }
-}
 function captureUploadNetworkEvent(tabId, source, method, params) {
   const operation = fileChooserOperations.get(tabId);
   if (!operation || operation.networkSessionId !== (source.sessionId || null) || !method.startsWith("Network.")) return;
   let request;
   if (method === "Network.requestWillBeSent") {
     if (!(params.type === "XHR" || params.type === "Fetch")) return;
-    const url = boundedUploadNetworkUrl(params.request?.url);
+    const url = boundedUploadUrl(params.request?.url);
     if (!url || !params.request?.method) return;
     request = { ...url, method: params.request.method, type: params.type };
     operation.networkRequests.set(params.requestId, request);
@@ -2674,6 +2672,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       }
       return;
     }
+    if (await pageDiagnostics.handleCommand(request, tabId, expectedDocumentId, respond)) return;
     if (!SHARED_COMMAND_METHODS.has(request.method)) throw new Error("Command is outside the shared observe/input allowlist.");
     if (request.method === "Page.captureScreenshot") {
       const p = request.params || {}, clip = p.clip;
@@ -3242,6 +3241,7 @@ async function pairManual(endpointUrl, token, tabs) {
     await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error("Provider did not confirm pairing.")), 5000); next.onmessage = event => { const reply = JSON.parse(event.data); if (reply.type === "ready" && reply.server_version === extensionVersion) { clearTimeout(timer); resolve(); } else { clearTimeout(timer); reject(new Error(reply.error || "Pairing rejected.")); } }; });
   } catch (error) { next.close(); if (socket === next) socket = undefined; await detachManual(generation); throw error; }
   if (generation !== manualGeneration) { next.close(); return; }
+  pageDiagnostics.warmSoon(tabs);
   next.onmessage = async event => {
     if (generation !== manualGeneration || socket !== next) return; const request = JSON.parse(event.data);
     const authorize = tabId => generation === manualGeneration && socket === next && manualAttachedTabs.has(tabId); const reply = response => { if (generation === manualGeneration && socket === next) next.send(JSON.stringify(response)); };
@@ -3266,7 +3266,7 @@ async function reattachAfterNavigation(tabId, native, generation, expectedUrl, e
   let attaching = navigationDebuggerAttaches.get(tabId); if (!attaching) { attaching = attachDebugger(tabId); navigationDebuggerAttaches.set(tabId, attaching); }
   try { await attaching; } finally { if (navigationDebuggerAttaches.get(tabId) === attaching) navigationDebuggerAttaches.delete(tabId); }
   const identity = await nativePageIdentity(tabId); if (!current()) return; if (!routeActive(native, generation) || identity.url !== expectedUrl || identity.document_id !== expectedDocumentId) { await detachDebugger(tabId); return; }
-  pairedTabUrls.set(tabId, identity.url); pairedTabDocumentIds.set(tabId, identity.document_id);
+  pairedTabUrls.set(tabId, identity.url); pairedTabDocumentIds.set(tabId, identity.document_id); pageDiagnostics.warmSoon([tabId]);
 }
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") { clearDownloadLifecycleState(tabId, "tab_navigated"); clearFileChooserState(tabId, "Target navigated before the file chooser opened."); tabNavigationGenerations.set(tabId, (tabNavigationGenerations.get(tabId) || 0) + 1); if (pairedTabDocumentIds.has(tabId)) navigatingTabs.add(tabId); }

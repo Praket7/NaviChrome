@@ -42,13 +42,19 @@ pub(super) fn upload_evidence_complete(
         && (!persistence_requested || persisted == true)
 }
 
+/// Application acceptance is independent evidence that the selected bytes reached
+/// the page. Drive-backed pickers copy the file and clear the input they used, so
+/// the input often no longer reports a selection afterwards; requiring that
+/// readback turned a successful Classroom/Drive upload into `unknown`. Document
+/// and account identity must still match before acceptance is trusted.
 pub(super) fn upload_input_selection_confirmed(
     input_consumed_by_page: bool,
     document_matches: bool,
     marker_matches: bool,
     application_accepted: bool,
 ) -> bool {
-    input_consumed_by_page && document_matches && marker_matches && application_accepted
+    let _ = input_consumed_by_page;
+    document_matches && marker_matches && application_accepted
 }
 
 pub(super) fn upload_picker_consumed_input(selection: &Value) -> bool {

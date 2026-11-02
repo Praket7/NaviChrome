@@ -30,6 +30,7 @@ pub const AUTHORIZED_METHODS: &[&str] = &[
     "Controlla.waitForFileChooser",
     "Controlla.downloadLifecycle",
     "Controlla.scrollToTarget",
+    "Controlla.pageDiagnostics",
 ];
 
 pub fn method_is_authorized(method: &str) -> bool {

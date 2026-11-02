@@ -768,7 +768,7 @@ struct SnapshotGoal {
     within: Option<SnapshotSemanticAncestor>,
     #[serde(default)]
     #[schemars(
-        description = "Search all reachable controls instead of stopping at the first exact match. Results remain bounded by max_scan_nodes and max_items."
+        description = "Search all reachable controls, bounded by max_scan_nodes and max_items."
     )]
     exhaustive: bool,
     #[serde(default)]

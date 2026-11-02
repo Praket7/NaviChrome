@@ -38,7 +38,9 @@ fn validate_response_budget(
     if requested.is_some_and(|bytes| bytes > default_bytes)
         && !reason.is_some_and(|value| !value.trim().is_empty())
     {
-        return Err("max_bytes above the default response budget requires a non-empty max_bytes_reason");
+        return Err(
+            "max_bytes above the default response budget requires a non-empty max_bytes_reason",
+        );
     }
     Ok(())
 }
@@ -85,6 +87,12 @@ struct SemanticTabState {
     items: BTreeMap<String, Value>,
     snapshot_id: String,
     scope_complete: bool,
+    /// A full copy of the last observation. It is only replayed when the
+    /// caller names this exact snapshot and the live interaction epoch still
+    /// matches; page text and values are already retained by `items`.
+    last_snapshot: Option<Value>,
+    last_snapshot_signature: String,
+    interaction_epoch: Value,
 }
 
 impl SemanticTabState {
@@ -97,7 +105,10 @@ impl SemanticTabState {
 
 fn invalidate_semantic_tab(state: &mut SemanticTabState) {
     let next_ref = state.next_ref.max(1);
-    *state = SemanticTabState { next_ref, ..Default::default() };
+    *state = SemanticTabState {
+        next_ref,
+        ..Default::default()
+    };
 }
 
 fn reset_semantic_document(state: &mut SemanticTabState, doc_key: &str, snapshot: &Value) {
@@ -153,13 +164,19 @@ struct BrowserSnapshotArgs {
     selector: Option<String>,
     max_items: Option<usize>,
     max_text_chars: Option<usize>,
-    #[schemars(description = "Targeted compact semantic observations default to 12 KiB; broad or rich observations use a larger bounded default. Set max_bytes_reason when requesting more than the default (up to 1 MiB).")]
+    #[schemars(
+        description = "Targeted compact semantic observations default to 32 KiB; broad or rich observations use a larger bounded default. Set max_bytes_reason when requesting more than the default (up to 1 MiB)."
+    )]
     max_bytes: Option<usize>,
-    #[schemars(description = "Required explanation when max_bytes exceeds the selected default response budget.")]
+    #[schemars(
+        description = "Required explanation when max_bytes exceeds the selected default response budget."
+    )]
     max_bytes_reason: Option<String>,
     href_hint: Option<String>,
     frame_id: Option<String>,
-    #[schemars(description = "Read bounded accessibility trees from already inventoried child frames and report readable/unread coverage. This is opt-in; root snapshot remains the default.")]
+    #[schemars(
+        description = "Read bounded accessibility trees from already inventoried child frames and report readable/unread coverage. This is opt-in; root snapshot remains the default."
+    )]
     include_frames: Option<bool>,
     #[schemars(
         description = "Optional targeted search. A match is a bounded candidate, not proof that no better or duplicate candidate exists; inspect global_complete and scope_complete before claiming exhaustive coverage."
@@ -197,7 +214,7 @@ enum BrowserClickOutcome {
     },
     NewTab {
         #[schemars(
-            description = "Exact absolute HTTP(S) URL expected in the new tab. Supply the selected link href for noopener tabs; omitting it attributes only a recent tab that Chrome reports as opened by this source tab."
+            description = "Exact HTTP(S) URL for a noopener new tab; a matching URL alone is not causal proof."
         )]
         url: Option<String>,
     },
@@ -251,8 +268,8 @@ fn normalized_secure_origin(value: &str) -> Option<String> {
     }
     let host = url.host_str()?;
     let secure = url.scheme() == "https";
-    let loopback_http = url.scheme() == "http"
-        && matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1");
+    let loopback_http =
+        url.scheme() == "http" && matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1");
     (secure || loopback_http).then(|| url.origin().ascii_serialization())
 }
 
@@ -298,9 +315,11 @@ struct BrowserProbeArgs {
     session_id: String,
     chrome_tab_id: String,
     selector: String,
-    #[schemars(description = "Targeted semantic probes default to 12 KiB; set max_bytes_reason when requesting more, up to 1 MiB.")]
+    #[schemars(
+        description = "Targeted semantic probes default to 32 KiB; set max_bytes_reason when requesting more, up to 1 MiB."
+    )]
     max_bytes: Option<usize>,
-    #[schemars(description = "Required explanation when max_bytes exceeds the 12 KiB default.")]
+    #[schemars(description = "Required explanation when max_bytes exceeds the 32 KiB default.")]
     max_bytes_reason: Option<String>,
     timeout_ms: Option<u64>,
 }
@@ -314,7 +333,7 @@ enum BrowserPredicate {
     },
     TextPresent {
         #[schemars(
-            description = "Optional scope: omit for root-page text, use a unique CSS selector for direct DOM text, a fresh @cN semantic reference, or a fresh @f child-frame reference."
+            description = "Scope: omit for root text; else unique CSS selector, fresh @cN ref, or @f frame ref."
         )]
         scope: Option<String>,
         text: String,
@@ -357,11 +376,11 @@ enum BrowserPredicate {
     },
     AppSpecific {
         #[schemars(
-            description = "Registered versioned UI predicate: semantic_field_equals, Canva slide/active-slide, Google Drive picker selection, or Google Classroom attachment. App predicates prove caller-visible UI evidence only."
+            description = "Registered app predicate: semantic_field_equals, Canva, Drive picker, or Classroom; visible UI only."
         )]
         adapter: String,
         #[schemars(
-            description = "Canva manifest: exact URL/count and ordered fresh role/name/reference/ID. Active slide: exact URL/name/ID, uniquely selected in a complete snapshot. Drive picker: exact visible account, file ID and selection state. Classroom: exact account/class/assignment identities and attachment filename/size. All require a complete fresh semantic snapshot."
+            description = "Adapter evidence: exact URL/account/IDs and ordered fresh refs; requires a complete fresh snapshot."
         )]
         predicate: serde_json::Value,
     },
@@ -469,9 +488,13 @@ struct BrowserWorkflowArgs {
     session_id: String,
     chrome_tab_id: String,
     steps: Vec<BrowserWorkflowStep>,
-    #[schemars(description = "Workflow receipts default to 2 KiB. Larger responses are honored only with max_bytes_reason explaining why the extra step evidence is needed; maximum 1 MiB.")]
+    #[schemars(
+        description = "Workflow receipts default to 2 KiB. Larger responses are honored only with max_bytes_reason explaining why the extra step evidence is needed; maximum 1 MiB."
+    )]
     max_bytes: Option<usize>,
-    #[schemars(description = "Explain why the workflow needs a receipt larger than the 2 KiB default.")]
+    #[schemars(
+        description = "Explain why the workflow needs a receipt larger than the 2 KiB default."
+    )]
     max_bytes_reason: Option<String>,
 }
 
@@ -606,10 +629,7 @@ fn bound_snapshot_response(value: &mut Value, max_bytes: usize) -> u64 {
     // fixed envelope once and each item once, then keep the longest prefix that
     // fits. The old loop re-serialized the whole snapshot per dropped item,
     // which is quadratic on pages with hundreds of controls.
-    let item_sizes = full_items
-        .iter()
-        .map(serialized_bytes)
-        .collect::<Vec<_>>();
+    let item_sizes = full_items.iter().map(serialized_bytes).collect::<Vec<_>>();
     value["items"] = json!([]);
     value["items_returned"] = json!(0);
     let mut retained = 0usize;
@@ -678,7 +698,12 @@ fn bounded_string(value: &Value) -> Option<Value> {
         if text.len() <= 256 {
             json!(text)
         } else {
-            let end = text.char_indices().take_while(|(index, _)| *index < 256).map(|(index, character)| index + character.len_utf8()).last().unwrap_or(0);
+            let end = text
+                .char_indices()
+                .take_while(|(index, _)| *index < 256)
+                .map(|(index, character)| index + character.len_utf8())
+                .last()
+                .unwrap_or(0);
             json!(format!("{}…", &text[..end]))
         }
     })
@@ -687,9 +712,18 @@ fn bounded_string(value: &Value) -> Option<Value> {
 fn compact_workflow_step(step: &Value) -> Value {
     let mut compact = serde_json::Map::new();
     for key in [
-        "kind", "status", "reference", "save_as", "reason_code", "action",
-        "semantic_revision", "scope_complete", "root_scope_complete", "global_complete",
-        "truncated", "evidence_complete",
+        "kind",
+        "status",
+        "reference",
+        "save_as",
+        "reason_code",
+        "action",
+        "semantic_revision",
+        "scope_complete",
+        "root_scope_complete",
+        "global_complete",
+        "truncated",
+        "evidence_complete",
     ] {
         if let Some(value) = bounded_string(&step[key]) {
             compact.insert(key.to_owned(), value);
@@ -704,10 +738,22 @@ fn compact_workflow_step(step: &Value) -> Value {
         if let Some(object) = step.get(key).and_then(Value::as_object) {
             let mut selected = serde_json::Map::new();
             for field in [
-                "reference", "role", "name", "href", "actionable", "rendered",
-                "in_viewport", "status", "evidence_complete", "observer",
-                "document", "semantic_revision", "reason", "reason_code",
-                "causality_established", "mutation_retried",
+                "reference",
+                "role",
+                "name",
+                "href",
+                "actionable",
+                "rendered",
+                "in_viewport",
+                "status",
+                "evidence_complete",
+                "observer",
+                "document",
+                "semantic_revision",
+                "reason",
+                "reason_code",
+                "causality_established",
+                "mutation_retried",
             ] {
                 if let Some(value) = object.get(field) {
                     if let Some(text) = bounded_string(value) {
@@ -749,14 +795,20 @@ fn compact_workflow_step(step: &Value) -> Value {
 
 fn bound_workflow_receipt(value: Value, requested_bytes: usize, reason: Option<&str>) -> Value {
     let explicit_reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
-    let requested = requested_bytes.clamp(DEFAULT_RECEIPT_RESPONSE_BYTES, MAX_RECEIPT_RESPONSE_BYTES);
-    let (max_bytes, source) = if requested > DEFAULT_RECEIPT_RESPONSE_BYTES && explicit_reason.is_some() {
-        (requested, "explicit")
-    } else {
-        (DEFAULT_RECEIPT_RESPONSE_BYTES, "default")
-    };
+    let requested =
+        requested_bytes.clamp(DEFAULT_RECEIPT_RESPONSE_BYTES, MAX_RECEIPT_RESPONSE_BYTES);
+    let (max_bytes, source) =
+        if requested > DEFAULT_RECEIPT_RESPONSE_BYTES && explicit_reason.is_some() {
+            (requested, "explicit")
+        } else {
+            (DEFAULT_RECEIPT_RESPONSE_BYTES, "default")
+        };
     let budget_reason = if source == "explicit" {
-        explicit_reason.unwrap_or_default().chars().take(256).collect::<String>()
+        explicit_reason
+            .unwrap_or_default()
+            .chars()
+            .take(256)
+            .collect::<String>()
     } else {
         "compact task receipt default".to_owned()
     };
@@ -774,16 +826,29 @@ fn bound_workflow_receipt(value: Value, requested_bytes: usize, reason: Option<&
         "response_budget":{"max_bytes":max_bytes,"source":source,"reason":budget_reason}
     });
     for step in original_steps {
-        response["steps"].as_array_mut().expect("steps array").push(compact_workflow_step(&step));
+        response["steps"]
+            .as_array_mut()
+            .expect("steps array")
+            .push(compact_workflow_step(&step));
         let returned = response["steps"].as_array().map_or(0, Vec::len);
         response["returned_steps"] = json!(returned);
-        response["omitted_steps"] = json!(value["completed_steps"].as_u64().unwrap_or(returned as u64).saturating_sub(returned as u64));
+        response["omitted_steps"] = json!(
+            value["completed_steps"]
+                .as_u64()
+                .unwrap_or(returned as u64)
+                .saturating_sub(returned as u64)
+        );
         response["truncated"] = json!(response["omitted_steps"].as_u64().unwrap_or(0) > 0);
         if serialized_bytes(&response) > max_bytes {
             response["steps"].as_array_mut().expect("steps array").pop();
             let returned = response["steps"].as_array().map_or(0, Vec::len);
             response["returned_steps"] = json!(returned);
-            response["omitted_steps"] = json!(value["completed_steps"].as_u64().unwrap_or(original_count as u64).saturating_sub(returned as u64));
+            response["omitted_steps"] = json!(
+                value["completed_steps"]
+                    .as_u64()
+                    .unwrap_or(original_count as u64)
+                    .saturating_sub(returned as u64)
+            );
             response["truncated"] = json!(true);
             break;
         }
@@ -906,6 +971,197 @@ async fn scoped_html_view(
     Ok(result)
 }
 
+fn snapshot_request_signature(args: &BrowserSnapshotArgs) -> String {
+    serde_json::json!({
+        "selector": args.selector.as_deref(),
+        "max_items": args.max_items,
+        "max_text_chars": args.max_text_chars,
+        "max_bytes": args.max_bytes,
+        "max_bytes_reason": args.max_bytes_reason.as_deref(),
+        "href_hint": args.href_hint.as_deref(),
+        "frame_id": args.frame_id.as_deref(),
+        "include_frames": args.include_frames,
+        "goal": args.goal.as_ref(),
+        "max_scan_nodes": args.max_scan_nodes,
+    })
+    .to_string()
+}
+
+const SNAPSHOT_EPOCH_EXPRESSION: &str = r#"(()=>{const s=window[Symbol.for('controlla.interactionEpoch.v1')];if(!s)return null;const a=document.activeElement;const focus=a?JSON.stringify([a.tagName,a.id||'',a.getAttribute('name')||'',a.getAttribute('role')||'',a.getAttribute('aria-label')||'']):'';let selection='';if(a&&typeof a.selectionStart==='number')selection=JSON.stringify([a.selectionStart,a.selectionEnd,a.selectionDirection||'none']);else{const x=window.getSelection?.();if(x)selection=JSON.stringify([x.anchorNode?.nodeType,x.anchorOffset,x.focusNode?.nodeType,x.focusOffset,x.isCollapsed])}const viewport=JSON.stringify([innerWidth,innerHeight,scrollX,scrollY,visualViewport?.width,visualViewport?.height,visualViewport?.offsetLeft,visualViewport?.offsetTop,visualViewport?.scale]);return {semantic_revision:s.semantic,focus,selection,viewport}})()"#;
+
+/// Read the page's interaction epoch without walking the DOM. This is the
+/// cheap half of a no-change snapshot: one frame-identity read and one page
+/// expression, followed by the same exact-epoch comparison used by actions.
+async fn read_shared_snapshot_epoch(
+    app: &AppV2,
+    session_id: &str,
+    tab_id: &str,
+) -> Result<Option<((String, String, String), Value)>, rmcp::ErrorData> {
+    let Some(shared) = app
+        .legacy
+        .shared_sessions
+        .lock()
+        .await
+        .get(session_id)
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    let shared = shared.lock().await;
+    if shared.handle.principal != app.legacy.principal.as_ref() {
+        return Ok(None);
+    }
+    let Some(connection) = shared.connection.as_ref() else {
+        return Ok(None);
+    };
+    let registry = shared.registry()?;
+    let epoch_params = json!({"expression":SNAPSHOT_EPOCH_EXPRESSION,"returnByValue":true});
+    // A no-change snapshot must stay cheaper than a full scan. Batch the
+    // document identity with the epoch read when the extension supports it.
+    if matches!(connection, PageSessionTransport::Shared(shared) if shared.supports_batch_execution()) {
+        let Ok(batch) = connection
+            .command_batch(
+                registry,
+                &shared.handle,
+                tab_id,
+                vec![
+                    controlla_browser::providers::SharedBatchAction {
+                        method: "Page.getFrameTree".into(),
+                        params: Value::Null,
+                        stop_on_not_ok: false,
+                    },
+                    controlla_browser::providers::SharedBatchAction {
+                        method: "Runtime.evaluate".into(),
+                        params: epoch_params,
+                        stop_on_not_ok: false,
+                    },
+                ],
+                Duration::from_secs(10),
+            )
+            .await
+        else {
+            return Ok(None);
+        };
+        let Some(receipts) = batch["receipts"]
+            .as_array()
+            .filter(|receipts| receipts.len() == 2)
+        else {
+            return Ok(None);
+        };
+        if batch["completed"].as_u64() != Some(2)
+            || batch.get("batch_error").is_some()
+            || receipts.iter().any(|receipt| receipt.get("error").is_some())
+        {
+            return Ok(None);
+        }
+        let Ok(identity) = super::frame_identity_from_tree(&receipts[0]["result"]) else {
+            return Ok(None);
+        };
+        let Ok(epoch) = super::shared_value(&receipts[1]["result"]) else {
+            return Ok(None);
+        };
+        if epoch.is_null() {
+            return Ok(None);
+        }
+        return Ok(Some((identity, epoch)));
+    }
+    let Ok(identity) =
+        super::shared_frame_identity(connection, registry, &shared.handle, tab_id).await
+    else {
+        return Ok(None);
+    };
+    let response = connection
+        .command(
+            registry,
+            &shared.handle,
+            tab_id,
+            "Runtime.evaluate",
+            epoch_params,
+        )
+        .await
+        .map_err(|error| invalid(error.to_string()))?;
+    let epoch = super::shared_value(&response).map_err(invalid)?;
+    if epoch.is_null() {
+        return Ok(None);
+    }
+    Ok(Some((identity, epoch)))
+}
+
+/// Replay the last full observation when the exact baseline is still current.
+/// Any doubt (different request, document, frame, or interaction epoch) returns
+/// `None`, and the caller falls back to a normal snapshot.
+async fn replay_unchanged_snapshot(
+    app: &AppV2,
+    args: &BrowserSnapshotArgs,
+    since_snapshot_id: &str,
+) -> Result<Option<Value>, rmcp::ErrorData> {
+    if args.selector.is_some()
+        || args.frame_id.is_some()
+        || args.include_frames == Some(true)
+        || args
+            .max_bytes
+            .is_some_and(|bytes| bytes > DEFAULT_TARGETED_RESPONSE_BYTES)
+    {
+        // Scoped and visual modes add response sections after the shared
+        // snapshot is stored. Oversized budgets also need the normal validator
+        // to run before any cached response can be returned.
+        return Ok(None);
+    }
+    let signature = snapshot_request_signature(args);
+    let (prior, document, epoch) = {
+        let semantic = app.semantic.lock().await;
+        let Some(state) = semantic.get(&tab_key(&args.session_id, &args.chrome_tab_id)) else {
+            return Ok(None);
+        };
+        if state.snapshot_id != since_snapshot_id
+            || state.last_snapshot_signature != signature
+            || state.interaction_epoch.is_null()
+        {
+            return Ok(None);
+        }
+        let Some(prior) = state.last_snapshot.clone() else {
+            return Ok(None);
+        };
+        let Some(document) = state.document.clone() else {
+            return Ok(None);
+        };
+        (prior, document, state.interaction_epoch.clone())
+    };
+    let Some((identity, current_epoch)) =
+        read_shared_snapshot_epoch(app, &args.session_id, &args.chrome_tab_id).await?
+    else {
+        return Ok(None);
+    };
+    if identity.0 != document.frame_id || identity.1 != document.loader_id {
+        return Ok(None);
+    }
+    if epoch != current_epoch {
+        return Ok(None);
+    }
+    let mut snapshot = prior;
+    snapshot["interaction_epoch"] = current_epoch;
+    snapshot["scanned_nodes"] = json!(0);
+    snapshot["delta"] = json!({
+        "full": false,
+        "document_changed": false,
+        "upsert": [],
+        "removed": [],
+        "rebase": []
+    });
+    snapshot["observation_cache"] = json!({
+        "hit": true,
+        "basis": "validated_interaction_epoch",
+        "scanned_nodes": 0
+    });
+    snapshot["semantic_mirror"]["source"] = json!("validated_no_change");
+    snapshot["semantic_mirror"]["full"] = json!(false);
+    snapshot["semantic_mirror"]["upsert_count"] = json!(0);
+    snapshot["semantic_mirror"]["removed_count"] = json!(0);
+    snapshot["semantic_mirror"]["rebase_count"] = json!(0);
+    snapshot["baseline_match"] = json!(true);
+    Ok(Some(snapshot))
+}
+
 async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value, rmcp::ErrorData> {
     let started = std::time::Instant::now();
     // Reuse the last observed candidate set to choose the next snapshot's
@@ -970,22 +1226,27 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
                 })
                 .as_deref(),
         ),
-        scope_signature: stable_intent_signature(Some(&format!("{}|{}|{}", args.session_id, args.chrome_tab_id, stable_intent_signature(
-            args.selector
-                .as_ref()
-                .map(|selector| {
-                    format!(
-                        "{}|{}",
-                        selector,
-                        args.goal
-                            .as_ref()
-                            .and_then(|goal| goal.href_hint.as_deref())
-                            .unwrap_or_default()
-                    )
-                })
-                .or_else(|| args.goal.as_ref().and_then(|goal| goal.href_hint.clone()))
-                .as_deref(),
-        )))),
+        scope_signature: stable_intent_signature(Some(&format!(
+            "{}|{}|{}",
+            args.session_id,
+            args.chrome_tab_id,
+            stable_intent_signature(
+                args.selector
+                    .as_ref()
+                    .map(|selector| {
+                        format!(
+                            "{}|{}",
+                            selector,
+                            args.goal
+                                .as_ref()
+                                .and_then(|goal| goal.href_hint.as_deref())
+                                .unwrap_or_default()
+                        )
+                    })
+                    .or_else(|| args.goal.as_ref().and_then(|goal| goal.href_hint.clone()))
+                    .as_deref(),
+            )
+        ))),
         query_required: args
             .goal
             .as_ref()
@@ -1000,11 +1261,17 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         })
         .unwrap_or_else(|_| crate::observation_router::choose_observation(request));
     if args.frame_id.is_some() && args.include_frames == Some(true) {
-        return Err(invalid("include_frames applies to a root snapshot; use frame_id for one explicit child-frame snapshot"));
+        return Err(invalid(
+            "include_frames applies to a root snapshot; use frame_id for one explicit child-frame snapshot",
+        ));
     }
     if let Some(frame_id) = args.frame_id.as_deref() {
-        validate_response_budget(args.max_bytes, args.max_bytes_reason.as_deref(), DEFAULT_TARGETED_RESPONSE_BYTES)
-            .map_err(invalid)?;
+        validate_response_budget(
+            args.max_bytes,
+            args.max_bytes_reason.as_deref(),
+            DEFAULT_TARGETED_RESPONSE_BYTES,
+        )
+        .map_err(invalid)?;
         let (response_max_bytes, response_source, response_reason) = select_response_budget(
             args.max_bytes,
             args.max_bytes_reason.as_deref(),
@@ -1037,8 +1304,13 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         .await;
         return Ok(value);
     }
-    let targeted_compact = decision.mode == crate::observation_router::ObservationMode::SemanticCompact
-        && args.goal.as_ref().and_then(|goal| goal.query.as_deref()).is_some_and(|query| !query.trim().is_empty())
+    let targeted_compact = decision.mode
+        == crate::observation_router::ObservationMode::SemanticCompact
+        && args
+            .goal
+            .as_ref()
+            .and_then(|goal| goal.query.as_deref())
+            .is_some_and(|query| !query.trim().is_empty())
         && !args.goal.as_ref().is_some_and(|goal| goal.exhaustive);
     validate_response_budget(
         args.max_bytes,
@@ -1056,13 +1328,16 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         .as_ref()
         .and_then(|goal| goal.roles.as_deref())
         .unwrap_or_default();
-    let mut collection_text_chars = args.max_text_chars.unwrap_or_else(|| {
-        if decision.mode == crate::observation_router::ObservationMode::SemanticRich {
-            6_000
-        } else {
-            snapshot_chars()
-        }
-    }).min(6000);
+    let mut collection_text_chars = args
+        .max_text_chars
+        .unwrap_or_else(|| {
+            if decision.mode == crate::observation_router::ObservationMode::SemanticRich {
+                6_000
+            } else {
+                snapshot_chars()
+            }
+        })
+        .min(6000);
     let mut collection_items = args.max_items.unwrap_or_else(snapshot_items).clamp(1, 200);
     let mut progressive =
         crate::progressive_observation::ProgressiveObservation::new(decision.mode);
@@ -1081,11 +1356,9 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
                 max_scan_nodes: args.max_scan_nodes,
             }))
             .await?;
-        let Some(reason) = progressive.escalation_reason(
-            &candidate,
-            required_roles,
-            request.query_required,
-        ) else {
+        let Some(reason) =
+            progressive.escalation_reason(&candidate, required_roles, request.query_required)
+        else {
             break candidate;
         };
         let can_widen = args.max_items.is_none() || args.max_text_chars.is_none();
@@ -1094,14 +1367,12 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         }
         progressive.escalate(reason);
         if args.max_items.is_none() {
-            collection_items = collection_items.max(
-                crate::progressive_observation::ESCALATED_ITEMS,
-            );
+            collection_items =
+                collection_items.max(crate::progressive_observation::ESCALATED_ITEMS);
         }
         if args.max_text_chars.is_none() {
-            collection_text_chars = collection_text_chars.max(
-                crate::progressive_observation::ESCALATED_TEXT_CHARS,
-            );
+            collection_text_chars =
+                collection_text_chars.max(crate::progressive_observation::ESCALATED_TEXT_CHARS);
         }
     };
     if args.include_frames == Some(true) {
@@ -1135,7 +1406,9 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
                 Ok(Json(value)) if value["source_frame_id"] == frame_id => {
                     frame_results.push(value);
                 }
-                Ok(_) => unread.push(json!({"frame_id":frame_id,"reason":"frame_identity_mismatch"})),
+                Ok(_) => {
+                    unread.push(json!({"frame_id":frame_id,"reason":"frame_identity_mismatch"}))
+                }
                 Err(error) => unread.push(json!({"frame_id":frame_id,"reason":error.message})),
             }
         }
@@ -1145,13 +1418,8 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
             .count();
         let bounded = frame_count.min(8);
         let truncated = frame_count > bounded || snapshot["frame_handles_truncated"] == true;
-        let frame_accessibility = aggregate_frame_accessibility(
-            frame_results,
-            unread,
-            frame_count,
-            bounded,
-            truncated,
-        );
+        let frame_accessibility =
+            aggregate_frame_accessibility(frame_results, unread, frame_count, bounded, truncated);
         let complete = frame_accessibility["complete"] == true;
         snapshot["frame_accessibility"] = frame_accessibility;
         if !complete {
@@ -1205,6 +1473,28 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
     let scope_complete = snapshot["scope_complete"] == true;
     let root_scope_complete = snapshot_root_scope_complete(&snapshot);
     snapshot["root_scope_complete"] = json!(root_scope_complete);
+    // Read the retained epoch before taking the semantic-state lock. The
+    // shared capture deliberately removes the epoch from the public value, so
+    // the cache needs the exact epoch retained alongside the snapshot object.
+    // Keeping this read outside `semantic` avoids a shared-session/semantic
+    // lock-order inversion on the snapshot path.
+    let retained_epoch = async {
+        let shared = app
+            .legacy
+            .shared_sessions
+            .lock()
+            .await
+            .get(&args.session_id)
+            .cloned()?;
+        let shared = shared.lock().await;
+        let token = snapshot["snapshot_id"].as_str()?;
+        shared
+            .snapshots
+            .get(&args.chrome_tab_id)
+            .filter(|retained| retained.token == token)
+            .map(|retained| retained.interaction_epoch.clone())
+    }
+    .await;
     let mut semantic = app.semantic.lock().await;
     let state = semantic.entry(key.clone()).or_default();
     let document_changed = !state.document_key.is_empty() && state.document_key != doc_key;
@@ -1273,14 +1563,23 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
     // recovery, so callers can rebind instead of taking another snapshot.
     let rebase_items = state.items.values().cloned().collect::<Vec<_>>();
     let rebase = crate::reference_rebase::rebase_map(
-        state.identities.iter().map(|(reference, identity)| (reference.clone(), identity.clone())),
+        state
+            .identities
+            .iter()
+            .map(|(reference, identity)| (reference.clone(), identity.clone())),
         state.items.keys().cloned(),
         state.document.as_ref(),
         &rebase_items,
         32,
     );
-    let rebase_receipts = rebase.iter().map(|decision| decision.receipt()).collect::<Vec<_>>();
-    let rebound_count = rebase.iter().filter(|decision| decision.to.is_some()).count();
+    let rebase_receipts = rebase
+        .iter()
+        .map(|decision| decision.receipt())
+        .collect::<Vec<_>>();
+    let rebound_count = rebase
+        .iter()
+        .filter(|decision| decision.to.is_some())
+        .count();
     let ambiguous_count = rebase
         .iter()
         .filter(|decision| decision.class == crate::reference_rebase::RebaseClass::Ambiguous)
@@ -1308,6 +1607,11 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         "mutation_clock":snapshot["semantic_revision"],
         "policy":"stable_identity_delta_over_current_document; removed references carry one bounded rebase class; page text and values are never mirrored into keys"
     });
+    // Keep the full observation for a possible no-change replay. The route
+    // still bounds the public response; this copy is never persisted.
+    state.interaction_epoch = retained_epoch.unwrap_or(serde_json::Value::Null);
+    state.last_snapshot_signature = snapshot_request_signature(args);
+    state.last_snapshot = Some(snapshot.clone());
     drop(semantic);
     if decision.mode == crate::observation_router::ObservationMode::HtmlScoped {
         if let Some(selector) = args.selector.as_deref() {
@@ -1388,10 +1692,7 @@ fn aggregate_frame_accessibility(
     truncated: bool,
 ) -> Value {
     let trees_complete = frames.iter().all(|frame| frame["complete"] == true);
-    let complete = unread.is_empty()
-        && !truncated
-        && trees_complete
-        && frames.len() == frame_count;
+    let complete = unread.is_empty() && !truncated && trees_complete && frames.len() == frame_count;
     json!({
         "frames":frames,
         "unread":unread,
@@ -1416,7 +1717,9 @@ fn record_observation_feedback(
     // Telemetry may be dropped under pressure; it cannot stall a page action
     // or create an unbounded queue of disk writers.
     static RECORDERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
-    let Ok(permit) = RECORDERS.try_acquire() else { return; };
+    let Ok(permit) = RECORDERS.try_acquire() else {
+        return;
+    };
     let history = app.observation_history.clone();
     let elapsed_ms = started.elapsed().as_millis().clamp(1, u64::MAX as u128) as u64;
     tokio::task::spawn_blocking(move || {
@@ -1532,9 +1835,7 @@ async fn resolve_reference(
     })?;
     let items = state.items.values().cloned().collect::<Vec<_>>();
     let candidate = crate::target_registry::rebind_result(expected, Some(current_document), &items)
-        .map_err(|error| {
-            invalid(format!("reference could not be rebound safely: {error}"))
-        })?;
+        .map_err(|error| invalid(format!("reference could not be rebound safely: {error}")))?;
     let current = state
         .items
         .get(&candidate.reference)
@@ -1559,8 +1860,12 @@ async fn secure_password_fill(
         .as_deref()
         .and_then(normalized_secure_origin);
     let account_marker = args.account_marker.as_ref();
-    if expected_origin.is_none() || account_marker.is_none_or(|marker| !valid_secure_account_marker(marker)) {
-        return Ok(json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_destination_binding_required","dispatch_may_have_occurred":false,"verified":false,"reason":"An exact secure origin and visible account marker are required before password entry."}));
+    if expected_origin.is_none()
+        || account_marker.is_none_or(|marker| !valid_secure_account_marker(marker))
+    {
+        return Ok(
+            json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_destination_binding_required","dispatch_may_have_occurred":false,"verified":false,"reason":"An exact secure origin and visible account marker are required before password entry."}),
+        );
     }
     if args
         .value
@@ -1703,12 +2008,16 @@ async fn secure_password_fill(
         .await
         .map_err(|_| invalid("password frame identity is unavailable"))?;
     let Some((current_loader, frame_url)) = super::find_cdp_frame(&frame_tree, &frame_id) else {
-        return Ok(json!({"status":"not_dispatched","action":"secure_fill","reason_code":"password_frame_unavailable","dispatch_may_have_occurred":false,"verified":false}));
+        return Ok(
+            json!({"status":"not_dispatched","action":"secure_fill","reason_code":"password_frame_unavailable","dispatch_may_have_occurred":false,"verified":false}),
+        );
     };
     if current_loader != loader_id
         || normalized_secure_origin(&frame_url).as_deref() != expected_origin.as_deref()
     {
-        return Ok(json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_origin_mismatch","dispatch_may_have_occurred":false,"verified":false,"reason":"The live password frame no longer matches the requested secure origin."}));
+        return Ok(
+            json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_origin_mismatch","dispatch_may_have_occurred":false,"verified":false,"reason":"The live password frame no longer matches the requested secure origin."}),
+        );
     }
     let marker = account_marker.expect("validated account marker");
     let marker_response = connection
@@ -1723,16 +2032,14 @@ async fn secure_password_fill(
         .map_err(|_| invalid("account identity could not be checked before password entry"))?;
     let marker_evidence = shared_value(&marker_response).map_err(invalid)?;
     if marker_evidence["matches"] != true {
-        return Ok(json!({"status":"not_dispatched","action":"secure_fill","reason_code":"account_identity_mismatch","dispatch_may_have_occurred":false,"verified":false,"reason":"The visible account identity did not match the requested account marker; no password was sent."}));
+        return Ok(
+            json!({"status":"not_dispatched","action":"secure_fill","reason_code":"account_identity_mismatch","dispatch_may_have_occurred":false,"verified":false,"reason":"The visible account identity did not match the requested account marker; no password was sent."}),
+        );
     }
-    let identity_after_marker = super::shared_frame_identity(
-        connection,
-        registry,
-        &shared.handle,
-        &args.chrome_tab_id,
-    )
-    .await
-    .map_err(invalid)?;
+    let identity_after_marker =
+        super::shared_frame_identity(connection, registry, &shared.handle, &args.chrome_tab_id)
+            .await
+            .map_err(invalid)?;
     let frame_tree_after_marker = connection
         .command(
             registry,
@@ -1747,7 +2054,9 @@ async fn secure_password_fill(
         || super::find_cdp_frame(&frame_tree_after_marker, &frame_id)
             != Some((loader_id.clone(), frame_url))
     {
-        return Ok(json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_destination_changed","dispatch_may_have_occurred":false,"verified":false,"reason":"The target or password frame changed during destination binding; no password was sent."}));
+        return Ok(
+            json!({"status":"not_dispatched","action":"secure_fill","reason_code":"secure_destination_changed","dispatch_may_have_occurred":false,"verified":false,"reason":"The target or password frame changed during destination binding; no password was sent."}),
+        );
     }
     if !crate::guard_reason::unrestricted_mode() {
         shared
@@ -2299,7 +2608,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
                 max_items: None,
                 max_text_chars: None,
                 max_bytes: None,
-            max_bytes_reason: None,
+                max_bytes_reason: None,
                 href_hint: None,
                 frame_id: None,
                 include_frames: None,
@@ -2543,7 +2852,7 @@ async fn verify_impl_unmeasured(
                 max_items: Some(200),
                 max_text_chars: Some(0),
                 max_bytes: Some(1_000_000),
-            max_bytes_reason: None,
+                max_bytes_reason: None,
                 href_hint: None,
                 frame_id: Some(frame_id.clone()),
                 include_frames: None,
@@ -3059,8 +3368,7 @@ fn normalize_unknown_receipts(value: &mut Value) {
                         .entry("next_action")
                         .or_insert_with(|| json!("inspect_current_state_once_before_retrying"));
                 }
-                if receipt
-                    && object.get("status").and_then(Value::as_str) == Some("not_dispatched")
+                if receipt && object.get("status").and_then(Value::as_str) == Some("not_dispatched")
                 {
                     if object.get("automatic_recovery") == Some(&Value::Bool(true)) {
                         // An automatic recovery is the runtime's job. Do not tell
@@ -3068,12 +3376,18 @@ fn normalize_unknown_receipts(value: &mut Value) {
                         object.remove("next_action");
                     } else {
                         let next_action = match object.get("reason_code").and_then(Value::as_str) {
-                            Some("stale_watcher_revision" | "stale_watcher_document") => "refresh_and_reacquire_once",
+                            Some("stale_watcher_revision" | "stale_watcher_document") => {
+                                "refresh_and_reacquire_once"
+                            }
                             Some("stale_reference" | "stale_document" | "changed_target") => {
                                 "take_fresh_snapshot_and_retry"
                             }
-                            Some("activation_forbidden") => "use_a_controlla_owned_automation_window_or_navigate_by_observed_href",
-                            Some("challenge_handoff_required") => "let_the_user_complete_the_challenge_then_observe_again",
+                            Some("activation_forbidden") => {
+                                "use_a_controlla_owned_automation_window_or_navigate_by_observed_href"
+                            }
+                            Some("challenge_handoff_required") => {
+                                "let_the_user_complete_the_challenge_then_observe_again"
+                            }
                             _ => "correct_the_named_cause_before_retrying",
                         };
                         object
@@ -3173,7 +3487,9 @@ impl AppV2 {
                 }
                 if let Some(frame_ref) = reference.strip_prefix("@f:") {
                     if matches!(args.action.as_str(), "double_click" | "context_click") {
-                        return Ok(Json(json!({"status":"not_dispatched","action":args.action,"reason_code":"frame_pointer_variant_unsupported","dispatch_may_have_occurred":false,"reason":"double/context click on child-frame references is not wired through the guarded frame route"})));
+                        return Ok(Json(
+                            json!({"status":"not_dispatched","action":args.action,"reason_code":"frame_pointer_variant_unsupported","dispatch_may_have_occurred":false,"reason":"double/context click on child-frame references is not wired through the guarded frame route"}),
+                        ));
                     }
                     let mut parts = frame_ref.splitn(3, ':');
                     let frame_id = parts.next().unwrap_or_default();
@@ -3309,7 +3625,8 @@ impl AppV2 {
             args.max_bytes_reason.as_deref(),
             DEFAULT_TARGETED_RESPONSE_BYTES,
         );
-        let Json(mut value) = self.legacy
+        let Json(mut value) = self
+            .legacy
             .shared_accessibility(Parameters(SharedAccessibilityArgs {
                 session_id: args.session_id,
                 chrome_tab_id: args.chrome_tab_id,
@@ -3442,8 +3759,8 @@ impl AppV2 {
                             reference: Some(reference.clone()),
                             expected_value: Some(expected_value),
                             value: Some(value),
-            expected_origin: None,
-            account_marker: None,
+                            expected_origin: None,
+                            account_marker: None,
                             outcome: None,
                             timeout_ms: None,
                         },
@@ -3468,8 +3785,8 @@ impl AppV2 {
                             reference: Some(reference.clone()),
                             expected_value: Some(expected_value),
                             value: Some(value),
-            expected_origin: None,
-            account_marker: None,
+                            expected_origin: None,
+                            account_marker: None,
                             outcome: None,
                             timeout_ms: None,
                         },
@@ -3686,7 +4003,9 @@ mod tests {
         assert_eq!(receipt["human_edit_preserved"], true);
         assert_eq!(receipt["requires_fresh_snapshot"], true);
         assert!(!receipt.to_string().contains("human edit"));
-        assert!(!same_field_value_conflict(&json!({"ok":false,"reason":"blocked"})));
+        assert!(!same_field_value_conflict(
+            &json!({"ok":false,"reason":"blocked"})
+        ));
     }
 
     #[test]
@@ -3772,7 +4091,10 @@ mod tests {
         assert_eq!(first["actionable"], true);
         assert_eq!(snapshot["count"], 160);
         assert_eq!(snapshot["observation"]["bytes"], json!(bytes));
-        assert_eq!(snapshot["response_budget"]["reason"], "test bounded response");
+        assert_eq!(
+            snapshot["response_budget"]["reason"],
+            "test bounded response"
+        );
     }
 
     #[test]
@@ -3811,9 +4133,17 @@ mod tests {
         assert_eq!(bounded["status"], "completed");
         assert_eq!(bounded["completed_steps"], 20);
         assert!(bounded["steps"].as_array().unwrap().len() < 20);
-        assert_eq!(bounded["returned_steps"], bounded["steps"].as_array().unwrap().len());
+        assert_eq!(
+            bounded["returned_steps"],
+            bounded["steps"].as_array().unwrap().len()
+        );
         assert!(bounded["omitted_steps"].as_u64().unwrap() > 0);
-        assert!(bounded["steps"][0]["reference"].as_str().unwrap().starts_with("@c"));
+        assert!(
+            bounded["steps"][0]["reference"]
+                .as_str()
+                .unwrap()
+                .starts_with("@c")
+        );
         assert_eq!(bounded["steps"][0]["document"]["frame_id"], "frame-1");
         assert_eq!(bounded["steps"][0]["scope_complete"], true);
         assert!(bounded["steps"][0].get("page_text").is_none());
@@ -3825,12 +4155,18 @@ mod tests {
     fn larger_workflow_receipt_budget_requires_and_reports_a_reason() {
         let response = json!({"status":"completed", "completed_steps":1, "steps":[]});
         let denied = bound_workflow_receipt(response.clone(), 4096, None);
-        assert_eq!(denied["response_budget"]["max_bytes"], DEFAULT_RECEIPT_RESPONSE_BYTES);
+        assert_eq!(
+            denied["response_budget"]["max_bytes"],
+            DEFAULT_RECEIPT_RESPONSE_BYTES
+        );
         assert_eq!(denied["response_budget"]["source"], "default");
 
         let requested = bound_workflow_receipt(response, 4096, Some("review all step evidence"));
         assert_eq!(requested["response_budget"]["max_bytes"], 4096);
-        assert_eq!(requested["response_budget"]["reason"], "review all step evidence");
+        assert_eq!(
+            requested["response_budget"]["reason"],
+            "review all step evidence"
+        );
         assert_eq!(requested["response_budget"]["source"], "explicit");
     }
 
@@ -4445,7 +4781,10 @@ mod tests {
     fn byte_budget_keeps_the_longest_prefix_and_reports_truncation() {
         let mut value = snapshot_with_items(20);
         let bytes = bound_snapshot_response(&mut value, 4096) as usize;
-        assert!(bytes <= 4096, "measured {bytes} bytes for a 4096 byte budget");
+        assert!(
+            bytes <= 4096,
+            "measured {bytes} bytes for a 4096 byte budget"
+        );
         assert_eq!(bytes, serde_json::to_vec(&value).unwrap().len());
         assert_eq!(value["truncated"], json!(true));
         assert_eq!(value["truncation_reason"], json!("response_byte_limit"));
@@ -4463,9 +4802,8 @@ mod tests {
         assert_eq!(upserts.len(), returned);
         // Keeping one more item would exceed the same budget.
         let mut larger = snapshot_with_items(20);
-        larger["items"] = json!(snapshot_with_items(20)["items"]
-            .as_array()
-            .expect("items")[..=returned]);
+        larger["items"] =
+            json!(snapshot_with_items(20)["items"].as_array().expect("items")[..=returned]);
         larger["truncated"] = json!(true);
         larger["truncation_reason"] = json!("response_byte_limit");
         larger["count"] = json!(20);
@@ -4512,5 +4850,36 @@ mod tests {
         assert!(!click_needs_reacquisition(
             &json!({"status":"not_dispatched","reason_code":"other"})
         ));
+    }
+
+    #[test]
+    fn snapshot_request_signature_changes_with_frame_or_budget() {
+        fn args() -> BrowserSnapshotArgs {
+            BrowserSnapshotArgs {
+                session_id: "session".into(),
+                chrome_tab_id: "tab".into(),
+                selector: None,
+                max_items: None,
+                max_text_chars: None,
+                max_bytes: None,
+                max_bytes_reason: None,
+                href_hint: None,
+                frame_id: None,
+                include_frames: None,
+                goal: None,
+                max_scan_nodes: None,
+            }
+        }
+        let original = snapshot_request_signature(&args());
+        assert_eq!(original, snapshot_request_signature(&args()));
+        let mut framed = args();
+        framed.frame_id = Some("frame-1".into());
+        assert_ne!(original, snapshot_request_signature(&framed));
+        let mut wider = args();
+        wider.max_bytes = Some(100_000);
+        assert_ne!(original, snapshot_request_signature(&wider));
+        let mut explained = args();
+        explained.max_bytes_reason = Some("more context".into());
+        assert_ne!(original, snapshot_request_signature(&explained));
     }
 }

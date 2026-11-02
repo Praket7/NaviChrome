@@ -115,58 +115,59 @@ impl LeaseCoordinator {
         ttl: Duration,
         is_read: bool,
     ) -> Result<Lease, String> {
-        let mut map = self.inner.lock().unwrap();
-        // A lease whose TTL has passed cannot still have an effect in flight, so
-        // it must not keep blocking. Without this, a client that dies while
-        // holding the target leaves every later call waiting on a lease that no
-        // live process owns until someone restarts the whole server.
-        if map
-            .get(&key)
-            .is_some_and(|held| Instant::now() >= held.lease.expires_at)
+        // Inspect and update in-memory ownership first. Filesystem work is
+        // deliberately outside this lock: a slow disk or a contended target
+        // must not serialize admission for unrelated targets.
         {
-            // Dropping the entry closes its lock file, which releases the OS
-            // lock this process held for it.
-            map.remove(&key);
-        }
-        if map.contains_key(&key) {
-            if is_read
-                && let Some(readers) = map.get_mut(&key).and_then(|held| held.readers.as_mut())
+            let mut map = self.inner.lock().unwrap();
+            // A lease whose TTL has passed cannot still have an effect in
+            // flight, so it must not keep blocking. Dropping the entry closes
+            // its lock file, releasing the OS lock this process held.
+            if map
+                .get(&key)
+                .is_some_and(|held| Instant::now() >= held.lease.expires_at)
             {
-                readers.insert(owner.to_owned());
-                let mut shared = map.get(&key).unwrap().lease.clone();
-                shared.owner = owner.to_owned();
-                return Ok(shared);
+                map.remove(&key);
             }
-            // The same holder resuming after an unknown outcome or a long action
-            // re-enters its own lease instead of waiting out the retention: the
-            // effect was already fenced against other processes, and this
-            // process is the one the receipt told to inspect before retrying.
-            if !is_read {
-                let same_owner = map.get(&key).is_some_and(|held| held.lease.owner == owner);
-                let retained_unknown = map.get(&key).is_some_and(|held| held.unknown);
+            if let Some(held) = map.get_mut(&key) {
+                if is_read {
+                    if let Some(readers) = held.readers.as_mut() {
+                        readers.insert(owner.to_owned());
+                        let mut shared = held.lease.clone();
+                        shared.owner = owner.to_owned();
+                        return Ok(shared);
+                    }
+                    return Err(format!("lease held by {}", held.lease.owner));
+                }
+                let same_owner = held.lease.owner == owner;
+                let retained_unknown = held.unknown;
                 if same_owner || retained_unknown {
+                    let generation = self
+                        .next_generation
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let lease = Lease {
+                        key: key.clone(),
+                        owner: owner.to_owned(),
+                        expires_at: Instant::now() + ttl,
+                        effect: "mutation".into(),
+                    };
+                    let held = map.get_mut(&key).expect("lease entry was just read");
+                    held.lease = lease.clone();
+                    held.unknown = false;
+                    held.generation = generation;
+                    drop(map);
                     let path = self
                         .lock_dir
                         .join(format!("{}.lock", lease_key_digest(&key)));
                     write_owner_record(&path, &self.state_dir, &key, owner, ttl);
-                    // A retained lease belongs to a returned action, so a new
-                    // call may adopt it. Bump the generation so the old
-                    // unknown-retention timer cannot release the new hold.
-                    let generation = self
-                        .next_generation
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let held = map.get_mut(&key).unwrap();
-                    held.lease.owner = owner.to_owned();
-                    held.lease.expires_at = Instant::now() + ttl;
-                    held.unknown = false;
-                    held.generation = generation;
-                    return Ok(held.lease.clone());
+                    return Ok(lease);
                 }
+                return Err(format!("lease held by {}", held.lease.owner));
             }
-            let existing = map.get(&key).unwrap();
-            return Err(format!("lease held by {}", existing.lease.owner));
         }
 
+        // No in-memory owner. Acquire the OS lock and publish the owner record
+        // before inserting into the map, so all file I/O runs lock-free.
         std::fs::create_dir_all(self.lock_dir.as_path())
             .map_err(|error| format!("unable to create target lock directory: {error}"))?;
         restrict_lock_directory(self.lock_dir.as_path())
@@ -174,7 +175,7 @@ impl LeaseCoordinator {
         let path = self
             .lock_dir
             .join(format!("{}.lock", lease_key_digest(&key)));
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -186,14 +187,13 @@ impl LeaseCoordinator {
         } else {
             file.try_lock()
         };
-        let mut file = file;
         match lock_result {
             Ok(()) => {}
             Err(std::fs::TryLockError::WouldBlock) => {
-                // A lock whose recorded owner generation is absent from the live
-                // runtime records belongs to a process that can no longer finish
-                // the effect. Take it over immediately instead of blocking behind
-                // it until the lease expiry, and remember why.
+                // A lock whose recorded owner generation is absent from the
+                // live runtime records belongs to a process that can no longer
+                // finish the effect. Take it over immediately instead of
+                // blocking behind it until the lease expiry.
                 let Some(reason) = self.stale_owner(&key) else {
                     return Err("lease held by another MCP process".to_owned());
                 };
@@ -237,6 +237,13 @@ impl LeaseCoordinator {
         let generation = self
             .next_generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut map = self.inner.lock().unwrap();
+        if let Some(existing) = map.get(&key) {
+            let owner = existing.lease.owner.clone();
+            drop(map);
+            drop(file);
+            return Err(format!("lease held by {owner}"));
+        }
         map.insert(
             key,
             HeldLease {
