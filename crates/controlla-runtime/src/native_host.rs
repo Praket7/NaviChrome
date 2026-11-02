@@ -1296,8 +1296,16 @@ mod tests {
                 include_bytes!("../../../extensions/chrome-controlla/lib/typing-support.js"),
             ),
             (
+                "lib/input-guards.js",
+                include_bytes!("../../../extensions/chrome-controlla/lib/input-guards.js"),
+            ),
+            (
                 "lib/input.js",
                 include_bytes!("../../../extensions/chrome-controlla/lib/input.js"),
+            ),
+            (
+                "lib/file-input-selection.js",
+                include_bytes!("../../../extensions/chrome-controlla/lib/file-input-selection.js"),
             ),
             (
                 "lib/editor-adapters.js",
