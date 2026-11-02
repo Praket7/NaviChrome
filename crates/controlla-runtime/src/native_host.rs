@@ -1359,6 +1359,10 @@ mod tests {
                 "lib/owned-open.js",
                 include_bytes!("../../../extensions/chrome-controlla/lib/owned-open.js"),
             ),
+            (
+                "lib/page-diagnostics.js",
+                include_bytes!("../../../extensions/chrome-controlla/lib/page-diagnostics.js"),
+            ),
         ];
         let extension_source = include_str!("../../../extensions/chrome-controlla/background.js");
         let asset_declaration = extension_source

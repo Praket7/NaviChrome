@@ -32,6 +32,7 @@ const EXTENSION_RUNTIME_ASSETS: &[&str] = &[
     "lib/navigation-url.js",
     "lib/frame-multitouch.js",
     "lib/owned-open.js",
+    "lib/page-diagnostics.js",
 ];
 
 fn main() {

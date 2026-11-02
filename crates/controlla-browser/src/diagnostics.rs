@@ -163,12 +163,11 @@ impl DiagnosticsBuffer {
                 });
                 if let Some((scheme, host, path)) =
                     bounded_url(entry.get("url").and_then(Value::as_str).unwrap_or_default())
+                    && let Some(object) = value.as_object_mut()
                 {
-                    if let Some(object) = value.as_object_mut() {
-                        object.insert("scheme".into(), json!(scheme));
-                        object.insert("host".into(), json!(host));
-                        object.insert("path".into(), json!(path));
-                    }
+                    object.insert("scheme".into(), json!(scheme));
+                    object.insert("host".into(), json!(host));
+                    object.insert("path".into(), json!(path));
                 }
                 self.push(value);
             }

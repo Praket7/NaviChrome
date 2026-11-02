@@ -17927,7 +17927,7 @@ impl AppV3 {
                 let failure_budget = value
                     .pointer("/response_budget/max_bytes")
                     .and_then(Value::as_u64)
-                    .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes)
+                    .unwrap_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64)
                     as usize;
                 self.attach_failure_diagnostics(
                     &mut value,
@@ -21269,7 +21269,7 @@ impl AppV3 {
         let failure_budget = value
             .pointer("/response_budget/max_bytes")
             .and_then(Value::as_u64)
-            .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes) as usize;
+            .unwrap_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64) as usize;
         let returned_observations = u64::from(contains_returned_page_evidence(&value));
         attach_observation_boundary(&mut value, returned_observations);
         self.attach_failure_diagnostics(
@@ -22412,7 +22412,7 @@ impl AppV3 {
         let failure_budget = value
             .pointer("/response_budget/max_bytes")
             .and_then(Value::as_u64)
-            .map_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64, |bytes| bytes) as usize;
+            .unwrap_or(DEFAULT_V3_WORKFLOW_RECEIPT_BYTES as u64) as usize;
         self.attach_failure_diagnostics(
             &mut value,
             &diagnostic_session_id,
