@@ -89,3 +89,29 @@ session because they depend on an observed page, reference, or artifact.
 - `browser action=release` detaches Controlla and keeps the user's tab open.
 - Upload receipts separate file selection, application acceptance, and
 persistence; report only the level observed.
+
+## Click outcome
+
+An acknowledgement is not success.
+
+| Effect | `outcome` |
+| --- | --- |
+| submit, link, redirect | `navigation` (`url` only when exact) |
+| radio, checkbox, menu item | `selected` |
+| listbox or menu opens | `expanded` |
+| dialog, popover, banner | `visible` + a selector |
+| button that rewrites page text | `text` + selector and expected text |
+| link that opens a new tab | `new_tab` (`url` only when exact) |
+| focus is the whole effect | `focused` |
+
+`focused` is wrong when the click navigates or opens a dialog: focus moves away
+and the receipt burns the timeout. A background popup cannot prove a new tab;
+open the observed href directly or use `foreground`.
+
+## Recipes
+
+- Listbox: trigger `expanded`; option `selected`. If options are missing after
+  one snapshot, retry the trigger with `focused`.
+- Upload: `artifact_register`, then one `workflow` step with the visible attach
+  control and an `acceptance` predicate on the filename. Never retry after
+  `unknown`; inspect once.

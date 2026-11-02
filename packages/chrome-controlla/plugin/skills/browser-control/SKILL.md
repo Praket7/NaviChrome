@@ -52,32 +52,6 @@ tab or Chrome is inactive; `foreground` asks to show Chrome. Reuse the opaque
 - Refuse only for indistinguishable targets, Chrome policy, OS-owned surfaces,
   missing authorization, or an unproven outcome.
 
-## Click outcome
-
-An acknowledgement is not success.
-
-| Effect | `outcome` |
-| --- | --- |
-| submit, link, redirect | `navigation` (`url` only when exact) |
-| radio, checkbox, menu item | `selected` |
-| listbox or menu opens | `expanded` |
-| dialog, popover, banner | `visible` + a selector |
-| button that rewrites page text | `text` + selector and expected text |
-| link that opens a new tab | `new_tab` (`url` only when exact) |
-| focus is the whole effect | `focused` |
-
-`focused` is wrong when the click navigates or opens a dialog: focus moves away
-and the receipt burns the timeout. A background popup cannot prove a new tab;
-open the observed href directly or use `foreground`.
-
-## Recipes
-
-- Listbox: trigger `expanded`; option `selected`. If options are missing after
-  one snapshot, retry the trigger with `focused`.
-- Upload: `artifact_register`, then one `workflow` step with the visible attach
-  control and an `acceptance` predicate on the filename. Never retry after
-  `unknown`; inspect once.
-
 ## Task and typing
 
 `action=task` with `mode="headless"` runs a read-only `Research` task with no session or tab IDs: Controlla launches, navigates, verifies, and releases per call. Form drafts, mutations, and repeat actions need an existing session. For

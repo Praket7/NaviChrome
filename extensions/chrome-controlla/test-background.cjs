@@ -686,7 +686,7 @@ const chrome = {
 };
 const backgroundSource = fs.readFileSync(new URL("./background.js", `file://${__filename}`), "utf8");
 const extensionLibraryAssets = [
-  "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input.js",
+  "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js",
   "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js",
   "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js",
   "lib/focus-emulation.js",

@@ -2,6 +2,7 @@ import { createBoundedTransport } from "./lib/transport.js";
 import { FrameTreeRegistry } from "./lib/frame-tree.js";
 import { DebuggerSessionManager } from "./lib/debugger-sessions.js";
 import { typeTextTransaction } from "./lib/input.js";
+import { selectFileInputCandidate } from "./lib/file-input-selection.js";
 import { PointerEngine } from "./lib/pointer.js";
 import { semanticDelta, pruneSemanticItems } from "./lib/observation.js";
 import {
@@ -34,10 +35,7 @@ const OPEN_RECEIPTS_KEY = "openReceipts";
 const ACTIVATION_RECEIPTS_KEY = "activationReceipts";
 const OPEN_RECEIPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const OPEN_RECEIPT_MAX_COUNT = 256;
-// Live automation tabs are a bounded resource. The receipt table can remember
-// more history than the pool may keep alive; eviction is what bounds Chrome.
-// Use the single small policy default so open cannot silently amass tabs; when
-// no safe idle tab can be evicted, the caller must close one before continuing.
+// Live automation tabs are bounded by eviction; receipts may remember more history.
 const OWNED_TAB_POOL_LIMIT = DEFAULT_OWNED_TAB_POOL_LIMIT;
 const WATCHER_STATE_KEY = "controllaWatcherStateV1";
 const WATCHER_MAX_TABS = 2048;
@@ -64,7 +62,7 @@ const MAX_DOWNLOAD_OBSERVERS_PER_TAB = 4;
 const MAX_DOWNLOAD_OBSERVERS = 64;
 function uploadInputPolicyFunction() { return "function(names){const e=this;if(!e||e.nodeName!=='INPUT'||e.type!=='file')return {ok:false,reason:'target_not_file_input'};const accept=(e.getAttribute('accept')||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);const mime=n=>({txt:'text/plain',csv:'text/csv',json:'application/json',pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp3:'audio/mpeg',mp4:'video/mp4',html:'text/html',xml:'application/xml'})[String(n).split('.').pop().toLowerCase()];if(names.length>1&&!e.multiple)return {ok:false,reason:'multiple_files_not_allowed'};for(const name of names){const lower=String(name).toLowerCase(),ext='.'+lower.split('.').pop(),type=mime(name);if(accept.length&&!accept.some(a=>a.startsWith('.')?lower.endsWith(a):a.endsWith('/*')?!!type&&type.startsWith(a.slice(0,-1)):a.includes('/')?a===type:false))return {ok:false,reason:'accept_filter_mismatch',filename:name};}return {ok:true,accept,multiple:!!e.multiple}}"; }
 const DOWNLOAD_OBSERVER_TTL_MS = 60000;
-const CONTROLLA_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js", "lib/frame-multitouch.js", "lib/owned-open.js"];
+const CONTROLLA_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js", "lib/frame-multitouch.js", "lib/owned-open.js"];
 const CONTROLLA_EXTENSION_BUILD_ID_PROMISE = (async () => {
   const runtimeFallback = `controlla-chrome-extension:${chrome.runtime.getManifest().version}:runtime`;
   const compute = (async () => {
@@ -2294,22 +2292,9 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
     }
     if (request.method === "Controlla.findFileInput") {
       const baseline = request.params?.baseline;
-      if (!Array.isArray(baseline) || baseline.length > 256 || baseline.some(item => typeof item?.frame_id !== "string" || typeof item?.frame_loader_id !== "string" || !Number.isSafeInteger(item?.backend_node_id))) throw new Error("Lazy-input fallback requires a bounded pre-trigger file-input baseline.");
       const tree = await sendCdpCommand({ tabId }, "Page.getFrameTree", {});
       const all = await fileInputsInFrames(tabId, tree.frameTree);
-      const existed = new Set(baseline.map(item => `${item.frame_id}:${item.frame_loader_id}:${item.backend_node_id}`));
-      const candidates = all.filter(item => !existed.has(`${item.frame_id}:${item.frame_loader_id}:${item.backend_node_id}`));
-      let selected;
-      if (candidates.length === 0 && baseline.length === 1) {
-        const prior = baseline[0];
-        selected = all.find(item => item.frame_id === prior.frame_id && item.frame_loader_id === prior.frame_loader_id && item.backend_node_id === prior.backend_node_id);
-        if (!selected) throw new Error("The sole pre-trigger file input is no longer attached to the upload document.");
-        selected = { ...selected, existing_input_fallback: true };
-      } else {
-        if (candidates.length === 0) throw new Error("No new file input appeared after the upload trigger.");
-        if (candidates.length !== 1) throw new Error("Multiple new file inputs appeared after the upload trigger; refusing ambiguous selection.");
-        selected = candidates[0];
-      }
+      const selected = selectFileInputCandidate(baseline, all);
       const current = await sendCdpCommand({ tabId }, "Page.getFrameTree", {});
       const currentFrame = (() => { const find = node => node?.frame?.id === selected.frame_id ? node.frame : (node?.childFrames || []).map(find).find(Boolean); return find(current.frameTree); })();
       if (pairedTabDocumentIds.get(tabId) !== expectedDocumentId || current.frameTree?.frame?.id !== tree.frameTree?.frame?.id || current.frameTree?.frame?.loaderId !== tree.frameTree?.frame?.loaderId || currentFrame?.loaderId !== selected.frame_loader_id) throw new Error("Upload target document changed during lazy file-input discovery.");
