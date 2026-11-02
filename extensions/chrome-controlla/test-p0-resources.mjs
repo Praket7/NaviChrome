@@ -10,6 +10,7 @@ import {
 } from "./lib/presentation-slots.js";
 import { logicalResourceKey, sameLogicalResource, isSameResourceView } from "./lib/resource-keys.js";
 import { commandNeedsPageFocus, createFocusEmulation } from "./lib/focus-emulation.js";
+import { findOwnedBackgroundWindow } from "./lib/tab-control.js";
 import {
   indexOwnedResources, selectReuse, usableRecord, openTelemetry, aliasReceipt,
   planPoolEviction, DEFAULT_OWNED_TAB_POOL_LIMIT,
@@ -222,7 +223,22 @@ test("the owned-tab pool evicts only safe, idle, ephemeral tabs", () => {
 
   const capped = planPoolEviction(index, { limit: 2, now: 500_000, keepTabIds: [30] });
   assert.equal(capped.evict.some(record => record.tab_id === 30), false);
-  assert.equal(DEFAULT_OWNED_TAB_POOL_LIMIT >= 1, true);
+  assert.equal(DEFAULT_OWNED_TAB_POOL_LIMIT, 64, "background opens share one bounded production pool");
+});
+
+test("a focused automation window remains reusable for an inactive background tab", async () => {
+  const receipts = { "ownerless:focused-window": receipt({
+    tab_id: "52", window_id: 902, url: "https://example.test/focused", document_id: "doc-focused",
+    create_background_window: true,
+  }) };
+  const windowsApi = {
+    get: async id => id === 902
+      ? { id: 902, focused: true, state: "normal", type: "normal", tabs: [{ id: 52 }] }
+      : undefined,
+  };
+  const found = await findOwnedBackgroundWindow(windowsApi, receipts);
+  assert.equal(found?.windowId, 902, "focusing the automation window must not force a duplicate window");
+  assert.equal(found?.proof.window_focused, true, "the reuse receipt still reports the live focused state");
 });
 
 test("current-call telemetry distinguishes a created tab from a reused one", () => {

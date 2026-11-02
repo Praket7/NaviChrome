@@ -36,9 +36,9 @@ const OPEN_RECEIPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const OPEN_RECEIPT_MAX_COUNT = 256;
 // Live automation tabs are a bounded resource. The receipt table can remember
 // more history than the pool may keep alive; eviction is what bounds Chrome.
-// 64 live automation tabs is generous for a desktop task, small enough to
-// bound Chrome's memory, and leaves room for concurrent shared sessions.
-const OWNED_TAB_POOL_LIMIT = 64;
+// Use the single small policy default so open cannot silently amass tabs; when
+// no safe idle tab can be evicted, the caller must close one before continuing.
+const OWNED_TAB_POOL_LIMIT = DEFAULT_OWNED_TAB_POOL_LIMIT;
 const WATCHER_STATE_KEY = "controllaWatcherStateV1";
 const WATCHER_MAX_TABS = 2048;
 const WATCHER_MAX_WINDOWS = 128;
@@ -2299,9 +2299,17 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       const all = await fileInputsInFrames(tabId, tree.frameTree);
       const existed = new Set(baseline.map(item => `${item.frame_id}:${item.frame_loader_id}:${item.backend_node_id}`));
       const candidates = all.filter(item => !existed.has(`${item.frame_id}:${item.frame_loader_id}:${item.backend_node_id}`));
-      if (candidates.length === 0) throw new Error("No new file input appeared after the upload trigger.");
-      if (candidates.length !== 1) throw new Error("Multiple new file inputs appeared after the upload trigger; refusing ambiguous selection.");
-      const selected = candidates[0];
+      let selected;
+      if (candidates.length === 0 && baseline.length === 1) {
+        const prior = baseline[0];
+        selected = all.find(item => item.frame_id === prior.frame_id && item.frame_loader_id === prior.frame_loader_id && item.backend_node_id === prior.backend_node_id);
+        if (!selected) throw new Error("The sole pre-trigger file input is no longer attached to the upload document.");
+        selected = { ...selected, existing_input_fallback: true };
+      } else {
+        if (candidates.length === 0) throw new Error("No new file input appeared after the upload trigger.");
+        if (candidates.length !== 1) throw new Error("Multiple new file inputs appeared after the upload trigger; refusing ambiguous selection.");
+        selected = candidates[0];
+      }
       const current = await sendCdpCommand({ tabId }, "Page.getFrameTree", {});
       const currentFrame = (() => { const find = node => node?.frame?.id === selected.frame_id ? node.frame : (node?.childFrames || []).map(find).find(Boolean); return find(current.frameTree); })();
       if (pairedTabDocumentIds.get(tabId) !== expectedDocumentId || current.frameTree?.frame?.id !== tree.frameTree?.frame?.id || current.frameTree?.frame?.loaderId !== tree.frameTree?.frame?.loaderId || currentFrame?.loaderId !== selected.frame_loader_id) throw new Error("Upload target document changed during lazy file-input discovery.");
@@ -3087,7 +3095,7 @@ async function openControllaTab(url, clientKey, native, generation, waitUntil = 
       // reuses an unfocused automation window with a free presentation slot.
       const reserved = !Object.keys(placement).length ? await reserveOwnedBackgroundSlot(receipts) : null;
       if (reserved) {
-        tab = await chrome.tabs.create({ windowId: reserved.windowId, url: markerUrl, active: true });
+        tab = await chrome.tabs.create({ windowId: reserved.windowId, url: markerUrl, active });
         reusedWindowId = reserved.windowId;
         slotToken = reserved.slot.token;
       } else {

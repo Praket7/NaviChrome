@@ -651,6 +651,11 @@ mod route_telemetry_tests {
             {"id":1,"title":"ACT login","url":"https://act.example/oauth?access_token=secret","active_for_open":true,"window_id":7,"document_id":"doc-a"},
             {"id":2,"title":"Buffalo Bills news","url":"https://www.espn.com/nfl/team?session=secret","active_for_open":false,"window_id":8,"document_id":"doc-b"}
         ]}});
+        let all = super::compact_shared_discovery(raw.clone(), None, None).unwrap();
+        assert_eq!(all["snapshot"]["match_count"], 2,
+            "unfiltered discovery must expose active and background tabs");
+        assert_eq!(all["snapshot"]["tabs"][0]["id"], 1);
+        assert_eq!(all["snapshot"]["tabs"][1]["id"], 2);
         let scoped = super::compact_shared_discovery(raw.clone(), Some("Buffalo Bills"), None).unwrap();
         assert_eq!(scoped["snapshot"]["match_count"], 1);
         assert_eq!(scoped["snapshot"]["tabs"][0]["id"], 2);
@@ -1596,21 +1601,23 @@ mod route_telemetry_tests {
     }
 
     #[test]
-    fn bound_session_open_reuses_the_bound_tab_for_the_same_document() {
+    fn bound_session_open_reuses_the_bound_tab_and_navigates_it_in_place() {
         let id = "16kmvt8_sLc77qch62Vv6Zy9wADo9h-uZ6mlqBT7Kmbk";
         let edit = format!("https://docs.google.com/document/d/{id}/edit?tab=t.0");
         let other_view = format!("https://docs.google.com/document/d/{id}/edit");
         let bound = vec!["30".to_owned()];
         assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, &edit));
         assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, &other_view));
-        assert!(!super::bound_tab_matches_open(
+        // A different URL is an ordinary in-place navigation of the one bound
+        // tab, not a reason to allocate another owned tab.
+        assert!(super::bound_tab_matches_open(
             &bound,
             "30",
             None,
             &edit,
             "https://docs.google.com/document/d/another-doc/edit"
         ));
-        assert!(!super::bound_tab_matches_open(&bound, "30", None, &edit, "https://example.test/"));
+        assert!(super::bound_tab_matches_open(&bound, "30", None, &edit, "https://example.test/"));
         assert!(!super::bound_tab_matches_open(&bound, "31", Some("31"), &edit, &other_view));
         // Several bound tabs need an explicit, bound tab ID; guessing would
         // navigate the wrong document.
@@ -1817,16 +1824,18 @@ fn bound_tab_matches_open(
     bound: &[String],
     tab_id: &str,
     requested: Option<&str>,
-    current_url: &str,
-    requested_url: &str,
+    _current_url: &str,
+    _requested_url: &str,
 ) -> bool {
-    let selected = match requested {
+    // The caller already selected a bound session. One bound target (or an
+    // explicitly requested bound target) is the navigation target even when its
+    // current URL differs; the open path navigates it in place below. Requiring
+    // a pre-existing URL match forced a second owned tab for every ordinary
+    // navigation and could hit the owned-tab pool bound.
+    match requested {
         Some(id) => id == tab_id && bound.iter().any(|bound| bound == tab_id),
         None => bound.len() == 1 && bound[0] == tab_id,
-    };
-    selected
-        && (same_navigation_resource_url(current_url, requested_url)
-            || same_document_resource(current_url, requested_url))
+    }
 }
 
 fn browser_mode_label(mode: crate::v3::BrowserMode) -> &'static str {
@@ -4456,7 +4465,7 @@ fn compact_shared_discovery(
         let title = tab["title"].as_str().unwrap_or_default();
         if let Some(query) = &query {
             if !title.to_lowercase().contains(query) && !raw_url.to_lowercase().contains(query) { continue; }
-        } else if domain.is_none() && tab["active_for_open"] != true { continue; }
+        }
         matches.push(json!({
             "id":tab["id"],"document_id":tab["document_id"],
             "window_id":tab["window_id"],"group_id":tab["group_id"],
@@ -4469,8 +4478,8 @@ fn compact_shared_discovery(
     let count = matches.len();
     let host_id = snapshot["host_id"].clone();
     *snapshot = json!({
-        "host_id":host_id,"tabs":matches.into_iter().take(12).collect::<Vec<_>>(),
-        "match_count":count,"truncated":count > 12,
+        "host_id":host_id,"tabs":matches.into_iter().take(100).collect::<Vec<_>>(),
+        "match_count":count,"truncated":count > 100,
         "status":if count == 0 { "no_match" } else { "matched" },
         "next_action":if count == 0 {
             "No existing tab safely matches. For a new URL, create a Controlla-owned tab; when the task requires an existing tab, ask for an exact tab selection."

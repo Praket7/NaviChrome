@@ -169,11 +169,12 @@ export function selectReuse(index, {
   return null;
 }
 
-// A bounded pool needs an eviction policy that is safe to run unattended.
-// Only ephemeral, completed, unleased, unprotected tabs that have been idle for
-// the whole grace window are candidates. A missing candidate refuses the open
-// instead of silently exceeding the bound or closing user-visible work.
-export const DEFAULT_OWNED_TAB_POOL_LIMIT = 12;
+// A bounded pool keeps sequential work from silently accumulating tabs while
+// leaving room for concurrent shared sessions. Only ephemeral, completed,
+// unleased, unprotected tabs that have been idle for the whole grace window are
+// candidates. A missing candidate refuses the open instead of silently
+// exceeding the bound or closing user-visible work.
+export const DEFAULT_OWNED_TAB_POOL_LIMIT = 64;
 export const MIN_EVICTION_IDLE_MS = 120_000;
 
 export function planPoolEviction(index, {

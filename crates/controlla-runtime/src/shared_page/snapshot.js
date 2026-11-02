@@ -228,6 +228,7 @@ function(q) {
   };
   const selector = 'a[href],button,input,textarea,select,summary,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="button"],[role="link"],[role="menuitem"],[role="checkbox"],[role="radio"],[role="tab"],[role="combobox"],[role="option"],[draggable="true"],[data-draggable="true"],[data-drop-target="true"],[aria-dropeffect]';
   let scanned = 0, truncated = false, bytes = 0, omitted_by_limit = 0, omitted_oversized = 0, early_stopped = false, goal_satisfied = false, goal_score = 0;
+  let goal_exact_matches = 0, goal_exact_kept = 0;
   let truncation_reason = null;
   const goalQuery = q.goal?.query?.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,' ').trim() || '';
   const goalTerms = new Set(goalQuery.split(/[^\p{L}\p{N}]+/u).filter(term => term.length > 2));
@@ -318,6 +319,7 @@ function(q) {
           path: item.dom_path_fingerprint, section: item.section
         }});
       } catch (_) {}
+      let exact_goal_match = false;
       let queryScore = 0;
       if (q.goal) {
         const normalize = text => text.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,' ').trim();
@@ -331,6 +333,8 @@ function(q) {
         const roleScore = (!goalRoles ? 0 : goalRoles.has(item.role) ? 40 : -1000) + (state.rendered ? 0 : -20);
         const hrefScore = !q.goal.href_hint ? 0 : item.href?.includes(q.goal.href_hint) ? 30 : -1000;
         if (roleScore < 0 || hrefScore < 0) { e = walker.nextNode(); continue; }
+        exact_goal_match = normalize(label) === goalQuery || typeof value === 'string' && normalize(value) === goalQuery;
+        if (exact_goal_match) goal_exact_matches++;
         item.goal_score = queryScore + roleScore + hrefScore;
         goal_score = Math.max(goal_score, item.goal_score);
         if (!goalQuery || queryScore === 100) goal_satisfied = true;
@@ -374,7 +378,7 @@ function(q) {
             items.splice(evicted.index,1);
             nodes.splice(evicted.index,1);
           }
-          items.push(item); nodes.push(e); bytes += size;
+          items.push(item); nodes.push(e); bytes += size; if (exact_goal_match) goal_exact_kept++;
         } else {
           omitted_by_limit++; truncated = true;
           truncation_reason = truncation_reason || (projectedBytes > byteBudget ? 'max_bytes' : 'max_items');
@@ -502,8 +506,16 @@ function(q) {
   // coverage fact rather than a scope-completeness one.
   const scope_frames_complete = same_origin_frames_pending === 0;
   const cross_origin_frames_skipped = cross_origin_frames_unread;
-  const scope_complete = firstPartyHint ? first_party_complete : q.goal ? !truncated && !early_stopped && scope_frames_complete : complete;
+  // A ranked goal scan still walks the reachable DOM when the response is
+  // trimmed: lower-ranked candidates are omitted from the budget, not skipped
+  // by the scan. If exactly one control carried the exact requested name and
+  // that control survived retention, it is a unique target even though the
+  // returned inventory is partial. Duplicate names keep the result unverified.
+  const goal_exact_unique = !!q.goal && !!goalQuery && goal_exact_matches === 1 && goal_exact_kept === 1
+    && !early_stopped && scope_frames_complete
+    && truncation_reason !== 'scanned_nodes_exceeded' && truncation_reason !== 'nested_scope_limit';
+  const scope_complete = firstPartyHint ? first_party_complete : q.goal ? (!truncated && !early_stopped && scope_frames_complete) || goal_exact_unique : complete;
   const target_uniqueness = scope_complete ? 'scope_complete' : 'unverified';
   for (const item of items) item.target_uniqueness = target_uniqueness;
-  return {nodes,items,raw,name,presentation,visible:e=>presentation(e).rendered,public:{interaction_epoch:interactionEpoch(),url:location.href,title:document.title,ready_state:document.readyState,items,modal_count:modalCount,modal_items:modalItems,modal_first:modalFirst,text:text.slice(0,q.max_text_chars),text_requested,text_truncated,truncated:!complete,complete,global_complete:complete,completeness:{controls:controls_complete?'complete':'partial',text:text_complete?'complete':'partial',frames:frames_complete?'complete':'partial'},incomplete_reasons,goal_satisfied,goal_score:goal_satisfied?goal_score:null,scope_complete,coverage,coverage_scope:q.goal?'ranked_target':q.href_hint ? 'matching_first_party_links' : 'all_reachable_controls',first_party_complete,scanned_nodes:Math.min(scanned,maxScanNodes),scanned_text_nodes:textScanned,search_budget_exhausted:truncation_reason==='scanned_nodes_exceeded',omitted_by_limit,omitted_oversized,shadow_roots_seen,iframes_seen,same_origin_frames_read,same_origin_frames_pending,blank_frames_seen,cross_origin_frames_unread,cross_origin_frames_skipped,truncation_reason:truncation_reason || (text_truncated ? 'text_truncated' : cross_origin_frames_unread ? 'cross_origin_frames_unread' : same_origin_frames_pending ? 'same_origin_frames_pending' : null),total_candidates:items.length+omitted_by_limit}};
+  return {nodes,items,raw,name,presentation,visible:e=>presentation(e).rendered,public:{interaction_epoch:interactionEpoch(),url:location.href,title:document.title,ready_state:document.readyState,items,modal_count:modalCount,modal_items:modalItems,modal_first:modalFirst,text:text.slice(0,q.max_text_chars),text_requested,text_truncated,truncated:!complete,complete,global_complete:complete,completeness:{controls:controls_complete?'complete':'partial',text:text_complete?'complete':'partial',frames:frames_complete?'complete':'partial'},incomplete_reasons,goal_satisfied,goal_score:goal_satisfied?goal_score:null,goal_exact_matches,goal_exact_unique,scope_complete,coverage,coverage_scope:q.goal?'ranked_target':q.href_hint ? 'matching_first_party_links' : 'all_reachable_controls',first_party_complete,scanned_nodes:Math.min(scanned,maxScanNodes),scanned_text_nodes:textScanned,search_budget_exhausted:truncation_reason==='scanned_nodes_exceeded',omitted_by_limit,omitted_oversized,shadow_roots_seen,iframes_seen,same_origin_frames_read,same_origin_frames_pending,blank_frames_seen,cross_origin_frames_unread,cross_origin_frames_skipped,truncation_reason:truncation_reason || (text_truncated ? 'text_truncated' : cross_origin_frames_unread ? 'cross_origin_frames_unread' : same_origin_frames_pending ? 'same_origin_frames_pending' : null),total_candidates:items.length+omitted_by_limit}};
 }

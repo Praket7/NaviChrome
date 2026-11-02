@@ -58,6 +58,20 @@ export function windowPresentationEligibility(window) {
   return { eligible: true, reason: null };
 }
 
+// Reusing a window for an inactive background tab does not change what the
+// user is viewing. Focus is therefore not a disqualifier here: if the user
+// brings the automation window forward, new background tabs stay in it
+// instead of spawning a duplicate window.
+export function backgroundWindowReuseEligibility(window) {
+  if (!window || !Number.isSafeInteger(window.id)) return { eligible: false, reason: "window_missing" };
+  if (window.state === "minimized") return { eligible: false, reason: "window_minimized" };
+  if (window.type !== undefined && window.type !== "normal") return { eligible: false, reason: "window_not_normal" };
+  if (window.incognito === true) return { eligible: false, reason: "window_incognito" };
+  const tabs = Array.isArray(window.tabs) ? window.tabs : [];
+  if (tabs.some(tab => tab.incognito === true)) return { eligible: false, reason: "window_incognito" };
+  return { eligible: true, reason: null };
+}
+
 export function windowPresentationProof(window) {
   return {
     window_id: Number.isSafeInteger(window?.id) ? window.id : null,
@@ -160,10 +174,11 @@ export async function activateReservedPresentation(chromeApi, candidate) {
   };
 }
 
-// The live, unfocused automation window an open may place a tab in. Windows are
-// pooled so sequential work reuses one window while simultaneous visible work
-// gets a window of its own; a window whose presentation slot is taken is not
-// offered to a second task.
+// The live automation window an inactive background tab may be placed in.
+// Windows are pooled so sequential work reuses one window while simultaneous
+// visible work gets a window of its own; a window whose presentation slot is
+// taken is not offered to a second task. A focused window remains eligible
+// because an inactive tab does not steal the user's view.
 export async function findOwnedBackgroundWindow(windowsApi, receipts, { isWindowBusy = () => false, index } = {}) {
   const resources = index ?? indexOwnedResources(receipts);
   const candidates = resources.records
@@ -174,7 +189,7 @@ export async function findOwnedBackgroundWindow(windowsApi, receipts, { isWindow
     if (seen.has(record.window_id) || isWindowBusy(record.window_id)) continue;
     seen.add(record.window_id);
     const window = await windowsApi.get(record.window_id, { populate: true }).catch(() => undefined);
-    if (!windowPresentationEligibility(window).eligible) continue;
+    if (!backgroundWindowReuseEligibility(window).eligible) continue;
     return { windowId: window.id, proof: windowPresentationProof(window) };
   }
   return undefined;

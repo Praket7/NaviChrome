@@ -2682,7 +2682,9 @@ async function waitFor(predicate, description) {
   assert.deepEqual(baseline, [{ frame_id: "root-frame", frame_loader_id: "root-loader", backend_node_id: 902 }], "pre-trigger snapshot binds existing file controls to their frame and loader");
   liveNative.hostMessage({ type: "command", id: "find-preexisting-input", target_id: "66", method: "Controlla.findFileInput", params: { baseline } });
   await new Promise(resolve => setTimeout(resolve, 10));
-  assert.match(liveNative.sent.at(-1).error, /no new file input/i, "fallback refuses a file input that existed before the trigger");
+  assert.deepEqual(JSON.parse(JSON.stringify(liveNative.sent.at(-1).result)), {
+    backend_node_id: 902, frame_id: "root-frame", frame_loader_id: "root-loader", document_id: "document-66", existing_input_fallback: true,
+  }, "the sole pre-trigger input is used when the trigger reuses it instead of creating a new one");
   fallbackFileInputDocument = { root: { nodeName: "#document", children: [
     { nodeName: "INPUT", backendNodeId: 902, attributes: ["type", "file"] },
     { nodeName: "INPUT", backendNodeId: 903, attributes: ["type", "file"] },
@@ -3689,6 +3691,10 @@ async function waitFor(predicate, description) {
   // A window can present one tab for one task. A second visible task must land
   // in another window instead of hiding the first task's canvas.
   const firstTaskTab = Number(discovered.tab_id);
+  // The open honored active:false, so present this task explicitly before
+  // reserving the window's visible slot. The assertion below is that a second
+  // task does not steal that presentation.
+  await chrome.tabs.update(firstTaskTab, { active: true });
   const firstTaskSlot = await hooks.presentationSlots.reserve({
     windowId: discoveredWindowId, tabId: firstTaskTab, requirement: "visible", deadlineMs: 0,
   });

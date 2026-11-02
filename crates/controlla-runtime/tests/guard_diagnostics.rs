@@ -75,6 +75,16 @@ const capture = (html, opts={{}}) => {{
     max_bytes:200000, max_text_chars:opts.max_text_chars ?? 1000, href_hint:opts.href_hint}});
   return result.public;
 }};
+const goalCapture = (html, goal, opts={{}}) => {{
+  stage.innerHTML = html;
+  return snapshotFn.call(null, {{selector:'body', token:'goal', max_items:opts.max_items ?? 20,
+    max_bytes:opts.max_bytes ?? 200000, max_text_chars:0, goal}}).public;
+}};
+const fillers = Array.from({{length:60}},(_,i)=>`<article><a href="/filler/${{i}}">Filler story number ${{i}} with a long enough description to consume the response budget</a></article>`).join('');
+results.goal_exact = {{
+  unique_ranked: goalCapture(fillers+'<article><a href="/story/latest">Latest story headline</a><time>1m</time></article>', {{query:'Latest story headline', roles:['link'], exhaustive:true}}, {{max_items:5, max_bytes:6000}}),
+  duplicate_ranked: goalCapture('<article><a href="/story/latest">Latest story headline</a></article><article><a href="/story/latest-two">Latest story headline</a></article>', {{query:'Latest story headline', roles:['link'], exhaustive:true}}, {{max_items:5}})
+}};
 results.snapshot_completeness = {{
   full: capture('<button>Go</button>'),
   drag_drop: capture('<div draggable="true" aria-label="Drag item" style="width:40px;height:40px"><span>Drag item</span></div><div aria-dropeffect="move" aria-label="Drop zone" style="width:80px;height:80px"><span>Drop zone</span></div><div data-draggable="true" aria-label="Custom draggable" style="width:40px;height:40px"><span>Custom item</span></div>'),
@@ -309,6 +319,31 @@ fn snapshot_completeness_covers_text_items_and_unread_frames() {
     assert_eq!(cases["frame"]["completeness"]["frames"], "partial");
     assert_eq!(cases["frame"]["complete"], false, "{}", cases["frame"]);
     assert_eq!(cases["scoped"]["complete"], false, "{}", cases["scoped"]);
+    let goal_cases = &run_cases()["goal_exact"];
+    let unique = &goal_cases["unique_ranked"];
+    assert_eq!(unique["goal_exact_matches"], 1, "{}", unique);
+    assert_eq!(unique["goal_exact_unique"], true, "{}", unique);
+    assert_eq!(unique["scope_complete"], true, "{}", unique);
+    assert_eq!(
+        unique["truncated"], true,
+        "the trimmed inventory is still reported as partial: {}",
+        unique
+    );
+    assert!(
+        unique["incomplete_reasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.iter().any(|reason| reason == "item_or_byte_limit")),
+        "{}",
+        unique
+    );
+    let duplicate = &goal_cases["duplicate_ranked"];
+    assert_eq!(duplicate["goal_exact_matches"], 2, "{}", duplicate);
+    assert_eq!(duplicate["goal_exact_unique"], false, "{}", duplicate);
+    assert_eq!(
+        duplicate["scope_complete"], true,
+        "the inventory is complete; duplicate names are rejected by match count: {}",
+        duplicate
+    );
     assert_eq!(
         cases["scoped"]["scope_complete"], true,
         "{}",

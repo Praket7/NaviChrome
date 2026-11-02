@@ -135,7 +135,7 @@ async function openOwnedTabFromNative(request) {
         // owned window is busy, concurrency decides the new window.
         const reserved = await reserveOwnedBackgroundSlot(receipts);
         if (reserved) {
-          tab = await deps.chrome.tabs.create({ windowId: reserved.windowId, url: markerUrl, active: true });
+          tab = await deps.chrome.tabs.create({ windowId: reserved.windowId, url: markerUrl, active });
           reusedWindowId = reserved.windowId;
           slotToken = reserved.slot.token;
         } else {
