@@ -2515,6 +2515,9 @@ async function waitFor(predicate, description) {
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(liveNative.sent.at(-1).type, "paired", "pairing without a discovery URL is allowed");
   assert.ok(attached.includes(66), "numeric tab ID attaches without a URL receipt");
+  // Pairing warms diagnostics with three async domain enables. Let them settle
+  // before baselining, so this window measures the file command itself.
+  await new Promise(resolve => setTimeout(resolve, 30));
   const fileCallsBefore = debuggerCalls.length;
   liveNative.hostMessage({ type: "command", id: "unrestricted-file", target_id: "66", method: "DOM.setFileInputFiles", params: { files: ["/tmp/example"] } });
   await new Promise(resolve => setTimeout(resolve, 0));
