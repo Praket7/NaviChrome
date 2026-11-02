@@ -47,7 +47,7 @@ tab or Chrome is inactive; `foreground` asks to show Chrome. Reuse the opaque
 - `not_dispatched` + `stale_reference`, `rebind_no_match`, `changed_target`, or
   `stale_document`: nothing was dispatched. Snapshot once, reacquire by exact
   name and role, retry once. Never reuse the consumed reference.
-- `unknown`: never blind retry. Verify read-only once; never replay.
+- `unknown`: Never blind retry `unknown`. Verify read-only once; never replay.
 - `verification: "tab_hidden"`: canvas proof was unreachable; never replay.
 - Refuse only for indistinguishable targets, Chrome policy, OS-owned surfaces,
   missing authorization, or an unproven outcome.
