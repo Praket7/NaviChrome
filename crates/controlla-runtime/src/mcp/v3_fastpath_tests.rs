@@ -404,7 +404,7 @@ async fn task_and_task_program_failure_receipts_attach_diagnostics() {
     assert!(
         step_entries
             .iter()
-            .any(|entry| is_failed_network_diagnostic(entry)),
+            .any(is_failed_network_diagnostic),
         "task-step network diagnostic missing: {task_steps}"
     );
     assert!(!task_steps.to_string().contains("task-secret"));
@@ -461,7 +461,7 @@ async fn task_and_task_program_failure_receipts_attach_diagnostics() {
     assert!(
         program_entries
             .iter()
-            .any(|entry| is_failed_network_diagnostic(entry)),
+            .any(is_failed_network_diagnostic),
         "task-program network diagnostic missing: {task_program}"
     );
     assert!(!task_program.to_string().contains("task-secret"));
