@@ -29,9 +29,9 @@ export async function resolveClientHostAdapter(clientId, { env = process.env } =
   if (host.kind === 'protocol') return { client: clientId, kind: host.kind, status: 'protocol_only', qualification_status: 'not_run', reason: 'Generic MCP has no model-client host; run the stdio contract adapter.' };
   if (host.kind === 'desktop') return { client: clientId, kind: host.kind, status: 'manual_host_required', qualification_status: 'not_run', reason: 'ChatGPT Desktop exposes no supported isolated non-interactive host runner; desktop launch and in-app evidence are required.' };
   if (host.support === 'interactive_only') return { client: clientId, kind: host.kind, status: 'interactive_only', qualification_status: 'not_run', executable: host.executable, reason: 'Freebuff currently exposes no non-interactive prompt command; its app must provide the client-side smoke driver.' };
-  const override = env[`CONTROLLA_${clientId.toUpperCase().replaceAll('-', '_')}_BIN`];
+  const override = env[`NAVICHROME_${clientId.toUpperCase().replaceAll('-', '_')}_BIN`];
   const executable = override ? resolve(override) : await findExecutable(host.executable, env);
-  if (!executable) return { client: clientId, kind: host.kind, status: 'missing_dependency', qualification_status: 'not_run', executable: host.executable, reason: `Required client executable '${host.executable}' was not found on PATH or in its CONTROLLA_*_BIN override.` };
+  if (!executable) return { client: clientId, kind: host.kind, status: 'missing_dependency', qualification_status: 'not_run', executable: host.executable, reason: `Required client executable '${host.executable}' was not found on PATH or in its NAVICHROME_*_BIN override.` };
   try { await access(executable, constants.X_OK); } catch { return { client: clientId, kind: host.kind, status: 'missing_dependency', qualification_status: 'not_run', executable, reason: `Configured client executable is missing or not executable: ${executable}` }; }
   return { client: clientId, kind: host.kind, status: 'ready', qualification_status: 'not_run', executable };
 }
@@ -43,19 +43,19 @@ export async function prepareClientHostConfig(clientId, launch, directory, trace
     args: [fileURLToPath(new URL('./mcp-stdio-trace-proxy.mjs', import.meta.url)), launch.command, ...launch.args],
     // The host adapter and MCP proxy are separate processes. Keep their
     // append-only streams separate and merge by monotonic timestamp later.
-    env: { ...launch.env, CONTROLLA_PROMPT_TRACE_FILE: `${traceOptions.traceFile}.mcp`,
-      CONTROLLA_PROMPT_TRACE_ID: traceOptions.traceId,
-      CONTROLLA_PROMPT_COLD_WARM: traceOptions.coldWarm ?? 'unknown' },
+    env: { ...launch.env, NAVICHROME_PROMPT_TRACE_FILE: `${traceOptions.traceFile}.mcp`,
+      NAVICHROME_PROMPT_TRACE_ID: traceOptions.traceId,
+      NAVICHROME_PROMPT_COLD_WARM: traceOptions.coldWarm ?? 'unknown' },
   } : { command: launch.command, args: launch.args, env: launch.env };
   if (clientId === 'codex') return { command: server.command, args: server.args, env: server.env };
   if (clientId === 'opencode') {
     const configDir = resolve(directory);
-    await writeFile(join(configDir, 'opencode.json'), `${JSON.stringify({ '$schema': 'https://opencode.ai/config.json', mcp: { 'chrome-controlla': { type: 'local', command: [server.command, ...server.args], enabled: true, environment: server.env } }, permission: { edit: 'deny', bash: 'deny' } }, null, 2)}\n`, { flag: 'wx' });
+    await writeFile(join(configDir, 'opencode.json'), `${JSON.stringify({ '$schema': 'https://opencode.ai/config.json', mcp: { 'navichrome': { type: 'local', command: [server.command, ...server.args], enabled: true, environment: server.env } }, permission: { edit: 'deny', bash: 'deny' } }, null, 2)}\n`, { flag: 'wx' });
     return { configDir };
   }
   if (clientId === 'claude-code') {
     const configPath = join(resolve(directory), 'claude-mcp.json');
-    await writeFile(configPath, `${JSON.stringify({ mcpServers: { 'chrome-controlla': { command: server.command, args: server.args, env: server.env } } }, null, 2)}\n`, { flag: 'wx' });
+    await writeFile(configPath, `${JSON.stringify({ mcpServers: { 'navichrome': { command: server.command, args: server.args, env: server.env } } }, null, 2)}\n`, { flag: 'wx' });
     return { configPath };
   }
   throw new Error(`${clientId} does not support an isolated CLI host config`);
@@ -65,7 +65,7 @@ export function buildClientHostInvocation(clientId, { executable, workDir, mcpCo
   if (!HOSTS[clientId] || typeof executable !== 'string' || typeof workDir !== 'string' || typeof prompt !== 'string') {
     throw new Error(`invalid host invocation context for ${clientId}`);
   }
-  if (clientId === 'codex') return { command: executable, args: ['exec', '--ephemeral', '--json', '--ignore-user-config', '--approve-for-me', '--skip-git-repo-check', '-C', workDir, '-c', `mcp_servers.chrome-controlla.command=${JSON.stringify(mcpConfig.command)}`, '-c', `mcp_servers.chrome-controlla.args=${JSON.stringify(mcpConfig.args)}`, '-c', `mcp_servers.chrome-controlla.env=${codexTomlInlineTable(mcpConfig.env)}`, '-'], stdin: prompt };
+  if (clientId === 'codex') return { command: executable, args: ['exec', '--ephemeral', '--json', '--ignore-user-config', '--approve-for-me', '--skip-git-repo-check', '-C', workDir, '-c', `mcp_servers.navichrome.command=${JSON.stringify(mcpConfig.command)}`, '-c', `mcp_servers.navichrome.args=${JSON.stringify(mcpConfig.args)}`, '-c', `mcp_servers.navichrome.env=${codexTomlInlineTable(mcpConfig.env)}`, '-'], stdin: prompt };
   if (clientId === 'opencode') {
     throw new Error('OpenCode CLI has no documented stdin prompt channel; refusing to expose prompt text in process arguments');
   }
@@ -82,12 +82,12 @@ function codexTomlInlineTable(environment) {
     throw new Error('Codex MCP environment must be a map of string values');
   }
   const allowedNonSecretKeys = new Set([
-    'CONTROLLA_STATE_DIR',
-    'CONTROLLA_AGENT_SURFACE',
+    'NAVICHROME_STATE_DIR',
+    'NAVICHROME_AGENT_SURFACE',
     'COMPTROL_CHROME_EXECUTABLE',
-    'CONTROLLA_PROMPT_TRACE_FILE',
-    'CONTROLLA_PROMPT_TRACE_ID',
-    'CONTROLLA_PROMPT_COLD_WARM',
+    'NAVICHROME_PROMPT_TRACE_FILE',
+    'NAVICHROME_PROMPT_TRACE_ID',
+    'NAVICHROME_PROMPT_COLD_WARM',
   ]);
   const entries = Object.entries(environment).sort(([left], [right]) => left.localeCompare(right));
   for (const [key, value] of entries) {
@@ -97,12 +97,12 @@ function codexTomlInlineTable(environment) {
     if (!allowedNonSecretKeys.has(key)) {
       throw new Error(`unsupported Codex MCP environment key '${key}'; command-line config accepts only allowlisted nonsecret values`);
     }
-    const safeValue = key === 'CONTROLLA_STATE_DIR' || key === 'COMPTROL_CHROME_EXECUTABLE'
-      || key === 'CONTROLLA_PROMPT_TRACE_FILE'
+    const safeValue = key === 'NAVICHROME_STATE_DIR' || key === 'COMPTROL_CHROME_EXECUTABLE'
+      || key === 'NAVICHROME_PROMPT_TRACE_FILE'
       ? isAbsolute(value)
-      : key === 'CONTROLLA_AGENT_SURFACE' ? value === 'v3-compact'
-        : key === 'CONTROLLA_PROMPT_COLD_WARM' ? ['cold', 'warm', 'unknown'].includes(value)
-          : key === 'CONTROLLA_PROMPT_TRACE_ID' && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
+      : key === 'NAVICHROME_AGENT_SURFACE' ? value === 'v3-compact'
+        : key === 'NAVICHROME_PROMPT_COLD_WARM' ? ['cold', 'warm', 'unknown'].includes(value)
+          : key === 'NAVICHROME_PROMPT_TRACE_ID' && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
     if (!safeValue) throw new Error(`unsafe Codex MCP environment value for '${key}'`);
   }
   return `{${entries.map(([key, value]) => `${key} = ${JSON.stringify(value)}`).join(', ')}}`;
@@ -113,7 +113,7 @@ function collectToolEvents(value, events = []) {
   if (!value || typeof value !== 'object') return events;
   const name = value.tool_name ?? value.toolName ?? value.tool ?? value.name;
   const type = String(value.type ?? value.event ?? '').toLowerCase();
-  if (typeof name === 'string' && (type.includes('tool') || name.includes('chrome-controlla'))) {
+  if (typeof name === 'string' && (type.includes('tool') || name.includes('navichrome'))) {
     const input = value.arguments ?? value.input ?? value.tool_input ?? value.params?.arguments;
     let boundedInput;
     if (input && typeof input === 'object' && !Array.isArray(input)) {
@@ -131,10 +131,10 @@ function collectToolEvents(value, events = []) {
 }
 
 function collectToolEventsFromHost(events) {
-  const controllaTools = new Set(['act', 'browser', 'extract', 'snapshot', 'verify', 'workflow']);
+  const navichromeTools = new Set(['act', 'browser', 'extract', 'snapshot', 'verify', 'workflow']);
   return events.filter(event => event.status !== 'in_progress'
-    && (event.server === 'chrome-controlla' && controllaTools.has(event.name)
-      || /chrome-controlla[._-](act|browser|extract|snapshot|verify|workflow)|mcp__chrome-controlla__(act|browser|extract|snapshot|verify|workflow)/.test(event.name)));
+    && (event.server === 'navichrome' && navichromeTools.has(event.name)
+      || /navichrome[._-](act|browser|extract|snapshot|verify|workflow)|mcp__navichrome__(act|browser|extract|snapshot|verify|workflow)/.test(event.name)));
 }
 
 export async function runClientHostTask(clientId, { executable, workDir, mcpConfig, prompt, env = process.env, timeoutMs = 120_000, spawnProcess = spawn,
@@ -158,16 +158,16 @@ export async function runClientHostTask(clientId, { executable, workDir, mcpConf
       try { value = JSON.parse(line); } catch { return; }
       const parsed = collectToolEvents(value);
       hostEvents.push(...parsed);
-      const controllaTools = collectToolEventsFromHost(parsed);
-      if (controllaTools.length && !firstToolDecisionRecorded) {
+      const navichromeTools = collectToolEventsFromHost(parsed);
+      if (navichromeTools.length && !firstToolDecisionRecorded) {
         firstToolDecisionRecorded = true;
-        const firstControllaTool = controllaTools[0];
-        queueTrace('first_tool_decision', { external_tool_calls: controllaTools.length,
-          ...(typeof firstControllaTool?.id === 'string' || Number.isSafeInteger(firstControllaTool?.id)
-            ? { client_call_id: String(firstControllaTool.id).slice(0, 128) } : {}),
-          ...(typeof firstControllaTool?.name === 'string' ? { tool: firstControllaTool.name.slice(0, 80) } : {}) });
+        const firstNaviChromeTool = navichromeTools[0];
+        queueTrace('first_tool_decision', { external_tool_calls: navichromeTools.length,
+          ...(typeof firstNaviChromeTool?.id === 'string' || Number.isSafeInteger(firstNaviChromeTool?.id)
+            ? { client_call_id: String(firstNaviChromeTool.id).slice(0, 128) } : {}),
+          ...(typeof firstNaviChromeTool?.name === 'string' ? { tool: firstNaviChromeTool.name.slice(0, 80) } : {}) });
       }
-      for (const tool of controllaTools) {
+      for (const tool of navichromeTools) {
         if (!(typeof tool.id === 'string' || Number.isSafeInteger(tool.id))) continue;
         const clientCallId = String(tool.id).slice(0, 128);
         const key = `${clientCallId}\u0000${tool.name}`;
@@ -270,11 +270,11 @@ export async function runClientHostTask(clientId, { executable, workDir, mcpConf
           await rejectWithTrace(error, Number.isInteger(code) && code >= 0 ? code : null);
           return;
         }
-        const controllaEvents = collectToolEventsFromHost(hostEvents);
+        const navichromeEvents = collectToolEventsFromHost(hostEvents);
         const promptTrace = traceFile ? summarizePromptTrace(await readPromptTraceFiles([traceFile, `${traceFile}.mcp`], traceId)) : null;
         settled = true;
-        resolveTask({ client: clientId, status: controllaEvents.length ? 'host_tool_invocation_observed' : 'no_host_tool_invocation_observed', qualification_status: 'not_run', process_id: child.pid,
-          tool_events: controllaEvents, stdout_sha256: createHash('sha256').update(output).digest('hex'),
+        resolveTask({ client: clientId, status: navichromeEvents.length ? 'host_tool_invocation_observed' : 'no_host_tool_invocation_observed', qualification_status: 'not_run', process_id: child.pid,
+          tool_events: navichromeEvents, stdout_sha256: createHash('sha256').update(output).digest('hex'),
           stderr_bytes_captured: stderrOutput.length, stderr_prefix_sha256: stderrSha256,
           stderr_truncated: stderrTruncated, exit_code: code,
           prompt_trace: promptTrace });

@@ -5,8 +5,8 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-const binaryDefault = '/ABS/PATH/TO/controlla-v2';
-const stateDefault = '/ABS/PATH/TO/controlla-state';
+const binaryDefault = '/ABS/PATH/TO/navichrome-v2';
+const stateDefault = '/ABS/PATH/TO/navichrome-state';
 const shellQuote = (value) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
 export const configs = {
@@ -17,11 +17,11 @@ export const configs = {
     installPath: ['mcpServers'],
     make: (binary, state) => ({
       mcpServers: {
-        'chrome-controlla': {
+        'navichrome': {
           command: binary,
           args: ['mcp'],
           env: {
-            CONTROLLA_STATE_DIR: path.join(state, 'freebuff'),
+            NAVICHROME_STATE_DIR: path.join(state, 'freebuff'),
           },
         },
       },
@@ -35,12 +35,12 @@ export const configs = {
     make: (binary, state) => ({
       $schema: 'https://opencode.ai/config.json',
       mcp: {
-        'chrome-controlla': {
+        'navichrome': {
           type: 'local',
           command: [binary, 'mcp'],
           enabled: true,
           environment: {
-            CONTROLLA_STATE_DIR: path.join(state, 'opencode-v1'),
+            NAVICHROME_STATE_DIR: path.join(state, 'opencode-v1'),
           },
         },
       },
@@ -55,11 +55,11 @@ export const configs = {
       $schema: 'https://opencode.ai/config.json',
       mcp: {
         servers: {
-          'chrome-controlla': {
+          'navichrome': {
             type: 'local',
             command: [binary, 'mcp'],
             environment: {
-              CONTROLLA_STATE_DIR: path.join(state, 'opencode-v2'),
+              NAVICHROME_STATE_DIR: path.join(state, 'opencode-v2'),
             },
           },
         },
@@ -71,13 +71,13 @@ export const configs = {
     schemaVersion: 'claude-code-stdio-2026-10-06-v1',
     format: 'shell',
     make: (binary, state) =>
-      `claude mcp add --env ${shellQuote(`CONTROLLA_STATE_DIR=${path.join(state, 'claude')}`)} --transport stdio --scope user chrome-controlla -- ${shellQuote(binary)} mcp\nclaude mcp get chrome-controlla`,
+      `claude mcp add --env ${shellQuote(`NAVICHROME_STATE_DIR=${path.join(state, 'claude')}`)} --transport stdio --scope user navichrome -- ${shellQuote(binary)} mcp\nclaude mcp get navichrome`,
   },
 };
 
 function unsupportedClient(client) {
   if (client === 'chatgpt') {
-    return new Error('ChatGPT Desktop uses the packaged Chrome Controlla local plugin; see docs/integrations/chatgpt-desktop.md');
+    return new Error('ChatGPT Desktop uses the packaged NaviChrome local plugin; see docs/integrations/chatgpt-desktop.md');
   }
   return new Error(`Unsupported local-stdio client config: ${client}`);
 }
@@ -132,17 +132,17 @@ export async function install(client, configPath, binary = binaryDefault, state 
   }
   let generatedParent = generate(client, binary, state);
   for (const key of clientConfig.installPath) generatedParent = generatedParent[key];
-  const generatedEntry = generatedParent['chrome-controlla'];
-  if (Object.hasOwn(parent, 'chrome-controlla')) {
-    if (isDeepStrictEqual(parent['chrome-controlla'], generatedEntry)) {
+  const generatedEntry = generatedParent['navichrome'];
+  if (Object.hasOwn(parent, 'navichrome')) {
+    if (isDeepStrictEqual(parent['navichrome'], generatedEntry)) {
       return { installed: false, path: configPath };
     }
-    throw new Error('A different chrome-controlla entry already exists; it was left unchanged');
+    throw new Error('A different navichrome entry already exists; it was left unchanged');
   }
-  parent['chrome-controlla'] = generatedEntry;
+  parent['navichrome'] = generatedEntry;
 
   const dir = path.dirname(configPath);
-  const tempPath = path.join(dir, `.${path.basename(configPath)}.controlla-${randomUUID()}.tmp`);
+  const tempPath = path.join(dir, `.${path.basename(configPath)}.navichrome-${randomUUID()}.tmp`);
   let temp;
   try {
     temp = await open(tempPath, 'wx', mode);
@@ -173,7 +173,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const binary = (installMode ? args[3] : args[1]) ?? binaryDefault;
   const state = (installMode ? args[4] : args[2]) ?? stateDefault;
   if (!client || client === '--help') {
-    console.log(`Usage: node integrations/generate-config.mjs <client> [absolute-controlla-path] [absolute-state-root]\n       node integrations/generate-config.mjs --install <client> <absolute-json-config> [absolute-controlla-path] [absolute-state-root]\nClients: ${Object.keys(configs).join(', ')}\n--install preserves other settings, atomically adds a missing JSON entry, and refuses conflicts or links. Claude Code outputs a command for you to review and run. ChatGPT Desktop uses the packaged local plugin; see docs/integrations/chatgpt-desktop.md.`);
+    console.log(`Usage: node integrations/generate-config.mjs <client> [absolute-navichrome-path] [absolute-state-root]\n       node integrations/generate-config.mjs --install <client> <absolute-json-config> [absolute-navichrome-path] [absolute-state-root]\nClients: ${Object.keys(configs).join(', ')}\n--install preserves other settings, atomically adds a missing JSON entry, and refuses conflicts or links. Claude Code outputs a command for you to review and run. ChatGPT Desktop uses the packaged local plugin; see docs/integrations/chatgpt-desktop.md.`);
     process.exit(client ? 0 : 2);
   }
   try {

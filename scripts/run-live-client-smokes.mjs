@@ -18,7 +18,7 @@ function readJsonConfig(text, file) {
   catch (error) { throw new Error(`invalid integration config ${file}: ${error.message}`); }
 }
 
-export async function resolveClientAdapterConfig(clientId, row, { env = process.env, stateRoot = join(tmpdir(), 'controlla-client-smokes') } = {}) {
+export async function resolveClientAdapterConfig(clientId, row, { env = process.env, stateRoot = join(tmpdir(), 'navichrome-client-smokes') } = {}) {
   if (!row.integrationConfig || !['stdio_mcp', 'packaged_local_plugin'].includes(row.adapterKind)) {
     throw new Error(`${clientId} adapter is not bound to a supported integration config`);
   }
@@ -26,38 +26,38 @@ export async function resolveClientAdapterConfig(clientId, row, { env = process.
   const raw = await readFile(configPath, 'utf8');
   let command, args, configuredEnv = {};
   if (clientId === 'codex') {
-    const commandMatch = raw.match(/\[mcp_servers\.chrome-controlla\][\s\S]*?command = "([^"]+)"[\s\S]*?args = \["([^"]+)"\]/);
-    const stateMatch = raw.match(/CONTROLLA_STATE_DIR = "([^"]+)"/);
+    const commandMatch = raw.match(/\[mcp_servers\.navichrome\][\s\S]*?command = "([^"]+)"[\s\S]*?args = \["([^"]+)"\]/);
+    const stateMatch = raw.match(/NAVICHROME_STATE_DIR = "([^"]+)"/);
     if (!commandMatch || !stateMatch) throw new Error(`Codex adapter config is incomplete: ${configPath}`);
     command = commandMatch[1]; args = [commandMatch[2]];
-    configuredEnv.CONTROLLA_STATE_DIR = stateMatch[1];
+    configuredEnv.NAVICHROME_STATE_DIR = stateMatch[1];
   } else {
     const config = readJsonConfig(raw, row.integrationConfig);
-    const entry = clientId === 'freebuff' ? config : clientId === 'opencode' ? config.mcp?.['chrome-controlla']
-      : clientId === 'claude-code' ? config.mcpServers?.['chrome-controlla']
-      : clientId === 'generic-mcp' ? config.mcpServers?.['chrome-controlla']
-      : config.mcpServers?.['chrome-controlla'];
-    if (!entry) throw new Error(`${clientId} adapter has no chrome-controlla entry in ${configPath}`);
+    const entry = clientId === 'freebuff' ? config : clientId === 'opencode' ? config.mcp?.['navichrome']
+      : clientId === 'claude-code' ? config.mcpServers?.['navichrome']
+      : clientId === 'generic-mcp' ? config.mcpServers?.['navichrome']
+      : config.mcpServers?.['navichrome'];
+    if (!entry) throw new Error(`${clientId} adapter has no navichrome entry in ${configPath}`);
     const configuredCommand = entry.command;
     if (Array.isArray(configuredCommand)) [command, ...args] = configuredCommand;
     else { command = configuredCommand; args = [...(entry.args ?? [])]; }
     configuredEnv = entry.env ?? entry.environment ?? {};
     if (clientId === 'chatgpt-desktop') {
       command = process.execPath;
-      args = [resolve(root, 'packages/chrome-controlla/plugin/launch.cjs')];
+      args = [resolve(root, 'packages/navichrome/plugin/launch.cjs')];
     }
   }
   const stateDir = resolve(stateRoot, clientId);
-  const binary = env.CONTROLLA_BINARY_PATH ?? env.CONTROLLA_BIN;
-  if (!binary || !isAbsolute(binary)) throw new Error(`CONTROLLA_BINARY_PATH must name an absolute built Controlla binary for the ${clientId} adapter`);
-  await access(binary, constants.X_OK).catch(() => { throw new Error(`configured Controlla binary is not executable: ${binary}`); });
+  const binary = env.NAVICHROME_BINARY_PATH ?? env.NAVICHROME_BIN;
+  if (!binary || !isAbsolute(binary)) throw new Error(`NAVICHROME_BINARY_PATH must name an absolute built NaviChrome binary for the ${clientId} adapter`);
+  await access(binary, constants.X_OK).catch(() => { throw new Error(`configured NaviChrome binary is not executable: ${binary}`); });
   if (clientId === 'chatgpt-desktop') command = process.execPath;
   else {
     command = binary;
     args = ['mcp'];
   }
-  const launchEnv = { ...configuredEnv, CONTROLLA_AGENT_SURFACE: 'v3-compact', CONTROLLA_STATE_DIR: stateDir };
-  if (clientId === 'chatgpt-desktop') launchEnv.CONTROLLA_BIN = binary;
+  const launchEnv = { ...configuredEnv, NAVICHROME_AGENT_SURFACE: 'v3-compact', NAVICHROME_STATE_DIR: stateDir };
+  if (clientId === 'chatgpt-desktop') launchEnv.NAVICHROME_BIN = binary;
   await mkdir(stateDir, { recursive: true });
   const configHash = createHash('sha256').update(raw).digest('hex');
   const adapter = {
@@ -102,7 +102,7 @@ export async function runLiveClientSmokes({
     const runId = randomUUID();
     const startedAtMs = Date.now();
     const clientAdapter = await resolveClientAdapterConfig(id, clients[id], { env,
-      stateRoot: env.CONTROLLA_CLIENT_SMOKE_STATE_ROOT ?? join(tmpdir(), `controlla-client-smoke-${runId}`) });
+      stateRoot: env.NAVICHROME_CLIENT_SMOKE_STATE_ROOT ?? join(tmpdir(), `navichrome-client-smoke-${runId}`) });
     const hostAdapter = await clientHostAdapterResolver(id, { env });
     const runContract = mcpContractRunner ?? (await import('./client-adapters.mjs')).runClientMcpContract;
     const clientSchemaContract = await runContract(id, clients[id], { launch: clientAdapter });
@@ -114,7 +114,7 @@ export async function runLiveClientSmokes({
       const tasks = hostTasks?.[id];
       const requiredTasks = ['read_only', 'verified_mutation', 'mode_specific'];
       if (!tasks || requiredTasks.some(task => typeof tasks[task] !== 'string' || !tasks[task].trim())) {
-        throw new Error(`${id} host adapter is available, but CONTROLLA_CLIENT_HOST_TASKS_JSON must provide read_only, verified_mutation, and mode_specific prompts; no client evidence was written`);
+        throw new Error(`${id} host adapter is available, but NAVICHROME_CLIENT_HOST_TASKS_JSON must provide read_only, verified_mutation, and mode_specific prompts; no client evidence was written`);
       }
       for (const task of requiredTasks) {
         const traceId = `${runId}:${task}`;
@@ -126,11 +126,11 @@ export async function runLiveClientSmokes({
         const run = await hostTaskRunner(id, { task, executable: hostAdapter.executable, workDir: clientAdapter.state_dir,
           mcpConfig: { ...clientAdapter, ...hostConfig }, prompt: tasks[task], env, traceFile, traceId, coldWarm: 'unknown' });
         if (run.status !== 'host_tool_invocation_observed' || !Array.isArray(run.tool_events) || run.tool_events.length === 0) {
-          throw new Error(`${id} ${task} host task did not invoke a Controlla MCP tool; qualification evidence was not written`);
+          throw new Error(`${id} ${task} host task did not invoke a NaviChrome MCP tool; qualification evidence was not written`);
         }
         const usedTools = new Set(run.tool_events.map(event => /(?:__|[._-])(act|browser|extract|snapshot|verify|workflow)$/.exec(event.name)?.[1]).filter(Boolean));
         const taskTools = task === 'read_only' ? ['snapshot', 'extract'] : task === 'verified_mutation' ? ['act', 'verify'] : ['browser'];
-        if (!taskTools.every(tool => usedTools.has(tool))) throw new Error(`${id} ${task} host run did not exercise required Controlla tool(s): ${taskTools.join(', ')}`);
+        if (!taskTools.every(tool => usedTools.has(tool))) throw new Error(`${id} ${task} host run did not exercise required NaviChrome tool(s): ${taskTools.join(', ')}`);
         if (task === 'mode_specific' && !run.tool_events.some(event => /(?:__|[._-])browser$/.test(event.name)
           && event.input?.action === 'open' && ['background', 'headless'].includes(event.input.mode))) {
           throw new Error(`${id} mode_specific host run did not request a supported background or headless browser mode`);
@@ -168,7 +168,7 @@ export async function runLiveClientSmokes({
     results.push({ client: id, status: 'verified', live: true, verified_capabilities: verified.verified_capabilities,
       evidence_path: result.evidence_path, evidence_hash: digest, client_version: result.client_version,
       integration_config_sha256: clientAdapter.config_sha256,
-      controlla_version: result.controlla_version,
+      navichrome_version: result.navichrome_version,
       prompt_traces: hostTaskRuns.map(({ task, prompt_trace }) => ({ task, trace: prompt_trace })) });
   }
 
@@ -180,17 +180,17 @@ export async function runLiveClientSmokes({
 async function main() {
   let commands, hostTasks;
   try {
-    commands = JSON.parse(process.env.CONTROLLA_CLIENT_SMOKE_COMMANDS_JSON ?? 'null');
+    commands = JSON.parse(process.env.NAVICHROME_CLIENT_SMOKE_COMMANDS_JSON ?? 'null');
   } catch (error) {
-    throw new Error(`CONTROLLA_CLIENT_SMOKE_COMMANDS_JSON must be valid JSON: ${error.message}`);
+    throw new Error(`NAVICHROME_CLIENT_SMOKE_COMMANDS_JSON must be valid JSON: ${error.message}`);
   }
   try {
-    hostTasks = JSON.parse(process.env.CONTROLLA_CLIENT_HOST_TASKS_JSON ?? 'null');
+    hostTasks = JSON.parse(process.env.NAVICHROME_CLIENT_HOST_TASKS_JSON ?? 'null');
   } catch (error) {
-    throw new Error(`CONTROLLA_CLIENT_HOST_TASKS_JSON must be valid JSON: ${error.message}`);
+    throw new Error(`NAVICHROME_CLIENT_HOST_TASKS_JSON must be valid JSON: ${error.message}`);
   }
   const stamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
-  const outputPath = resolve(root, process.env.CONTROLLA_CLIENT_SMOKE_OUTPUT ?? `apps/client-smoke-results-${stamp}.json`);
+  const outputPath = resolve(root, process.env.NAVICHROME_CLIENT_SMOKE_OUTPUT ?? `apps/client-smoke-results-${stamp}.json`);
   const result = await runLiveClientSmokes({ commands, hostTasks, outputPath });
   console.log(`Verified live smoke evidence for ${result.clients} configured clients: ${result.outputPath}`);
 }

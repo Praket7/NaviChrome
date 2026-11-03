@@ -7,7 +7,7 @@
 ## Automated baseline
 
 - `cargo test --workspace --all-targets`: 876 passed, 0 failed, 26 ignored across 45 reported test binaries/suites. The full output is preserved in the plan workspace as `task-1-baseline-cargo.txt`.
-- `node packages/chrome-controlla/test-agent-ux.cjs`: 21 passed, 0 failed.
+- `node packages/navichrome/test-agent-ux.cjs`: 21 passed, 0 failed.
 - ESPN/Bills agent UX fixture: 1 external `browser` call, 1 internal workflow call, 0 schema-discovery calls, 1 targeted snapshot, 0 homepage detours, 0 repository reads required. The workflow includes snapshot, find_all, choose, click, and verify in one open request.
 - Live ESPN Rust tests: 3 tests are ignored because they require the loaded local Chrome bridge and a paired Bills tab. No live browser result is claimed.
 

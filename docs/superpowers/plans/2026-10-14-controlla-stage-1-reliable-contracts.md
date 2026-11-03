@@ -57,12 +57,12 @@ The offscreen Bottom button really clicked. The audit initially checked the butt
 
 ## File ownership
 
-- Modify crates/controlla-runtime/src/mcp/v3_full.rs: public validation, task routing, mode inference.
-- Modify crates/controlla-runtime/src/mcp/v2.rs and v2_full.rs: predicates, snapshot/probe integration.
-- Modify extensions/chrome-controlla/background.js: capability validation and exact presentation enforcement.
-- Modify crates/controlla-runtime/src/capability_registry.rs: provider capability source of truth.
-- Add focused modules under crates/controlla-runtime/src/ for target registry and predicate evidence only when they remove duplicated logic; do not rewrite unrelated code.
-- Extend extensions/chrome-controlla/test-background.cjs and public-MCP contract tests.
+- Modify crates/navichrome-runtime/src/mcp/v3_full.rs: public validation, task routing, mode inference.
+- Modify crates/navichrome-runtime/src/mcp/v2.rs and v2_full.rs: predicates, snapshot/probe integration.
+- Modify extensions/navichrome/background.js: capability validation and exact presentation enforcement.
+- Modify crates/navichrome-runtime/src/capability_registry.rs: provider capability source of truth.
+- Add focused modules under crates/navichrome-runtime/src/ for target registry and predicate evidence only when they remove duplicated logic; do not rewrite unrelated code.
+- Extend extensions/navichrome/test-background.cjs and public-MCP contract tests.
 - Update plugin instructions, docs/quickstart.md, docs/clients.md, and phase ledgers.
 
 ## S1-01 — One executable capability contract

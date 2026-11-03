@@ -16,11 +16,11 @@ Plan: docs/superpowers/plans/2026-10-23-performance.md.
 - Lease releases notify in-process waiters; 25 ms reconciliation remains for other processes. Lease admission moved into `mcp/target_leases.rs`.
 - Timing histories bind runtime/extension sources, dependency lock, toolchain, target and build flags. Route, observation and DAG learning is scoped to accepted sessions; observation/DAG samples now expire after 30 days, matching route history.
 - Native Chromium WebMCP supports JSON-text schemas and JSON-text invocation inputs. Page programs moved into separately testable JS files.
-- CI caches Rust builds, cancels obsolete PR runs, consolidates platform-independent checks, and runs pinned Chrome plus stable compatibility lanes. Browser test paths are configurable with CONTROLLA_CHROME.
+- CI caches Rust builds, cancels obsolete PR runs, consolidates platform-independent checks, and runs pinned Chrome plus stable compatibility lanes. Browser test paths are configurable with NAVICHROME_CHROME.
 
 ## Review and decisions
 
-- Independent review: `/workspace/controlla-review-feedback.md`, gpt-6.1-sol; no Astra agents used.
+- Independent review: `/workspace/navichrome-review-feedback.md`, gpt-6.1-sol; no Astra agents used.
 - Fixed review finding: queued malformed form JSON no longer terminates the HTTP fixture service; regression returns 400 and verifies service/readback remains available.
 - Fixed review finding: costs cannot qualify across accepted sessions. Ruling: use conservative session isolation until authoritative browser-build attestation is available; this trades cross-session timing reuse for correct invalidation on re-pair/restart. It does not claim an observed browser version.
 - Added exact native WebMCP callback-input assertion after review.
@@ -50,9 +50,9 @@ Plan: docs/superpowers/plans/2026-10-23-performance.md.
 ## Final validation evidence
 
 - `cargo test --workspace --locked --offline`: 898 passed, 0 failed, 8 ignored across 51 reported suites. Ignored browser cases are qualified separately, not counted as passing by omission.
-- `CONTROLLA_CHROME=/usr/bin/chromium node --test scripts/test-background-actions.mjs scripts/test-snapshot-efficiency.mjs scripts/test-webmcp-browser.mjs`: 12 passed, 0 failed, 0 skipped.
-- `cargo test -p controlla-browser --test headless_stress -- --ignored --nocapture` with the configured Chromium: 1 passed; eight launches, separate profiles, exact fixture identity and storage isolation.
-- `cargo test -p controlla-runtime --bin controlla-v2 shared_preflight_batches_identity_and_epoch_real_chrome -- --ignored --nocapture`: 1 passed in real Chromium using the simulated read-only bridge.
+- `NAVICHROME_CHROME=/usr/bin/chromium node --test scripts/test-background-actions.mjs scripts/test-snapshot-efficiency.mjs scripts/test-webmcp-browser.mjs`: 12 passed, 0 failed, 0 skipped.
+- `cargo test -p navichrome-browser --test headless_stress -- --ignored --nocapture` with the configured Chromium: 1 passed; eight launches, separate profiles, exact fixture identity and storage isolation.
+- `cargo test -p navichrome-runtime --bin navichrome-v2 shared_preflight_batches_identity_and_epoch_real_chrome -- --ignored --nocapture`: 1 passed in real Chromium using the simulated read-only bridge.
 - Oracle HTTP/state/environment suite: 6 passed. Agent UX: 25 passed. Client configuration/trace suite: 17 passed. Final expanded benchmark/runner suite: 82 passed, 0 failed, 0 skipped.
 - Production Clippy, formatting, dependency boundary, documentation links and extraction provenance checks passed. Six packaged client MCP launch contracts passed; these are startup contracts, not behavioral client qualification. Release package build and package checks passed on Linux/x64: Cargo archives, npm archive contents/target/attribution, clean-prefix install, command shim, direct/plugin six-tool startup, install/upgrade/rollback/uninstall and user-data preservation. These are local package checks; hosted cross-platform CI remains unrun.
 
@@ -68,4 +68,4 @@ Thirty paired measured samples after four warmups, Chromium 154.0.8037.57, 50,00
 | Collected JSON characters (ASCII fixture) | 100894 | 11000 |
 | Verified selections | 30/30 | 30/30 |
 
-This is a local collector microbenchmark, not prompt-to-verified task latency, a mixed-task non-inferiority result, or a competitor comparison. Raw local artifact: `/workspace/controlla-collector-benchmark.json`. The unchanged control traversal remains a substantial cost on this large DOM.
+This is a local collector microbenchmark, not prompt-to-verified task latency, a mixed-task non-inferiority result, or a competitor comparison. Raw local artifact: `/workspace/navichrome-collector-benchmark.json`. The unchanged control traversal remains a substantial cost on this large DOM.

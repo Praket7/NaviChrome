@@ -20,7 +20,7 @@ const valid = {
   evidence_path: '/tmp/codex-smoke.json',
   evidence_sha256: 'a'.repeat(64),
   client_version: 'codex-test',
-  controlla_version: 'controlla-test',
+  navichrome_version: 'navichrome-test',
   verified_capabilities: required,
 };
 const startedAt = Date.now();
@@ -29,7 +29,7 @@ const evidence = {
   run_id: 'run-1',
   client: 'codex',
   client_version: 'codex-test',
-  controlla_version: 'controlla-test',
+  navichrome_version: 'navichrome-test',
   cases: [
     { capability: 'startup', status: 'passed', live: true, observer: 'codex-mcp-client', observed_at: new Date(startedAt + 10).toISOString(), proof: { tools: ['browser', 'snapshot', 'act', 'workflow', 'extract', 'verify'], tool_schema: ['browser', 'snapshot', 'act', 'workflow', 'extract', 'verify'].map(name => ({ name, inputSchema: { type: 'object' } })), schema_sha256: fingerprintToolSchema(['browser', 'snapshot', 'act', 'workflow', 'extract', 'verify'].map(name => ({ name, inputSchema: { type: 'object' } }))), process_id: 1234, isolation: 'disposable' } },
     { capability: 'persistent_session', status: 'passed', live: true, observer: 'codex-mcp-client', observed_at: new Date(startedAt + 20).toISOString(), proof: { session_id: 'test-session', session_reused: true } },
@@ -68,24 +68,24 @@ test('mutation qualification requires an independent post-action observer', () =
   const mutationResult = { ...valid, verified_capabilities: [...required, 'verified_mutations'] };
   const mutationCase = {
     capability: 'verified_mutations', status: 'passed', live: true, observer: 'codex-mcp-client', observed_at: new Date(Date.now()).toISOString(),
-    proof: { actor_id: 'controlla-action', action_receipt: { status: 'verified' }, independent_verification: { status: 'passed', observer_id: 'fresh-browser-snapshot' } },
+    proof: { actor_id: 'navichrome-action', action_receipt: { status: 'verified' }, independent_verification: { status: 'passed', observer_id: 'fresh-browser-snapshot' } },
   };
   const mutationEvidence = { ...evidence, cases: [...evidence.cases, mutationCase] };
   assert.ok(validateClientEvidence('codex', mutationResult, mutationEvidence, [...required, 'verified_mutations'], { runId: 'run-1', startedAtMs: startedAt, finishedAtMs: Date.now() }));
-  const coupled = { ...mutationCase, proof: { ...mutationCase.proof, independent_verification: { status: 'passed', observer_id: 'controlla-action' } } };
+  const coupled = { ...mutationCase, proof: { ...mutationCase.proof, independent_verification: { status: 'passed', observer_id: 'navichrome-action' } } };
   assert.throws(() => validateClientEvidence('codex', mutationResult, { ...evidence, cases: [...evidence.cases, coupled] }, [...required, 'verified_mutations'], { runId: 'run-1', startedAtMs: startedAt, finishedAtMs: Date.now() }), /independent observer/);
 });
 
 test('client adapter orchestrator runs each configured client and stores only current hashed evidence', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-smoke-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-smoke-'));
   try {
     const matrixPath = join(directory, 'matrix.json');
     const outputPath = join(directory, 'results.json');
     const codexRow = { requiredEvidenceCategories: required, integrationConfig: 'integrations/codex/config.toml.example', adapterKind: 'stdio_mcp' };
     await writeFile(matrixPath, JSON.stringify({ clients: { codex: codexRow } }));
     const adapter = resolve(fileURLToPath(new URL('./test-fixtures/client-smoke-adapter.mjs', import.meta.url)));
-    const env = { ...process.env, CONTROLLA_TEST_EVIDENCE_ROOT: directory, CONTROLLA_BINARY_PATH: process.execPath,
-      CONTROLLA_CLIENT_SMOKE_STATE_ROOT: directory };
+    const env = { ...process.env, NAVICHROME_TEST_EVIDENCE_ROOT: directory, NAVICHROME_BINARY_PATH: process.execPath,
+      NAVICHROME_CLIENT_SMOKE_STATE_ROOT: directory };
     const context = await resolveClientAdapterConfig('codex', codexRow, { env, stateRoot: directory });
     assert.deepEqual(context.args, ['mcp']);
     assert.equal(context.command, process.execPath);
@@ -95,7 +95,7 @@ test('client adapter orchestrator runs each configured client and stores only cu
     const result = await runLiveClientSmokes({ matrixPath, outputPath, commands: { codex: [process.execPath, adapter] },
       hostTasks: { codex: { read_only: 'read', verified_mutation: 'mutate fixture', mode_specific: 'open background' } },
       hostTaskRunner: async (client, { task }) => ({ client, status: 'host_tool_invocation_observed', qualification_status: 'not_run', process_id: 321,
-        tool_events: (task === 'read_only' ? ['snapshot', 'extract'] : task === 'verified_mutation' ? ['act', 'verify'] : ['browser']).map(name => ({ name: `chrome-controlla.${name}`, type: 'mcp_tool_call', ...(task === 'mode_specific' ? { input: { action: 'open', mode: 'background' } } : {}) })), stdout_sha256: 'a'.repeat(64) }),
+        tool_events: (task === 'read_only' ? ['snapshot', 'extract'] : task === 'verified_mutation' ? ['act', 'verify'] : ['browser']).map(name => ({ name: `navichrome.${name}`, type: 'mcp_tool_call', ...(task === 'mode_specific' ? { input: { action: 'open', mode: 'background' } } : {}) })), stdout_sha256: 'a'.repeat(64) }),
       mcpContractRunner: async () => ({ status: 'contract_verified', qualification_status: 'not_run', schema_sha256: EXPECTED_V3_TOOL_SCHEMA_SHA256 }),
       env, allowSyntheticTestEvidence: true });
     assert.equal(result.clients, 1);
@@ -110,7 +110,7 @@ test('client adapter orchestrator runs each configured client and stores only cu
 });
 
 test('client adapter orchestrator fails explicitly when a configured client adapter is absent', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-smoke-missing-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-smoke-missing-'));
   try {
     const matrixPath = join(directory, 'matrix.json');
     await writeFile(matrixPath, JSON.stringify({ clients: { codex: { requiredEvidenceCategories: required }, claude: { requiredEvidenceCategories: required } } }));
@@ -121,45 +121,45 @@ test('client adapter orchestrator fails explicitly when a configured client adap
 });
 
 test('public client smoke path requires and invokes its configured host task adapter before evidence collection', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-host-wiring-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-host-wiring-'));
   try {
     const matrixPath = join(directory, 'matrix.json');
     const row = { requiredEvidenceCategories: required, integrationConfig: 'integrations/codex/config.toml.example', adapterKind: 'stdio_mcp' };
     await writeFile(matrixPath, JSON.stringify({ clients: { codex: row } }));
-    const env = { ...process.env, CONTROLLA_BINARY_PATH: process.execPath, CONTROLLA_CLIENT_SMOKE_STATE_ROOT: directory };
+    const env = { ...process.env, NAVICHROME_BINARY_PATH: process.execPath, NAVICHROME_CLIENT_SMOKE_STATE_ROOT: directory };
     const mcpContractRunner = async () => ({ status: 'contract_verified', qualification_status: 'not_run', schema_sha256: EXPECTED_V3_TOOL_SCHEMA_SHA256 });
     const clientHostAdapterResolver = async () => ({ client: 'codex', kind: 'cli', status: 'ready', qualification_status: 'not_run', executable: process.execPath });
-    await assert.rejects(runLiveClientSmokes({ matrixPath, outputPath: join(directory, 'missing.json'), commands: { codex: [process.execPath, 'unused'] }, clientHostAdapterResolver, mcpContractRunner, env }), /CONTROLLA_CLIENT_HOST_TASKS_JSON must provide/);
+    await assert.rejects(runLiveClientSmokes({ matrixPath, outputPath: join(directory, 'missing.json'), commands: { codex: [process.execPath, 'unused'] }, clientHostAdapterResolver, mcpContractRunner, env }), /NAVICHROME_CLIENT_HOST_TASKS_JSON must provide/);
     await assert.rejects(runLiveClientSmokes({ matrixPath, outputPath: join(directory, 'not-invoked.json'), commands: { codex: [process.execPath, 'unused'] },
       hostTasks: { codex: { read_only: 'read', verified_mutation: 'mutate', mode_specific: 'mode' } },
-      clientHostAdapterResolver, hostTaskRunner: async () => ({ status: 'no_host_tool_invocation_observed', tool_events: [] }), mcpContractRunner, env }), /did not invoke a Controlla MCP tool/);
+      clientHostAdapterResolver, hostTaskRunner: async () => ({ status: 'no_host_tool_invocation_observed', tool_events: [] }), mcpContractRunner, env }), /did not invoke a NaviChrome MCP tool/);
     await assert.rejects(runLiveClientSmokes({ matrixPath, outputPath: join(directory, 'wrong-mode.json'), commands: { codex: [process.execPath, 'unused'] },
       hostTasks: { codex: { read_only: 'read', verified_mutation: 'mutate', mode_specific: 'mode' } },
       hostTaskRunner: async (client, { task }) => ({ status: 'host_tool_invocation_observed', process_id: 321,
-        tool_events: (task === 'read_only' ? ['snapshot', 'extract'] : task === 'verified_mutation' ? ['act', 'verify'] : ['browser']).map(name => ({ name: `chrome-controlla.${name}`, input: { action: 'open', mode: 'foreground' } })) }), clientHostAdapterResolver, mcpContractRunner, env }), /did not request a supported background or headless browser mode/);
+        tool_events: (task === 'read_only' ? ['snapshot', 'extract'] : task === 'verified_mutation' ? ['act', 'verify'] : ['browser']).map(name => ({ name: `navichrome.${name}`, input: { action: 'open', mode: 'foreground' } })) }), clientHostAdapterResolver, mcpContractRunner, env }), /did not request a supported background or headless browser mode/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test('each named client adapter resolves its checked-in integration config into an isolated launch context', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-config-adapters-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-config-adapters-'));
   try {
     const matrix = JSON.parse(await readFile(resolve('apps/client-qualification-matrix.json'), 'utf8'));
     const ids = Object.keys(matrix.clients);
     const configs = await Promise.all(ids.map(id => resolveClientAdapterConfig(id, matrix.clients[id], {
-      env: { ...process.env, CONTROLLA_BINARY_PATH: process.execPath }, stateRoot: directory,
+      env: { ...process.env, NAVICHROME_BINARY_PATH: process.execPath }, stateRoot: directory,
     })));
     assert.equal(configs.length, 6);
     assert.equal(new Set(configs.map(config => config.state_dir)).size, 6);
     for (const config of configs) {
       assert.ok(config.integration_config);
       assert.match(config.config_sha256, /^[a-f0-9]{64}$/);
-      assert.equal(config.env.CONTROLLA_AGENT_SURFACE, 'v3-compact');
-      assert.equal(config.env.CONTROLLA_STATE_DIR, config.state_dir);
+      assert.equal(config.env.NAVICHROME_AGENT_SURFACE, 'v3-compact');
+      assert.equal(config.env.NAVICHROME_STATE_DIR, config.state_dir);
       if (config.client === 'chatgpt-desktop') {
         assert.equal(config.command, process.execPath);
-        assert.ok(config.args[0].endsWith(join('packages', 'chrome-controlla', 'plugin', 'launch.cjs')));
+        assert.ok(config.args[0].endsWith(join('packages', 'navichrome', 'plugin', 'launch.cjs')));
       } else {
         assert.equal(config.command, process.execPath);
         assert.deepEqual(config.args, ['mcp']);
@@ -173,7 +173,7 @@ test('each named client adapter resolves its checked-in integration config into 
 test('built-in client launch adapters handshake with stdio MCP and verify the exact V3 tools without claiming qualification', async () => {
   const adapterIds = registeredClientMcpAdapters();
   assert.deepEqual(Object.keys(adapterIds).sort(), ['chatgpt-desktop', 'claude-code', 'codex', 'freebuff', 'generic-mcp', 'opencode'].sort());
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-mcp-contract-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-mcp-contract-'));
   try {
     const fixture = resolve(fileURLToPath(new URL('./test-fixtures/mcp-stdio-contract-server.mjs', import.meta.url)));
     const result = await runClientMcpContract('codex', { adapterKind: 'stdio_mcp' }, {
@@ -195,25 +195,25 @@ test('client host adapters distinguish runnable CLI hosts from interactive and p
   assert.equal((await resolveClientHostAdapter('generic-mcp')).status, 'protocol_only');
   assert.equal((await resolveClientHostAdapter('chatgpt-desktop')).status, 'manual_host_required');
   assert.equal((await resolveClientHostAdapter('freebuff', { env: { PATH: '' } })).status, 'interactive_only');
-  assert.equal((await resolveClientHostAdapter('codex', { env: { PATH: '', CONTROLLA_CODEX_BIN: '/definitely/missing/codex' } })).status, 'missing_dependency');
+  assert.equal((await resolveClientHostAdapter('codex', { env: { PATH: '', NAVICHROME_CODEX_BIN: '/definitely/missing/codex' } })).status, 'missing_dependency');
 });
 
 test('host launch adapters create isolated MCP-only configs and use supported non-interactive entrypoints', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-client-host-config-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-client-host-config-'));
   try {
-    const launch = { command: '/tmp/controlla', args: ['mcp'], env: { CONTROLLA_STATE_DIR: `${directory}/state` } };
+    const launch = { command: '/tmp/navichrome', args: ['mcp'], env: { NAVICHROME_STATE_DIR: `${directory}/state` } };
     const opencode = await prepareClientHostConfig('opencode', launch, join(directory, 'opencode'));
     const openConfig = JSON.parse(await readFile(join(opencode.configDir, 'opencode.json'), 'utf8'));
-    assert.deepEqual(openConfig.mcp['chrome-controlla'].command, ['/tmp/controlla', 'mcp']);
+    assert.deepEqual(openConfig.mcp['navichrome'].command, ['/tmp/navichrome', 'mcp']);
     assert.deepEqual(openConfig.permission, { edit: 'deny', bash: 'deny' });
     const claude = await prepareClientHostConfig('claude-code', launch, join(directory, 'claude'));
-    assert.deepEqual(JSON.parse(await readFile(claude.configPath, 'utf8')).mcpServers['chrome-controlla'].args, ['mcp']);
-    const codexConfig = { ...launch, env: { CONTROLLA_STATE_DIR: `${directory}/state`, CONTROLLA_AGENT_SURFACE: 'v3-compact' } };
+    assert.deepEqual(JSON.parse(await readFile(claude.configPath, 'utf8')).mcpServers['navichrome'].args, ['mcp']);
+    const codexConfig = { ...launch, env: { NAVICHROME_STATE_DIR: `${directory}/state`, NAVICHROME_AGENT_SURFACE: 'v3-compact' } };
     const tracePath = join(directory, 'client-trace.jsonl');
     const tracedCodexConfig = await prepareClientHostConfig('codex', launch, join(directory, 'codex-traced'), {
       traceFile: tracePath, traceId: 'trace-1', coldWarm: 'warm',
     });
-    assert.equal(tracedCodexConfig.env.CONTROLLA_PROMPT_TRACE_FILE, `${tracePath}.mcp`);
+    assert.equal(tracedCodexConfig.env.NAVICHROME_PROMPT_TRACE_FILE, `${tracePath}.mcp`);
     const codexCall = buildClientHostInvocation('codex', { executable: '/bin/codex', workDir: directory, mcpConfig: codexConfig, prompt: 'read-only prompt' });
     assert.ok(codexCall.args.includes('--ephemeral'));
     assert.ok(codexCall.args.includes('--ignore-user-config'));
@@ -221,12 +221,12 @@ test('host launch adapters create isolated MCP-only configs and use supported no
     assert.ok(!codexCall.args.includes('read-only prompt'), 'Codex prompt text must not appear in OS process arguments');
     assert.equal(codexCall.args.at(-1), '-');
     assert.equal(codexCall.stdin, 'read-only prompt');
-    assert.ok(codexCall.args.includes(`mcp_servers.chrome-controlla.env={CONTROLLA_AGENT_SURFACE = "v3-compact", CONTROLLA_STATE_DIR = ${JSON.stringify(codexConfig.env.CONTROLLA_STATE_DIR)}}`), 'Codex config override must encode only allowlisted nonsecret env as a TOML inline table');
+    assert.ok(codexCall.args.includes(`mcp_servers.navichrome.env={NAVICHROME_AGENT_SURFACE = "v3-compact", NAVICHROME_STATE_DIR = ${JSON.stringify(codexConfig.env.NAVICHROME_STATE_DIR)}}`), 'Codex config override must encode only allowlisted nonsecret env as a TOML inline table');
     const secret = 'do-not-put-this-in-argv';
     assert.throws(() => buildClientHostInvocation('codex', { executable: '/bin/codex', workDir: directory,
       mcpConfig: { ...codexConfig, env: { ...codexConfig.env, API_TOKEN: secret } }, prompt: 'read-only prompt' }), /unsupported Codex MCP environment key/);
     assert.throws(() => buildClientHostInvocation('codex', { executable: '/bin/codex', workDir: directory,
-      mcpConfig: { ...codexConfig, env: { ...codexConfig.env, CONTROLLA_STATE_DIR: secret } }, prompt: 'read-only prompt' }), /unsafe Codex MCP environment value/);
+      mcpConfig: { ...codexConfig, env: { ...codexConfig.env, NAVICHROME_STATE_DIR: secret } }, prompt: 'read-only prompt' }), /unsafe Codex MCP environment value/);
     assert.ok(!codexCall.args.some(argument => argument.includes(secret)));
     assert.throws(() => buildClientHostInvocation('opencode', { executable: '/bin/opencode', workDir: directory, mcpConfig: opencode, prompt: 'read-only prompt' }), /no documented stdin prompt channel/);
     const claudeCall = buildClientHostInvocation('claude-code', { executable: '/bin/claude', workDir: directory, mcpConfig: claude, prompt: 'read-only prompt' });
@@ -240,19 +240,19 @@ test('host launch adapters create isolated MCP-only configs and use supported no
 });
 
 test('host task adapter records real client MCP tool events without promoting them to qualification evidence', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-task-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-task-'));
   try {
     const fakeCodex = join(directory, 'fake-codex.mjs');
-    await writeFile(fakeCodex, `#!/usr/bin/env node\nlet prompt='';for await(const chunk of process.stdin)prompt+=chunk;if(prompt!=='inspect only')process.exitCode=2;process.stderr.write(prompt);\nconsole.log(JSON.stringify({type:'item.started', item:{id:'call-1',type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',arguments:{action:'open',mode:'background'},status:'in_progress'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{id:'call-1',type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',arguments:{action:'open',mode:'background'},status:'completed'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{type:'mcp_tool_call',tool:'chrome-controlla.snapshot',call_id:'fixture-call'}}));\nconsole.log(JSON.stringify({type:'item.started', item:{id:'call-2',type:'mcp_tool_call',server:'playwright',tool:'browser',arguments:{action:'navigate'},status:'in_progress'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{id:'call-2',type:'mcp_tool_call',server:'playwright',tool:'browser',arguments:{action:'navigate'},status:'completed'}}));\n`);
-    const result = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory, mcpConfig: { command: '/tmp/controlla', args: ['mcp'], env: {} }, prompt: 'inspect only', timeoutMs: 1000,
+    await writeFile(fakeCodex, `#!/usr/bin/env node\nlet prompt='';for await(const chunk of process.stdin)prompt+=chunk;if(prompt!=='inspect only')process.exitCode=2;process.stderr.write(prompt);\nconsole.log(JSON.stringify({type:'item.started', item:{id:'call-1',type:'mcp_tool_call',server:'navichrome',tool:'browser',arguments:{action:'open',mode:'background'},status:'in_progress'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{id:'call-1',type:'mcp_tool_call',server:'navichrome',tool:'browser',arguments:{action:'open',mode:'background'},status:'completed'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{type:'mcp_tool_call',tool:'navichrome.snapshot',call_id:'fixture-call'}}));\nconsole.log(JSON.stringify({type:'item.started', item:{id:'call-2',type:'mcp_tool_call',server:'playwright',tool:'browser',arguments:{action:'navigate'},status:'in_progress'}}));\nconsole.log(JSON.stringify({type:'item.completed', item:{id:'call-2',type:'mcp_tool_call',server:'playwright',tool:'browser',arguments:{action:'navigate'},status:'completed'}}));\n`);
+    const result = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory, mcpConfig: { command: '/tmp/navichrome', args: ['mcp'], env: {} }, prompt: 'inspect only', timeoutMs: 1000,
       spawnProcess: (_command, _args, options) => spawn(process.execPath, [fakeCodex], options) });
     assert.equal(result.status, 'host_tool_invocation_observed');
     assert.equal(result.qualification_status, 'not_run');
     assert.equal(result.tool_events.length, 2, 'bare Codex tool names must be attributed by server while competitor browser calls stay excluded');
     assert.equal(result.tool_events[0].name, 'browser');
-    assert.equal(result.tool_events[0].server, 'chrome-controlla');
+    assert.equal(result.tool_events[0].server, 'navichrome');
     assert.deepEqual(result.tool_events[0].input, { action: 'open', mode: 'background' });
-    assert.equal(result.tool_events[1].name, 'chrome-controlla.snapshot');
+    assert.equal(result.tool_events[1].name, 'navichrome.snapshot');
     assert.match(result.stdout_sha256, /^[a-f0-9]{64}$/);
     assert.equal(result.stderr, undefined, 'raw client stderr is never returned');
     assert.equal(result.stderr_bytes_captured, Buffer.byteLength('inspect only'));
@@ -265,12 +265,12 @@ test('host task adapter records real client MCP tool events without promoting th
 });
 
 test('host task adapter hashes only a bounded stderr prefix and reports truncation', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-stderr-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-stderr-'));
   try {
     const fakeCodex = join(directory, 'fake-codex.mjs');
     await writeFile(fakeCodex, `#!/usr/bin/env node\nfor await (const chunk of process.stdin) {}\nprocess.stderr.write('s'.repeat(70_000));\n`);
     const result = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory,
-      mcpConfig: { command: '/tmp/controlla', args: ['mcp'], env: {} }, prompt: 'safe fixture', timeoutMs: 1000,
+      mcpConfig: { command: '/tmp/navichrome', args: ['mcp'], env: {} }, prompt: 'safe fixture', timeoutMs: 1000,
       spawnProcess: (_command, _args, options) => spawn(process.execPath, [fakeCodex], options) });
     assert.equal(result.stderr, undefined);
     assert.equal(result.stderr_bytes_captured, 64_000);
@@ -283,13 +283,13 @@ test('host task adapter hashes only a bounded stderr prefix and reports truncati
 });
 
 test('client host trace keeps process-start timing separate from prompt send and records failures before first tool', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-trace-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-trace-'));
   try {
     const fakeCodex = join(directory, 'fake-codex.mjs');
     const traceFile = join(directory, 'trace.jsonl');
     await writeFile(fakeCodex, `#!/usr/bin/env node\nlet prompt='';for await (const chunk of process.stdin)prompt+=chunk;process.stderr.write(prompt);\nawait new Promise(resolve => setTimeout(resolve, 40));\nprocess.exitCode = 7;\n`);
     const failure = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory,
-      mcpConfig: { command: '/tmp/controlla', args: ['mcp'], env: {} }, prompt: 'fixture prompt', timeoutMs: 1000,
+      mcpConfig: { command: '/tmp/navichrome', args: ['mcp'], env: {} }, prompt: 'fixture prompt', timeoutMs: 1000,
       traceFile, traceId: 'delayed-failure', spawnProcess: (_command, _args, options) => spawn(process.execPath, [fakeCodex], options) })
       .then(() => assert.fail('nonzero host exit should reject'), error => error);
     assert.match(failure.message, /exited with code 7/);
@@ -323,13 +323,13 @@ test('client host trace keeps process-start timing separate from prompt send and
 });
 
 test('client tool-decision trace retains its observed call ID and tool name', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-call-id-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-call-id-'));
   try {
     const fakeCodex = join(directory, 'fake-codex.mjs');
     const traceFile = join(directory, 'trace.jsonl');
-    await writeFile(fakeCodex, `#!/usr/bin/env node\nfor await (const chunk of process.stdin) {}\nprocess.stdout.write(JSON.stringify({type:'mcp_tool_call',server:'chrome-controlla',name:'snapshot',id:'client-call-7'})+'\\n');\n`);
+    await writeFile(fakeCodex, `#!/usr/bin/env node\nfor await (const chunk of process.stdin) {}\nprocess.stdout.write(JSON.stringify({type:'mcp_tool_call',server:'navichrome',name:'snapshot',id:'client-call-7'})+'\\n');\n`);
     const result = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory,
-      mcpConfig: { command: '/tmp/controlla', args: ['mcp'], env: {} }, prompt: 'read fixture', timeoutMs: 1000,
+      mcpConfig: { command: '/tmp/navichrome', args: ['mcp'], env: {} }, prompt: 'read fixture', timeoutMs: 1000,
       traceFile, traceId: 'call-id-trace',
       spawnProcess: (_command, _args, options) => spawn(process.execPath, [fakeCodex], options) });
     assert.equal(result.status, 'host_tool_invocation_observed');
@@ -347,19 +347,19 @@ test('client tool-decision trace retains its observed call ID and tool name', as
 });
 
 test('client and MCP proxy traces use separate files and merge by monotonic event time', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-trace-merge-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-trace-merge-'));
   try {
     const traceFile = join(directory, 'trace.jsonl');
     const mcpTraceFile = `${traceFile}.mcp`;
     const { recordPromptTraceEvent, readPromptTrace, readPromptTraceFiles, summarizePromptTrace } = await import('./prompt-send-trace.mjs');
     await recordPromptTraceEvent(traceFile, 'ordered', 'process_start', {}, 20n);
     await recordPromptTraceEvent(traceFile, 'ordered', 'prompt_input_written', { prompt_boundary: 'client_stdin_write_finished' }, 40n);
-    await recordPromptTraceEvent(mcpTraceFile, 'ordered', 'controlla_received', { call_id: 'call-1' }, 30n);
+    await recordPromptTraceEvent(mcpTraceFile, 'ordered', 'navichrome_received', { call_id: 'call-1' }, 30n);
     await recordPromptTraceEvent(mcpTraceFile, 'ordered', 'tool_result_delivered', { call_id: 'call-1', missing_counters: 'internal_model_calls' }, 50n);
     const events = await readPromptTraceFiles([traceFile, mcpTraceFile], 'ordered');
     assert.deepEqual(events.map(event => BigInt(event.monotonic_ns)), [20n, 30n, 40n, 50n]);
     assert.equal(summarizePromptTrace(events).trace_valid, true);
-    await recordPromptTraceEvent(mcpTraceFile, 'old-run', 'controlla_received', { call_id: 'stale-call' }, 45n);
+    await recordPromptTraceEvent(mcpTraceFile, 'old-run', 'navichrome_received', { call_id: 'stale-call' }, 45n);
     await assert.rejects(readPromptTraceFiles([traceFile, mcpTraceFile], 'ordered'), /different run/);
     assert.equal((await readPromptTrace(traceFile)).length, 2, 'each process owns a separate append-only trace file');
   } finally {
@@ -368,13 +368,13 @@ test('client and MCP proxy traces use separate files and merge by monotonic even
 });
 
 test('client host timeout rejection retains partial trace without inventing outcome timings', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-host-timeout-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-host-timeout-'));
   try {
     const fakeCodex = join(directory, 'fake-codex.mjs');
     const traceFile = join(directory, 'trace.jsonl');
     await writeFile(fakeCodex, `#!/usr/bin/env node\nfor await (const chunk of process.stdin) {}\nawait new Promise(resolve => setInterval(resolve, 10000));\n`);
     const failure = await runClientHostTask('codex', { executable: fakeCodex, workDir: directory,
-      mcpConfig: { command: '/tmp/controlla', args: ['mcp'], env: {} }, prompt: 'fixture prompt', timeoutMs: 50,
+      mcpConfig: { command: '/tmp/navichrome', args: ['mcp'], env: {} }, prompt: 'fixture prompt', timeoutMs: 50,
       traceFile, traceId: 'timed-out', spawnProcess: (_command, _args, options) => spawn(process.execPath, [fakeCodex], options) })
       .then(() => assert.fail('timed out host should reject'), error => error);
     assert.equal(failure.timed_out, true);

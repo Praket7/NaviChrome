@@ -33,7 +33,7 @@ At the time this handoff was created, the preceding request asked for documentat
 Preexisting dirty files, before these two handoff documents:
 
 - `docs/blockers.md`, `docs/progress.md`, `docs/verification-matrix.md`.
-- `extensions/chrome-controlla/README.md`, `background.js`, `test-background.cjs`.
+- `extensions/navichrome/README.md`, `background.js`, `test-background.cjs`.
 
 These changes add sanitized command timing/phase traces, a regression fixture, and evidence corrections for the Classroom incident. They are not covered by the remote HEAD's green CI. Review and preserve their diff before committing anything. This handoff pass did not push or publish.
 
@@ -41,7 +41,7 @@ These changes add sanitized command timing/phase traces, a regression fixture, a
 
 After the initial audit, additional uncommitted changes appeared in this shared checkout. Their author/session was not established by this handoff; the two audit agents reported read-only work. Do not discard them or assume they were tested here.
 
-Additional modified files: `.github/workflows/ci.yml`; `crates/controlla-browser/src/{input,providers}.rs`; `crates/controlla-runtime/src/{jobs,mcp,native_host,native_setup}.rs`; `crates/controlla-runtime/tests/{jobs,native_bridge_process,native_bridge_roundtrip}.rs`. The already-dirty extension files also grew. The diff appears to address A1–A8 below, including CI coverage and dispatch/input/transport guards. Review current `git diff` and obtain the originating test/review evidence before declaring any finding closed. The original six-file inventory above records the initial snapshot, not the final dirty tree.
+Additional modified files: `.github/workflows/ci.yml`; `crates/navichrome-browser/src/{input,providers}.rs`; `crates/navichrome-runtime/src/{jobs,mcp,native_host,native_setup}.rs`; `crates/navichrome-runtime/tests/{jobs,native_bridge_process,native_bridge_roundtrip}.rs`. The already-dirty extension files also grew. The diff appears to address A1–A8 below, including CI coverage and dispatch/input/transport guards. Review current `git diff` and obtain the originating test/review evidence before declaring any finding closed. The original six-file inventory above records the initial snapshot, not the final dirty tree.
 
 The handoff author's changes are the two root Markdown documents. Other working sessions may continue changing this checkout; recheck status and HEAD when resuming. All code-line anchors below refer to the audit snapshot.
 
@@ -85,14 +85,14 @@ The diagram shows existing module relationships, not proof that all paths are in
 
 | Location | Responsibility / important boundary |
 | --- | --- |
-| `crates/controlla-browser/src/lib.rs` | Extracted CDP browser engine and public browser API. |
+| `crates/navichrome-browser/src/lib.rs` | Extracted CDP browser engine and public browser API. |
 | `manager.rs`, `session.rs`, `sessions.rs` in that directory | Connection/session machinery and session/target identity/ownership. Follow callers before consolidating similarly named layers. |
 | `providers.rs` | Direct, dedicated and shared-extension transports; pairing, command/reply correlation, lifecycle. |
 | `scheduler.rs` | Target/resource scheduling and admission. |
 | `input.rs` | Guarded direct input primitives; currently an internal library route, not the MCP shared-input implementation. |
 | `observe.rs` | Bounded structured observations/extraction and cursor behavior. |
 | `native.rs`, `blocking.rs` | Native observation/helper boundaries and synchronous wrappers. |
-| `crates/controlla-runtime/src/main.rs` | CLI/server/worker entry points. |
+| `crates/navichrome-runtime/src/main.rs` | CLI/server/worker entry points. |
 | `mcp.rs` | Large tool-routing module: sessions, shared reads/input, jobs/workflows, guide and integration. Current shared input is implemented here. |
 | `capability.rs`, `doctor.rs` | Capability evaluation and diagnostics. |
 | `jobs.rs` | SQLite operation journal, admission, dispatch claims, delivery/outcome distinctions, recovery. |
@@ -102,8 +102,8 @@ The diagram shows existing module relationships, not proof that all paths are in
 | `native_setup.rs`, `native_host.rs` | Native-host installation/manifests, discovery/pairing state and Chrome native-message relay. |
 | `http_auth.rs`, `http_server.rs` | Optional authenticated loopback HTTP MCP service. |
 | `apps.rs`, `slides_deck.rs`, `canva.rs`, `capcut_recipe.rs` | Offline app briefs/plans/preflight; no finished live Slides/Canva/CapCut operation routes. |
-| `extensions/chrome-controlla/` | Manifest, background worker, native/manual pairing, Chrome debugger dispatch, popup and Node test harness. |
-| `packages/chrome-controlla/` | Package launcher/staged distributable; generated output is not a registry publication. |
+| `extensions/navichrome/` | Manifest, background worker, native/manual pairing, Chrome debugger dispatch, popup and Node test harness. |
+| `packages/navichrome/` | Package launcher/staged distributable; generated output is not a registry publication. |
 | `schemas/` and runtime crate schemas | Contract copies; package check compares them. |
 | `apps/{slides,canva,capcut-web}/` | App planning/acceptance material. |
 | `tests/clients/`, `tests/guide/` | Client configuration and guide checks. |
@@ -186,7 +186,7 @@ These observations reinforce the need to review the actual latest diff rather th
 
 ### Additional verified engineering gap
 
-**A8 — committed CI coverage is narrower than the local check catalog.** `.github/workflows/ci.yml` runs Rust fmt/clippy/tests, build/package, docs, provenance and dependency checks. It does not run `check:clients`, `check:apps`, `check:bench`, or `extensions/chrome-controlla/test-background.cjs`. Inspected package/docs scripts do not transitively run these. The release-candidate script does run several of them, but CI does not invoke that script. Add the lightweight checks to an appropriate CI job; retain platform-dependent browser acceptance separately. The inspected green build used the old configuration. The concurrent dirty CI diff adds these checks, but that diff has not been qualified by hosted CI in this handoff.
+**A8 — committed CI coverage is narrower than the local check catalog.** `.github/workflows/ci.yml` runs Rust fmt/clippy/tests, build/package, docs, provenance and dependency checks. It does not run `check:clients`, `check:apps`, `check:bench`, or `extensions/navichrome/test-background.cjs`. Inspected package/docs scripts do not transitively run these. The release-candidate script does run several of them, but CI does not invoke that script. Add the lightweight checks to an appropriate CI job; retain platform-dependent browser acceptance separately. The inspected green build used the old configuration. The concurrent dirty CI diff adds these checks, but that diff has not been qualified by hosted CI in this handoff.
 
 Other gaps such as missing app executors, production cache admission, native IME or benchmarks are missing functionality/qualification, not newly discovered regressions. Avoid inflating the bug count with every unimplemented phase.
 
@@ -196,7 +196,7 @@ Other gaps such as missing app executors, production cache admission, native IME
 
 1. Inspect the actual client tool inventory. In this task Controlla is exposed through the **Hotload child server** `chrome-controlla`, not direct named top-level tools. Use Hotload search/status/call for that server and retrieve schemas; do not infer absence from top-level names alone.
 2. Before this handoff request, status reported ready, revision 3, 21 tools; a `guide` call succeeded. This is a dated connection observation, not a permanent guarantee or proof of browser effects.
-3. Use the installed `controlla` executable's help and `install-bridge <actual-extension-id>`. Load `extensions/chrome-controlla` unpacked if required. Match the native manifest's exact allowed extension origin. Verify executable path and version/build identity.
+3. Use the installed `controlla` executable's help and `install-bridge <actual-extension-id>`. Load `extensions/navichrome` unpacked if required. Match the native manifest's exact allowed extension origin. Verify executable path and version/build identity.
 4. Normal flow: `discover_shared_tabs` → `pair_shared` with freshly returned `host_id` and selected `target_ids` → `accept_shared` → `list_shared_targets` → bounded action/read → `release_shared`. Inspect current schemas for exact argument types. Native inventory freshness is limited; rediscover rather than reuse old IDs.
 5. Normal native messaging should not require the user to copy a WebSocket endpoint and token. The popup manual path is a fallback. Do not paste tokens, profile contents or credential files into chat/docs.
 6. Chrome debugger permission/indicator behavior is controlled by Chrome. Do not promise that a bridge eliminates all consent UI or use bypass flags. Reload the extension only after an extension change; restart/reload MCP only when its process/build actually changed.
@@ -226,8 +226,8 @@ git diff --check
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo test --workspace --locked --offline
-node extensions/chrome-controlla/test-background.cjs
-node --check extensions/chrome-controlla/background.js
+node extensions/navichrome/test-background.cjs
+node --check extensions/navichrome/background.js
 npm run check:docs
 npm run check:provenance
 npm run check:clients

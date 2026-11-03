@@ -8,7 +8,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   try { request = JSON.parse(line); } catch { continue; }
   if (!Object.hasOwn(request, 'id')) continue;
   const result = request.method === 'initialize'
-    ? { protocolVersion: request.params.protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'controlla-test', version: '0.1.0' } }
+    ? { protocolVersion: request.params.protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'navichrome-test', version: '0.1.0' } }
     : request.method === 'tools/list' ? { tools } : {};
   process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`);
 }

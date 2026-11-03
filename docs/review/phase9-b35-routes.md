@@ -2,7 +2,7 @@
 
 ## Method and environment
 
-Fresh blind evaluation against the current `docs/MASTER_GUIDE.md` (version `master-2026-10-06-v3`) and rebuilt packaged MCP executable `packages/chrome-controlla/dist/bin/controlla-core` (server version `0.1.0`). The server was launched with a fresh temporary `CONTROLLA_STATE_DIR`; I sent JSONL `initialize` using protocol version `2025-11-25`, then `notifications/initialized` and `tools/list`. The initialize response listed the registered tools, including `session`, `observe`, `shared_observe`, `shared_input`, and `file_select`. The catalog schema for `file_select.locator` is a typed `FileSelectLocator` union of explicit locator objects, each with `additionalProperties:false`.
+Fresh blind evaluation against the current `docs/MASTER_GUIDE.md` (version `master-2026-10-06-v3`) and rebuilt packaged MCP executable `packages/navichrome/dist/bin/navichrome-core` (server version `0.1.0`). The server was launched with a fresh temporary `NAVICHROME_STATE_DIR`; I sent JSONL `initialize` using protocol version `2025-11-25`, then `notifications/initialized` and `tools/list`. The initialize response listed the registered tools, including `session`, `observe`, `shared_observe`, `shared_input`, and `file_select`. The catalog schema for `file_select.locator` is a typed `FileSelectLocator` union of explicit locator objects, each with `additionalProperties:false`.
 
 No browser or app connection was made. No source or other documentation was inspected. The exact original scenario prompts were not retained; the descriptions below are the five scenarios evaluated, not verbatim prompts.
 
@@ -14,7 +14,7 @@ All five outcomes remain unchanged from the prior run: **PASS**. The v3 guide an
 
 **Scenario:** Configure the local stdio server and discover its available tools.
 
-**Evidence:** `MASTER_GUIDE.md` §2 shows a client config with an absolute `controlla` command path, `mcp` argument, `CONTROLLA_STATE_DIR`, and `COMPTROL_CHROME_AUTO_CONNECT`. It says to use `session` action `discover`. In the rebuilt packaged MCP `tools/list` result, `session` is present and its schema requires `action` as a string.
+**Evidence:** `MASTER_GUIDE.md` §2 shows a client config with an absolute `navichrome` command path, `mcp` argument, `NAVICHROME_STATE_DIR`, and `COMPTROL_CHROME_AUTO_CONNECT`. It says to use `session` action `discover`. In the rebuilt packaged MCP `tools/list` result, `session` is present and its schema requires `action` as a string.
 
 **Gap:** The `action` schema is an unconstrained string; the operator must follow the guide's supported-action list.
 

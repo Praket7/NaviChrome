@@ -21,7 +21,7 @@ import { createMcpStdioClient } from './mcp-stdio-client.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
 const matrixPath = resolve(here, '../tasks/phase12-installed-apps.json');
-const DEFAULT_BINARY = resolve(root, 'target/release/controlla-v2');
+const DEFAULT_BINARY = resolve(root, 'target/release/navichrome-v2');
 const DEFAULT_EVIDENCE = resolve(root, 'bench/reports', `phase12-evidence-${new Date().toISOString().replaceAll(/[:.]/g, '-')}.json`);
 
 const BLOCKED = {

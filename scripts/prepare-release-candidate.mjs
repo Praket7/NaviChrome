@@ -26,16 +26,16 @@ run('npm', ['run', 'check:clients']);
 run('npm', ['run', 'check:apps']);
 run('npm', ['run', 'check:bench']);
 run('sh', ['scripts/check-dependencies.sh']);
-run('node', ['extensions/chrome-controlla/test-background.cjs']);
+run('node', ['extensions/navichrome/test-background.cjs']);
 run('sh', ['scripts/package-build.sh']);
 run('sh', ['scripts/package-check.sh']);
 
-const packageDir = path.join(root, 'packages/chrome-controlla/dist');
+const packageDir = path.join(root, 'packages/navichrome/dist');
 const packageJson = JSON.parse(await readFile(path.join(packageDir, 'package.json'), 'utf8'));
-const extensionManifest = JSON.parse(await readFile(path.join(root, 'extensions/chrome-controlla/manifest.json'), 'utf8'));
+const extensionManifest = JSON.parse(await readFile(path.join(root, 'extensions/navichrome/manifest.json'), 'utf8'));
 if (extensionManifest.version !== packageJson.version) throw new Error('MCP package and Chrome extension versions must match');
-const extensionBackground = await readFile(path.join(root, 'extensions/chrome-controlla/background.js'), 'utf8');
-const buildAssetDeclaration = extensionBackground.match(/const CONTROLLA_EXTENSION_BUILD_ASSETS = (\[[\s\S]*?\]);/);
+const extensionBackground = await readFile(path.join(root, 'extensions/navichrome/background.js'), 'utf8');
+const buildAssetDeclaration = extensionBackground.match(/const NAVICHROME_EXTENSION_BUILD_ASSETS = (\[[\s\S]*?\]);/);
 if (!buildAssetDeclaration) throw new Error('Chrome extension build asset manifest is missing from background.js');
 const extensionBuildAssets = JSON.parse(buildAssetDeclaration[1]);
 async function listExtensionFiles(directory, prefix = '') {
@@ -48,9 +48,9 @@ async function listExtensionFiles(directory, prefix = '') {
   }
   return files;
 }
-const allExtensionFiles = await listExtensionFiles(path.join(root, 'extensions/chrome-controlla'));
+const allExtensionFiles = await listExtensionFiles(path.join(root, 'extensions/navichrome'));
 const extensionFiles = resolveExtensionPackageAssets(extensionManifest, extensionBuildAssets, allExtensionFiles);
-for (const file of extensionFiles) await access(path.join(root, 'extensions/chrome-controlla', file));
+for (const file of extensionFiles) await access(path.join(root, 'extensions/navichrome', file));
 const target = `${process.platform}-${process.arch}`;
 const rustTarget = {
   'darwin-arm64': 'aarch64-apple-darwin',
@@ -72,17 +72,17 @@ await rm(isolatedNpmConfig, { force: true });
 const packageArchive = (await readdir(out)).find((name) => name.endsWith('.tgz'));
 if (!packageArchive) throw new Error('npm pack did not produce an archive');
 
-const extensionArchive = `chrome-controlla-extension-${packageJson.version}.tar.gz`;
+const extensionArchive = `navichrome-extension-${packageJson.version}.tar.gz`;
 const extensionArchivePath = path.join(out, extensionArchive);
-run('tar', ['-czf', extensionArchivePath, '-C', path.join(root, 'extensions/chrome-controlla'), ...extensionFiles]);
+run('tar', ['-czf', extensionArchivePath, '-C', path.join(root, 'extensions/navichrome'), ...extensionFiles]);
 const archivedExtensionFiles = new Set(run('tar', ['-tzf', extensionArchivePath], { stdio: 'pipe' }).trim().split('\n'));
 for (const file of extensionFiles) {
   if (!archivedExtensionFiles.has(file)) throw new Error(`Chrome extension archive is missing required runtime asset: ${file}`);
 }
 
 const metadata = JSON.parse(run('cargo', ['metadata', '--locked', '--format-version', '1', '--filter-platform', rustTarget], { stdio: 'pipe' }));
-if (!metadata.resolve) throw new Error('cargo metadata did not resolve the Controlla CLI dependency graph');
-const binary = metadata.packages.find((item) => item.name === 'controlla-runtime' && item.targets.some((entry) => entry.name === 'controlla' && entry.kind.includes('bin')));
+if (!metadata.resolve) throw new Error('cargo metadata did not resolve the NaviChrome CLI dependency graph');
+const binary = metadata.packages.find((item) => item.name === 'navichrome-runtime' && item.targets.some((entry) => entry.name === 'navichrome' && entry.kind.includes('bin')));
 const nodes = new Map(metadata.resolve.nodes.map((node) => [node.id, node]));
 const reachable = new Set();
 const visit = (id) => {
@@ -92,7 +92,7 @@ const visit = (id) => {
     if (dependency.dep_kinds.some((kind) => kind.kind === null)) visit(dependency.pkg);
   }
 };
-if (!binary) throw new Error('cargo metadata did not include the Controlla CLI package');
+if (!binary) throw new Error('cargo metadata did not include the NaviChrome CLI package');
 visit(metadata.resolve.nodes.find((node) => node.id === binary.id).id);
 const runtimePackages = metadata.packages.filter((item) => reachable.has(item.id) && item.id !== binary.id);
 const runtimeRootRef = `pkg:cargo/${binary.name}@${binary.version}`;
@@ -110,12 +110,12 @@ const sbom = {
   version: 1,
   metadata: {
     timestamp: new Date().toISOString(),
-    component: { type: 'application', name: 'chrome-controlla', version: packageJson.version, 'bom-ref': runtimeRootRef },
+    component: { type: 'application', name: 'navichrome', version: packageJson.version, 'bom-ref': runtimeRootRef },
     properties: [
-      { name: 'controlla.host', value: target },
-      { name: 'controlla.rust-target', value: rustTarget },
-      { name: 'controlla.dependency-scope', value: 'Host-filtered Cargo normal dependency graph; does not inventory dynamic OS libraries' },
-      { name: 'controlla.release-status', value: 'local-candidate-not-published' },
+      { name: 'navichrome.host', value: target },
+      { name: 'navichrome.rust-target', value: rustTarget },
+      { name: 'navichrome.dependency-scope', value: 'Host-filtered Cargo normal dependency graph; does not inventory dynamic OS libraries' },
+      { name: 'navichrome.release-status', value: 'local-candidate-not-published' },
     ],
   },
   components,

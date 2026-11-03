@@ -12,7 +12,7 @@
   "files": [
     {
       "source_path": "../Comptrol/crates/comptrol-browser/src/lib.rs",
-      "destination_path": "crates/controlla-browser/src/lib.rs",
+      "destination_path": "crates/navichrome-browser/src/lib.rs",
       "source_sha256": "a0ac3351279ac63fd8a5717d1b64d4c0ac98d4e6d2422072a5f1dc177b35dd74",
       "destination_sha256": "1a2ddde81f149cdb698990165a57110f7803235c54f0dee71d96922604fcd696",
       "edits": "Original Phase 0 extraction was byte-for-byte; Phase 2 added target/frame generation revisions, flattened-session identity resolution, per-target scheduling and deterministic full-wave dispatch evidence, provider-backed owned-target create/close integration gated on an independent cleanup observer, shared-extension direct-CDP rejection, and post-response binding/recording for owned-target creation. Original retained tests remain listed separately.; Phase 4 exports typed guarded-input primitives; Phase 4 exports guarded CDP input types and fixture coverage; Phase 4 exports guarded CDP input types and fixture coverage; Phase 4 actual installed-Chrome headless input/readback fixture and attached-target domain bootstrap; Phase 4 follow-up adds final same-evaluation fill value guard, per-send insert/key value-focus rechecks, and focused race fixture updates; Phase 5 exports bounded DOM observation and schema-guided stable-ID extraction methods; Phase 5 serializes 128-bit target identity as strings for MCP JSON compatibility; A1–A8 follow-up updates guarded-input regression fixture with the required stable DOM node token; 2026-10-14: OOPIF attached sessions seed their frame tree before Runtime contexts; target/session lifecycle events publish after identity state updates and retain attach-before-create targets; Stage 1: shared workflow cancellation export and fenced command admission",
@@ -20,7 +20,7 @@
     },
     {
       "source_path": "../Comptrol/crates/comptrol-browser/src/manager.rs",
-      "destination_path": "crates/controlla-browser/src/manager.rs",
+      "destination_path": "crates/navichrome-browser/src/manager.rs",
       "source_sha256": "378c3593b7b63cfd4938917545671d8c9d826a4f561ef33fd24c1a1214355b5c",
       "destination_sha256": "56e1df7f4cf342e8783ab98a1cf33d585e85686f4f696a1c5538c27fd8c3bdaa",
       "edits": "none; byte-for-byte copy before Phase 5; Phase 5 seeds the target graph from getTargets snapshots before immediate flattened attachment; Stage 1: shared workflow cancellation export and fenced command admission",
@@ -28,15 +28,15 @@
     },
     {
       "source_path": "../Comptrol/crates/comptrol-browser/src/session.rs",
-      "destination_path": "crates/controlla-browser/src/session.rs",
+      "destination_path": "crates/navichrome-browser/src/session.rs",
       "source_sha256": "8143ef5fe92c8a140c90e41d77fb30d55c4df0d1a4a9ba5979eed89782f4959f",
-      "destination_sha256": "e5e62c2a0a61923a2402baf91e818cb126037ce16be20ad1fa18e2168840f3ad",
-      "edits": "Original Phase 0 extraction was byte-for-byte; Phase 2 updated the cache test to assert the generated current target revision and retained all originally imported tests; native host discovery now identifies Chrome Controlla registration and defers live availability to MCP inventory evidence.",
+      "destination_sha256": "c22c260340e8b85268cbf9dcd86c7f3f929ab000483cdd92bab6b5401640644c",
+      "edits": "Original Phase 0 extraction was byte-for-byte; Phase 2 updated the cache test to assert the generated current target revision and retained all originally imported tests; native host discovery now identifies Chrome Controlla registration and defers live availability to MCP inventory evidence.; NaviChrome rename updated project identifiers and paths",
       "license": "Apache-2.0 (Comptrol LICENSE and NOTICE retained)"
     },
     {
       "source_path": "../Comptrol/crates/comptrol-browser/src/blocking.rs",
-      "destination_path": "crates/controlla-browser/src/blocking.rs",
+      "destination_path": "crates/navichrome-browser/src/blocking.rs",
       "source_sha256": "594af9867288198a8f2a8847dafef1ea943ae186b0c967d195bf5c3534a9a543",
       "destination_sha256": "594af9867288198a8f2a8847dafef1ea943ae186b0c967d195bf5c3534a9a543",
       "edits": "none; byte-for-byte copy",
@@ -44,10 +44,10 @@
     },
     {
       "source_path": "../Comptrol/crates/comptrol-browser/Cargo.toml",
-      "destination_path": "crates/controlla-browser/Cargo.toml",
+      "destination_path": "crates/navichrome-browser/Cargo.toml",
       "source_sha256": "b6556bb46b66cb42d628602902d2e47667c1b83bc6b4636bff3306d47acc8cbc",
-      "destination_sha256": "6559e378d2bb457df8258340fa68964d8f43c7f0a4fe11ab13310361d8857d82",
-      "edits": "renamed package, inherited workspace metadata, pinned direct dependency versions including OS-random browser identity support, and included package license file",
+      "destination_sha256": "b8f91a63a42fa3621c61f32639f9e6132af3d33ca2273a67e0951faadde5b7c9",
+      "edits": "renamed package, inherited workspace metadata, pinned direct dependency versions including OS-random browser identity support, and included package license file; NaviChrome rename updated project identifiers and paths",
       "license": "Apache-2.0"
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "source_path": "../Comptrol/LICENSE",
-      "destination_path": "crates/controlla-browser/LICENSE",
+      "destination_path": "crates/navichrome-browser/LICENSE",
       "source_sha256": "e56c43af1d8c31cc7a4397cf535e32323b0123cf72aee3668e5f2bea688f52a8",
       "destination_sha256": "e56c43af1d8c31cc7a4397cf535e32323b0123cf72aee3668e5f2bea688f52a8",
       "edits": "none; byte-for-byte copy, included in published crate archive",
@@ -76,7 +76,7 @@
     },
     {
       "source_path": "../Comptrol/NOTICE",
-      "destination_path": "crates/controlla-browser/NOTICE",
+      "destination_path": "crates/navichrome-browser/NOTICE",
       "source_sha256": "6b3608e81f8c0514557d8f895df6b3a8b0102ad6bd8f5d3728279559bd5397af",
       "destination_sha256": "6b3608e81f8c0514557d8f895df6b3a8b0102ad6bd8f5d3728279559bd5397af",
       "edits": "none; byte-for-byte copy, included in published crate archive",
@@ -86,32 +86,32 @@
       "source_path": "../../outputs/research.md",
       "destination_path": "docs/design/research.md",
       "source_sha256": "4ea855401d2a4562887ccb6704fa14fb54a3132fc80b72ad08f9ea6820ef37c6",
-      "destination_sha256": "b7e964fef12c02b8d51494ae6e5973a064be231b553fd7943433a1b2a4e616ad",
-      "edits": "none",
+      "destination_sha256": "6544ef76f8c717882d1390ce6cc4368e72dfe6222d7574a6a320d92b0a5a4f94",
+      "edits": "none; NaviChrome rename updated project identifiers and paths",
       "license": "user-provided design document; no third-party license asserted"
     },
     {
       "source_path": "../../outputs/improvements.md",
       "destination_path": "docs/design/improvements.md",
       "source_sha256": "f333236504419021b4c36810acc17a795d6dc7898a14e79ba490058e873b5592",
-      "destination_sha256": "768c3b7cde23d6f32809c67aba152093852c4e69dcbd9345a755197913c94099",
-      "edits": "updated relative link to relocated master guide; Phase 7 review records canonical cache preconditions and unqualified observer/cache admission gates; V3 note marks the five-tool proposal superseded by the six-tool contract",
+      "destination_sha256": "8a24eae9bd4b74118be29842d9cbcc75fecf77d2643f71d251062ef455eb0f8f",
+      "edits": "updated relative link to relocated master guide; Phase 7 review records canonical cache preconditions and unqualified observer/cache admission gates; V3 note marks the five-tool proposal superseded by the six-tool contract; NaviChrome rename updated project identifiers and paths",
       "license": "user-provided design document; no third-party license asserted"
     },
     {
       "source_path": "../../outputs/build.md",
       "destination_path": "docs/design/build.md",
       "source_sha256": "c1fcd9437701b685dd528ca3f7ca415462bdc43f2e1928fb280ad4f79c5d0a02",
-      "destination_sha256": "6295fdb5eaaa348d692b475f0e25f39d623c72793e2550d63ee6d4f4fe22de6e",
-      "edits": "updated relative link and document placement; reconciled implementation, review, CI and fixture evidence through Phase 12; records Phase 3 local 12-second QuickJS Promise coverage, Phase 6 bounded child-process workflows and async Promise worker tests, Phase 7 offline independent-state fixtures and live-observer/performance boundaries, Phase 8 unqualified app routes, Phase 9 all SDK initialize revisions, 20/20 pre-live B35 results, authenticated loopback HTTP process smoke, OpenCode stdio discovery-only evidence, Phase 10 pinned artifacts and unrun browser/model comparison, and Phase 12 latest candidate, three-platform clean-prefix installs and CI boundaries; updated Phase 6 sandbox caveat to match the bounded child-process implementation",
+      "destination_sha256": "a6e3207d9cb0aa12d573c6e4197e3add2d0cc732516bb9a9053cb20d642be3b3",
+      "edits": "updated relative link and document placement; reconciled implementation, review, CI and fixture evidence through Phase 12; records Phase 3 local 12-second QuickJS Promise coverage, Phase 6 bounded child-process workflows and async Promise worker tests, Phase 7 offline independent-state fixtures and live-observer/performance boundaries, Phase 8 unqualified app routes, Phase 9 all SDK initialize revisions, 20/20 pre-live B35 results, authenticated loopback HTTP process smoke, OpenCode stdio discovery-only evidence, Phase 10 pinned artifacts and unrun browser/model comparison, and Phase 12 latest candidate, three-platform clean-prefix installs and CI boundaries; updated Phase 6 sandbox caveat to match the bounded child-process implementation; NaviChrome rename updated project identifiers and paths",
       "license": "user-provided design document; no third-party license asserted"
     },
     {
       "source_path": "../../outputs/MASTER_GUIDE.md",
       "destination_path": "docs/MASTER_GUIDE.md",
       "source_sha256": "adb6ac4f93d0e846077bc24aae05bd5ec4ca6717c25eaaef75a2ead6a7f3197d",
-      "destination_sha256": "380d7aa71e49e97431d062a4fdc0f38c8e3dd8e207bd7848ace466458801d9e8",
-      "edits": "Phase 1 status distinguishes local evaluator from live workflows; Phase 4/5 documents bounded observation, extraction/resume and file-selection boundaries; Phase 6/9 describes supported workflow and client surface; Phase 8 explicitly marks app recipes as unqualified; examples now match current MCP schemas including strict typed file-selection locators; versioned local setup preview updated to v3; immediately listening shared-tab pairing and nonblocking acceptance status; current shared accessibility and changed-state click semantics with fixture/live evidence boundaries; native host one-time registration and tab discovery; bounded child-process script worker with remaining OS-isolation caveat.; Phase 4/5 native bridge setup is authoritative with one-time install, reload, exact tab discovery/pairing/acceptance, live discovery evidence, and explicit fixture-only reconnect/status boundary; native shared-tab setup passes discover_shared_tabs.snapshot.host_id with exact IDs to pair_shared, documents 100-tab truncation, 15-second freshness, and fixture/local-only host binding, pair-error, serialized cleanup evidence; 2026-10-08: default client config uses native messaging without legacy auto-connect, and live selected-tab attachment/AX/fixture input evidence supersedes earlier unverified statement; 2026-10-09: setup now names Chrome 106+, webNavigation approval, absolute built executable for native-host registration, and current disposable-fixture evidence; Controlla efficiency repair documents schema-first connection, actionable snapshots, declared click outcomes, uncertainty handling and legacy limits.",
+      "destination_sha256": "797da51d37b7fa0ad72148ecf79958f1c7e94c8ee611b9168aacb94e1db47cfa",
+      "edits": "Phase 1 status distinguishes local evaluator from live workflows; Phase 4/5 documents bounded observation, extraction/resume and file-selection boundaries; Phase 6/9 describes supported workflow and client surface; Phase 8 explicitly marks app recipes as unqualified; examples now match current MCP schemas including strict typed file-selection locators; versioned local setup preview updated to v3; immediately listening shared-tab pairing and nonblocking acceptance status; current shared accessibility and changed-state click semantics with fixture/live evidence boundaries; native host one-time registration and tab discovery; bounded child-process script worker with remaining OS-isolation caveat.; Phase 4/5 native bridge setup is authoritative with one-time install, reload, exact tab discovery/pairing/acceptance, live discovery evidence, and explicit fixture-only reconnect/status boundary; native shared-tab setup passes discover_shared_tabs.snapshot.host_id with exact IDs to pair_shared, documents 100-tab truncation, 15-second freshness, and fixture/local-only host binding, pair-error, serialized cleanup evidence; 2026-10-08: default client config uses native messaging without legacy auto-connect, and live selected-tab attachment/AX/fixture input evidence supersedes earlier unverified statement; 2026-10-09: setup now names Chrome 106+, webNavigation approval, absolute built executable for native-host registration, and current disposable-fixture evidence; Controlla efficiency repair documents schema-first connection, actionable snapshots, declared click outcomes, uncertainty handling and legacy limits.; NaviChrome rename updated project identifiers and paths",
       "license": "user-provided design document; no third-party license asserted"
     }
   ],
@@ -119,91 +119,91 @@
     "count": 22,
     "cases": [
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "upload_transaction_requires_ordered_evidence"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "upload_failure_is_terminal_and_cannot_be_overclaimed"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "download_transaction_requires_browser_and_filesystem_evidence"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "wire_locators_are_typed_and_reject_empty_identity"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "locators_and_actionability_require_safe_targets"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "reconnect_invalidates_sessions_and_increments_generation"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "target_command_rejects_stale_graph_reference_before_dispatch"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "frame_command_routes_oopif_context_over_flattened_session"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "manager_rejects_empty_endpoint_without_creating_state"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "multiplexes_out_of_order_responses_on_one_socket"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "bootstrap_enables_discovery_and_flattened_auto_attach"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "target_bootstrap_enables_required_domains_on_flattened_session"
       },
       {
-        "destination_path": "crates/controlla-browser/src/lib.rs",
+        "destination_path": "crates/navichrome-browser/src/lib.rs",
         "test_name": "applies_target_and_frame_lifecycle_events"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "cache_returns_live_on_first_read_then_hits"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "revision_bump_invalidates"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "missing_target_evicts"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "signed_in_selection_refuses_without_permissioned_route"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "signed_in_selection_prefers_persistent_companion_bridge"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "signed_in_selection_falls_back_to_permissioned_connection"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "unsigned_selection_prefers_explicit_or_dedicated"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "broker_lists_every_provider_with_reasons"
       },
       {
-        "destination_path": "crates/controlla-browser/src/session.rs",
+        "destination_path": "crates/navichrome-browser/src/session.rs",
         "test_name": "devtools_active_port_requires_a_browser_websocket_path"
       }
     ]

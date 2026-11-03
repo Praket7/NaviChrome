@@ -38,7 +38,7 @@ Ruling: use Luna Medium implementation subagents for the independent proxy and b
 
 ### Proxy cancellation and concurrency
 
-Files: `packages/chrome-controlla/plugin/mcp-agent-ux-launch.cjs`, `agent-ux-proxy.cjs`, `packages/chrome-controlla/test-agent-ux.cjs` only.
+Files: `packages/navichrome/plugin/mcp-agent-ux-launch.cjs`, `agent-ux-proxy.cjs`, `packages/navichrome/test-agent-ux.cjs` only.
 Allow a later cancellation request and independent tool requests to reach the child while an earlier tool call is pending. Keep schema refresh serialized/single-flight, context identities exact and response IDs correlated. Pending mutations must fail closed on schema replacement/child exit. Add real child-process regressions with a held workflow and concurrent cancel, and existing-context concurrent calls. Run the full package agent-UX suite.
 
 ### Benchmark integrity

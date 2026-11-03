@@ -3,8 +3,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 const baseline = execFileSync('git', ['show', '0ef14468ee2b2597b7a486d95fda758904f429de:crates/controlla-runtime/src/shared_page/snapshot.js'], {encoding:'utf8'});
-const candidate = readFileSync('crates/controlla-runtime/src/shared_page/snapshot.js', 'utf8');
-const browser = await chromium.launch({headless: true, ...(process.env.CONTROLLA_CHROME ? {executablePath: process.env.CONTROLLA_CHROME} : {channel:'chrome'})});
+const candidate = readFileSync('crates/navichrome-runtime/src/shared_page/snapshot.js', 'utf8');
+const browser = await chromium.launch({headless: true, ...(process.env.NAVICHROME_CHROME ? {executablePath: process.env.NAVICHROME_CHROME} : {channel:'chrome'})});
 try {
  const page = await browser.newPage();
  await page.setContent('<button>Other</button>'.repeat(1000) + '<a href="/target">Target</a>');

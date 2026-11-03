@@ -156,7 +156,7 @@ export function setup(adapter, browserPath, binaryPath, stateDir, browserUseExec
       config: [
         '-c', `mcp_servers.chrome-controlla.command=${toml(binaryPath)}`,
         '-c', `mcp_servers.chrome-controlla.args=${toml(['mcp'])}`,
-        '-c', `mcp_servers.chrome-controlla.env={CONTROLLA_STATE_DIR = ${toml(stateDir)}, COMPTROL_CHROME_EXECUTABLE = ${toml(browserPath)}, CONTROLLA_AGENT_SURFACE = "v3-compact"}`,
+        '-c', `mcp_servers.chrome-controlla.env={NAVICHROME_STATE_DIR = ${toml(stateDir)}, COMPTROL_CHROME_EXECUTABLE = ${toml(browserPath)}, NAVICHROME_AGENT_SURFACE = "v3-compact"}`,
       ],
       prompt: `Use only the chrome-controlla MCP browser tool. Make one call with {"action":"task","mode":"headless","release_after_task":true,"task":{"kind":"research","urls":["${targetUrl}"],"selector":"p:first-of-type","goal":"Read the document title and the first paragraph exactly as shown."}}. This one-call private task launches an isolated browser, reads and verifies the requested content, and releases the session; require private_session_released=true. Return exactly one JSON object with string fields "title" (document title) and "paragraph" (the first English paragraph in the page body), using the live task result only. Do not call launch, list, standalone snapshot, or separate release; do not use shell commands, web search, prior knowledge, or another browser tool. The final response must contain only that JSON object, with no introduction or Markdown. If the browser cannot be read, return {"error":"browser failed"}.`,
     };
@@ -494,7 +494,7 @@ async function main() {
   if (!selectedAdapters.length || new Set(selectedAdapters).size !== selectedAdapters.length
       || selectedAdapters.some(adapter => !adapters.includes(adapter))) throw new Error('adapters must be a unique comma-separated subset of configured adapters');
   const codexPath = option('codex', '/Users/pcg/.local/bin/codex');
-  const binaryPath = option('controlla', resolve(root, 'target/release/controlla-v2'));
+  const binaryPath = option('controlla', resolve(root, 'target/release/navichrome-v2'));
   const browserPath = option('chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
   const browserUsePath = option('browser-use-executable', process.env.CONTROLLA_BROWSER_USE_EXECUTABLE ?? defaultBrowserUseExecutable);
   const browserUseIdentity = selectedAdapters.includes('browser-use') ? inspectBrowserUseExecutable(browserUsePath) : null;

@@ -15,42 +15,42 @@ const json = async (file) => JSON.parse(await read(file));
 export async function loadClientQualification() {
   const [matrix, freebuff, opencode, claude, codex, chatgpt, generic] = await Promise.all([
     json('apps/client-qualification-matrix.json'),
-    json('integrations/freebuff/chrome-controlla.mcp.json'),
+    json('integrations/freebuff/navichrome.mcp.json'),
     json('integrations/opencode/opencode.json.example'),
     json('integrations/claude-code/mcp.json.example'),
     read('integrations/codex/config.toml.example'),
-    json('packages/chrome-controlla/plugin/mcp.json'),
+    json('packages/navichrome/plugin/mcp.json'),
     json('integrations/generic/mcp.json.example'),
   ]);
-  const codexCommand = generateCodexCommand('/absolute/path/to/controlla', '/absolute/path/to/controlla-state');
+  const codexCommand = generateCodexCommand('/absolute/path/to/navichrome', '/absolute/path/to/navichrome-state');
   const codexEntry = codex.match(/\[mcp_servers\.([^\]]+)\][\s\S]*?command = "([^"]+)"[\s\S]*?args = \["([^"]+)"\]/);
   assert.ok(codexEntry, 'Codex config must contain a named MCP server, command, and arguments');
   const codexCli = codexCommand.match(/codex mcp add ([^ ]+)[\s\S]*? -- '([^']+)' ([^\n]+)/);
   assert.ok(codexCli, 'generated Codex command must install and inspect a named server');
   const adapters = {
-    freebuff: { serverId: freebuff.name, command: [freebuff.command, ...freebuff.args], surface: freebuff.env.CONTROLLA_AGENT_SURFACE },
-    opencode: { serverId: Object.keys(opencode.mcp)[0], command: opencode.mcp['chrome-controlla'].command, surface: opencode.mcp['chrome-controlla'].environment.CONTROLLA_AGENT_SURFACE },
-    'claude-code': { serverId: Object.keys(claude.mcpServers)[0], command: [claude.mcpServers['chrome-controlla'].command, ...claude.mcpServers['chrome-controlla'].args], surface: claude.mcpServers['chrome-controlla'].env.CONTROLLA_AGENT_SURFACE },
-    codex: { serverId: codexEntry[1], command: [codexEntry[2], codexEntry[3]], generatedServerId: codexCli[1], generatedCommand: [codexCli[2], codexCli[3]], surface: codex.match(/CONTROLLA_AGENT_SURFACE = "([^"]+)"/)?.[1] },
-    'chatgpt-desktop': { serverId: Object.keys(chatgpt.mcpServers)[0], command: [chatgpt.mcpServers['chrome-controlla'].command, ...chatgpt.mcpServers['chrome-controlla'].args], surface: 'packaged-local-plugin' },
-    'generic-mcp': { serverId: Object.keys(generic.mcpServers)[0], command: [generic.mcpServers['chrome-controlla'].command, ...generic.mcpServers['chrome-controlla'].args], surface: generic.mcpServers['chrome-controlla'].env.CONTROLLA_AGENT_SURFACE },
+    freebuff: { serverId: freebuff.name, command: [freebuff.command, ...freebuff.args], surface: freebuff.env.NAVICHROME_AGENT_SURFACE },
+    opencode: { serverId: Object.keys(opencode.mcp)[0], command: opencode.mcp['navichrome'].command, surface: opencode.mcp['navichrome'].environment.NAVICHROME_AGENT_SURFACE },
+    'claude-code': { serverId: Object.keys(claude.mcpServers)[0], command: [claude.mcpServers['navichrome'].command, ...claude.mcpServers['navichrome'].args], surface: claude.mcpServers['navichrome'].env.NAVICHROME_AGENT_SURFACE },
+    codex: { serverId: codexEntry[1], command: [codexEntry[2], codexEntry[3]], generatedServerId: codexCli[1], generatedCommand: [codexCli[2], codexCli[3]], surface: codex.match(/NAVICHROME_AGENT_SURFACE = "([^"]+)"/)?.[1] },
+    'chatgpt-desktop': { serverId: Object.keys(chatgpt.mcpServers)[0], command: [chatgpt.mcpServers['navichrome'].command, ...chatgpt.mcpServers['navichrome'].args], surface: 'packaged-local-plugin' },
+    'generic-mcp': { serverId: Object.keys(generic.mcpServers)[0], command: [generic.mcpServers['navichrome'].command, ...generic.mcpServers['navichrome'].args], surface: generic.mcpServers['navichrome'].env.NAVICHROME_AGENT_SURFACE },
   };
   const integrationConfigs = {
-    freebuff: 'integrations/freebuff/chrome-controlla.mcp.json',
+    freebuff: 'integrations/freebuff/navichrome.mcp.json',
     opencode: 'integrations/opencode/opencode.json.example',
     'claude-code': 'integrations/claude-code/mcp.json.example',
     codex: 'integrations/codex/config.toml.example',
-    'chatgpt-desktop': 'packages/chrome-controlla/plugin/mcp.json',
+    'chatgpt-desktop': 'packages/navichrome/plugin/mcp.json',
     'generic-mcp': 'integrations/generic/mcp.json.example',
   };
   return { matrix, adapters, integrationConfigs };
 }
 
 export function validateClientQualification(matrix, adapters, integrationConfigs) {
-  assert.equal(matrix.schema, 'controlla-client-qualification-v3');
+  assert.equal(matrix.schema, 'navichrome-client-qualification-v3');
   assert.deepEqual(matrix.requiredCapabilities, required, 'required capability evidence dimensions must remain complete and ordered');
   assert.equal(matrix.smokeAdapterContract.protocol, 'one_json_request_one_json_result');
-  assert.equal(matrix.smokeAdapterContract.commandsEnvironment, 'CONTROLLA_CLIENT_SMOKE_COMMANDS_JSON');
+  assert.equal(matrix.smokeAdapterContract.commandsEnvironment, 'NAVICHROME_CLIENT_SMOKE_COMMANDS_JSON');
   assert.equal(matrix.smokeAdapterContract.generatedEvidenceMayQualifyRealClient, false);
   for (const name of ['freebuff', 'opencode', 'claude-code', 'codex', 'chatgpt-desktop', 'generic-mcp']) {
     const entry = matrix.clients[name];

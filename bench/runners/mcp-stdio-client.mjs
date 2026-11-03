@@ -29,7 +29,7 @@ export function createMcpStdioClient({
   name = 'phase12-live',
 }) {
   const child = spawn(binary, ['mcp'], {
-    env: { ...env, ...(stateDir ? { CONTROLLA_STATE_DIR: stateDir } : {}) },
+    env: { ...env, ...(stateDir ? { NAVICHROME_STATE_DIR: stateDir } : {}) },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let buffer = '';

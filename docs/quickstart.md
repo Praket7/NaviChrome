@@ -1,47 +1,47 @@
-# Chrome Controlla: installation and agent guide
+# NaviChrome: installation and agent guide
 
 This guide installs the current V3 six-tool MCP from a local checkout and connects it to one Chrome profile. The bridge is registered once per macOS user; each MCP process gets its own state directory.
 
 ## Install on macOS
 
-Run these steps from the Controlla checkout you intend to use. Do not load a parent `extensions` directory or another Controlla checkout.
+Run these steps from the NaviChrome checkout you intend to use. Do not load a parent `extensions` directory or another NaviChrome checkout.
 
 1. Build the CLI/native host and V3 MCP:
 
    ```sh
-   cargo build --locked --release -p controlla-runtime --bins
+   cargo build --locked --release -p navichrome-runtime --bins
    ```
 
-2. In the Chrome profile you want to control, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `<checkout>/extensions/chrome-controlla`. This is the folder that directly contains `manifest.json`. Copy the extension ID shown on that extension's card.
+2. In the Chrome profile you want to control, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `<checkout>/extensions/navichrome`. This is the folder that directly contains `manifest.json`. Copy the extension ID shown on that extension's card.
 
 3. Register that exact ID with the CLI built from this same checkout:
 
    ```sh
-   "$(pwd)/target/release/controlla" install-bridge YOUR_EXTENSION_ID
+   "$(pwd)/target/release/navichrome" install-bridge YOUR_EXTENSION_ID
    ```
 
-   Check Chrome's native-host manifest at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/chrome_controlla_bridge.json`. Its `allowed_origins` must equal `chrome-extension://YOUR_EXTENSION_ID/`, and its `path` must point to this checkout's `target/release/controlla`. Re-run `install-bridge` whenever the extension ID or checkout changes. This exact-ID match is required for Chrome to start the native host.
+   Check Chrome's native-host manifest at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/navichrome_bridge.json`. Its `allowed_origins` must equal `chrome-extension://YOUR_EXTENSION_ID/`, and its `path` must point to this checkout's `target/release/navichrome`. Re-run `install-bridge` whenever the extension ID or checkout changes. This exact-ID match is required for Chrome to start the native host.
 
 4. Reload the unpacked extension in `chrome://extensions` so it reconnects to the registered host.
 
 5. Generate the Codex MCP command using the **V3** executable, then run the printed commands:
 
    ```sh
-   node integrations/codex-config.mjs "$(pwd)/target/release/controlla-v2" "$HOME/.chrome-controlla"
+   node integrations/codex-config.mjs "$(pwd)/target/release/navichrome-v2" "$HOME/.navichrome"
    ```
 
-   Restart Codex. The registered MCP must expose exactly these V3 tools: `browser`, `snapshot`, `act`, `workflow`, `extract`, and `verify`. The `controlla` executable is used for `install-bridge`; `controlla-v2` serves this V3 tool surface.
+   Restart Codex. The registered MCP must expose exactly these V3 tools: `browser`, `snapshot`, `act`, `workflow`, `extract`, and `verify`. The `navichrome` executable is used for `install-bridge`; `navichrome-v2` serves this V3 tool surface.
 
 ## Instructions for AI agents
 
-Use the [browser-control skill](../packages/chrome-controlla/plugin/skills/browser-control/SKILL.md) as the full tool contract. If the client cannot load skills, follow these rules:
+Use the [browser-control skill](../packages/navichrome/plugin/skills/browser-control/SKILL.md) as the full tool contract. If the client cannot load skills, follow these rules:
 
 1. Use the six V3 schemas already supplied by the MCP. Do not call `describe`, list schemas, or perform discovery for an ordinary task. After a reload, use the newly supplied schema directly; diagnose only after an actual tool error. If the available tools are legacy names such as `session` or `observe`, configure the V3 executable above.
-2. For an exact existing tab, use its already-bound `session_id` and `chrome_tab_id`; do not call `open`. A cold `browser action=open` creates a Controlla-owned tab without borrowing a user tab. Background is the default. Use `target_policy:"existing_window"` with the exact `window_id` to place an inactive tab in a chosen Chrome window, or `target_policy:"create_background_window"` for an unfocused window, which is reused across opens when one is already open, and a repeated open of the same URL returns the tab that window already holds instead of adding a second one. For each new target, supply a unique `idempotency_key` and reuse it only to recover that same open. If no existing tab safely matches an existing-tab request, report the bounded rejected candidates and ask for an exact selection.
+2. For an exact existing tab, use its already-bound `session_id` and `chrome_tab_id`; do not call `open`. A cold `browser action=open` creates a NaviChrome-owned tab without borrowing a user tab. Background is the default. Use `target_policy:"existing_window"` with the exact `window_id` to place an inactive tab in a chosen Chrome window, or `target_policy:"create_background_window"` for an unfocused window, which is reused across opens when one is already open, and a repeated open of the same URL returns the tab that window already holds instead of adding a second one. For each new target, supply a unique `idempotency_key` and reuse it only to recover that same open. If no existing tab safely matches an existing-tab request, report the bounded rejected candidates and ask for an exact selection.
 3. Prefer one `browser(action="task")` call for a bounded goal. Add `task_program` when the steps are already known; navigate, observe, find, fill, click, press, select, scroll, hover, verify, and bounded `if`/`foreach`/`try_fallback`/`parallel_read` then run locally. Take one `snapshot` only for evidence the task runtime does not already have. Choose a target from fresh evidence and keep its returned reference; do not infer a target from tab order or page position.
 4. Use `extract` for bounded structured page data and `verify` for an independent postcondition. Report success only when the returned evidence proves it. After an `unknown` or `dispatched` mutation, inspect or verify the result; never replay it blindly.
 5. For “newest” or “latest,” gather the complete relevant candidate set and rank by observed published time. If dates are missing or coverage is incomplete, report that uncertainty instead of guessing.
-6. Release the Controlla session when finished. Release does not close the user's tabs. For concurrent MCP processes, assign each process a different absolute `CONTROLLA_STATE_DIR`; do not make a second process reuse a directory that another process owns.
+6. Release the NaviChrome session when finished. Release does not close the user's tabs. For concurrent MCP processes, assign each process a different absolute `NAVICHROME_STATE_DIR`; do not make a second process reuse a directory that another process owns.
 
 ### Efficient task pattern
 
@@ -50,15 +50,15 @@ Use the [browser-control skill](../packages/chrome-controlla/plugin/skills/brows
 - **Simple known change:** use one `act` with a fresh snapshot reference, then check its verified receipt. Do not take another full snapshot when the receipt already proves the requested result.
 - **Upload:** register only the requested file in the active session, use an observed file input/trigger and the required acceptance predicate, and continue only after `application_accepted:true`. That proves app acceptance, not persistence; verify persistence separately when the task requires it.
 
-`act` accepts `value` for `fill`, `secure_fill`, `type`, `select`, and `slider`; the last three require a value. `verify(text_present)` supports root text, a unique CSS selector, a fresh `@cN` reference, or a fresh loader-bound `@f:` frame reference. Omit `mode` when continuing or releasing a known browser session; Controlla uses the session's mode and rejects an explicit conflict. Background pointer actions on inactive user tabs are refused without activation.
+`act` accepts `value` for `fill`, `secure_fill`, `type`, `select`, and `slider`; the last three require a value. `verify(text_present)` supports root text, a unique CSS selector, a fresh `@cN` reference, or a fresh loader-bound `@f:` frame reference. Omit `mode` when continuing or releasing a known browser session; NaviChrome uses the session's mode and rejects an explicit conflict. Background pointer actions on inactive user tabs are refused without activation.
 
 ## Troubleshooting
 
 - **“Native tab inventory is stale”:** check that the extension is enabled, the host manifest's `allowed_origins` exactly matches the ID Chrome displays, and its executable path exists. Reload the extension after correcting registration. A successful MCP startup alone does not prove the Chrome bridge is connected.
 - **“extension build identity mismatch: expected …, received …”:** the bridge hashes the installed extension assets and refuses sessions when Chrome is serving a different build. Reload the unpacked extension in `chrome://extensions` after any extension-source change; a rebuilt binary alone does not update the loaded extension. The receipt names both digests, so a repeated mismatch after reload means Chrome is still serving cached asset bytes, not that the host is stale.
-- **Native host hangs or never publishes a heartbeat after a rebuild:** on macOS a host binary that lives under a protected folder such as `~/Documents` can block when Chrome launches it. Copy `controlla` to an unprotected path (for example `~/.chrome-controlla/bin/controlla`) and re-run `install-bridge` from that copy; the manifest records the invoking binary's absolute path.
-- **No tools or the wrong tool names:** confirm Codex launches this checkout's `target/release/controlla-v2 mcp`, then restart Codex and inspect the live tool list.
-- **A second MCP process cannot start:** give it a different absolute `CONTROLLA_STATE_DIR`.
+- **Native host hangs or never publishes a heartbeat after a rebuild:** on macOS a host binary that lives under a protected folder such as `~/Documents` can block when Chrome launches it. Copy `navichrome` to an unprotected path (for example `~/.navichrome/bin/navichrome`) and re-run `install-bridge` from that copy; the manifest records the invoking binary's absolute path.
+- **No tools or the wrong tool names:** confirm Codex launches this checkout's `target/release/navichrome-v2 mcp`, then restart Codex and inspect the live tool list.
+- **A second MCP process cannot start:** give it a different absolute `NAVICHROME_STATE_DIR`.
 - **Pairing rejects a tab:** rediscover and pass the fresh snapshot's `host_id` and only the exact selected tab IDs. Do not retry with an older snapshot.
 
 For Windows, use the corresponding `.exe` binaries and the native-host registration path documented in [`clients.md`](clients.md). The agent tool contract is the same; the installed extension ID must still match the native-host manifest.

@@ -37,8 +37,8 @@ export function evaluateV3Gate(evidence) {
       && entry.evidence_hash.length >= 8
       && typeof entry.client_version === 'string'
       && entry.client_version.length > 0
-      && typeof entry.controlla_version === 'string'
-      && entry.controlla_version.length > 0));
+      && typeof entry.navichrome_version === 'string'
+      && entry.navichrome_version.length > 0));
   require(clientSmokesValid, 'real client smoke evidence must cover all six supported clients');
   require(evidence.headless_recovery_bounded === true, 'headless reconnect is not bounded');
   require(evidence.page_tools_fail_closed === true, 'page tool route is not fail-closed');

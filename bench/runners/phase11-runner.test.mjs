@@ -277,11 +277,12 @@ test('prompt-to-verified ends at the independent verifier, not an acting-client 
     repetitions: 1,
     warmupRepetitions: 0,
     deadlineMs: 5000,
-    env: { ...process.env, PHASE11_MOCK_TRACE: '1' }
+    env: { ...process.env, PHASE11_MOCK_TRACE: '1', PHASE11_MOCK_NAVICHROME_TRACE: '1' }
   });
   const result = report.paired_rows[0].candidate;
   assert.equal(result.independently_verified_success, true);
   assert.equal(result.prompt_trace.prompt_boundary, 'actual_user_submit');
+  assert.equal(result.prompt_trace.controlla_received_ms, 2, 'current trace survives the frozen report schema');
   assert.equal(typeof result.prompt_to_verified_ms, 'number');
   assert.equal(typeof result.prompt_to_verifier_decision_ms, 'number');
   assert.equal(typeof result.prompt_to_verified_ms, 'number');

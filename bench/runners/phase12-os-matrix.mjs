@@ -14,7 +14,7 @@ import process from 'node:process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
-const CHROME = process.env.CONTROLLA_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.NAVICHROME_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 function option(name, fallback) {
   const prefix = `--${name}=`;

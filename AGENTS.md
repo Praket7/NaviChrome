@@ -7,16 +7,16 @@
 - Do not add monolithic Comptrol, native desktop automation, credential storage, browser profiles, or unrelated assets. A user-supplied password may pass once through `act(action="secure_fill")`; keep it out of every other tool, observation, workflow, trace, log, and persistent memory. Synthetic test sentinels may be used only to assert redaction. Do not claim the chat message or client tool history can be erased.
 - Update `docs/progress.md`, `docs/verification-matrix.md`, and `docs/blockers.md` at phase gates. Retain failed evidence.
 
-## Controlla browser fast path
+## NaviChrome browser fast path
 
-Controlla's six V3 tools are a stable agent contract: `browser`, `snapshot`, `act`, `workflow`, `extract`, and `verify`. The compact browser skill is `packages/chrome-controlla/plugin/skills/browser-control/SKILL.md`.
+NaviChrome's six V3 tools are a stable agent contract: `browser`, `snapshot`, `act`, `workflow`, `extract`, and `verify`. The compact browser skill is `packages/navichrome/plugin/skills/browser-control/SKILL.md`.
 
-For ordinary browser tasks, **use the exposed browser tools immediately**. If the six tools are already exposed by the client, do not list MCP servers, inspect schemas, call `browser describe`, read `MEMORY.md`, search this repository, or open Rust/JavaScript source to learn how Controlla works. Do not reread the browser skill between normal calls. Tool/schema/source inspection is recovery-only after an explicit `schema_mismatch`, `tool_unavailable`, malformed-tool error, or other diagnostic that cannot be resolved from the returned receipt.
+For ordinary browser tasks, **use the exposed browser tools immediately**. If the six tools are already exposed by the client, do not list MCP servers, inspect schemas, call `browser describe`, read `MEMORY.md`, search this repository, or open Rust/JavaScript source to learn how NaviChrome works. Do not reread the browser skill between normal calls. Tool/schema/source inspection is recovery-only after an explicit `schema_mismatch`, `tool_unavailable`, malformed-tool error, or other diagnostic that cannot be resolved from the returned receipt.
 
 Default execution policy:
 
 1. Start with `browser`. Prefer the most specific destination rather than a site's homepage.
-2. A destination may come from the user, an observed href, qualified Controlla route/skill memory, **or a high-confidence public route synthesis**. Speculative public routing is allowed only for bounded HTTP(S) URLs with no credentials/secrets and must be verified against the requested entity/page immediately after navigation. If verification fails, discard the route and fall back once to semantic discovery. Never synthesize account indexes, private/authenticated routes, destructive-action endpoints, or hidden application state.
+2. A destination may come from the user, an observed href, qualified NaviChrome route/skill memory, **or a high-confidence public route synthesis**. Speculative public routing is allowed only for bounded HTTP(S) URLs with no credentials/secrets and must be verified against the requested entity/page immediately after navigation. If verification fails, discard the route and fall back once to semantic discovery. Never synthesize account indexes, private/authenticated routes, destructive-action endpoints, or hidden application state.
 3. Observe only what the next decision needs. Prefer one targeted semantic snapshot with bounded items, scan nodes, and `max_text_chars:0` when body text is unnecessary. Do not take broad duplicate snapshots.
 4. Put deterministic multi-step work in one `browser open` with `steps` or one `workflow`. Do not bounce intermediate deterministic state through the model.
 5. Verify consequential mutations only when the action/workflow receipt does not already prove the requested postcondition. Never replay an `unknown` mutation.

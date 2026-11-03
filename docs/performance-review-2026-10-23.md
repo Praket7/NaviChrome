@@ -1,8 +1,8 @@
-# Chrome Controlla: performance, capability, and efficiency review
+# NaviChrome: performance, capability, and efficiency review
 
-Reviewed October 23, 2026. Repository: [Praket7/chrome-controlla](https://github.com/Praket7/chrome-controlla). Pinned revision: `34924239529bdc6bf2cfa389d933a0bb75d828a4`.
+Reviewed October 23, 2026. Repository: [Praket7/navichrome](https://github.com/Praket7/navichrome). Pinned revision: `34924239529bdc6bf2cfa389d933a0bb75d828a4`.
 
-The highest-value next step is to make the existing architecture do less repeated work per verified task. Controlla already has the important foundations: six public MCP tools, native messaging, batching, scoped semantic observations, per-target leases, workflow execution, adaptive concurrency, route learning, and explicit uncertain-outcome handling. A wholesale rewrite or a larger tool catalog would not address the clearest bottlenecks.
+The highest-value next step is to make the existing architecture do less repeated work per verified task. NaviChrome already has the important foundations: six public MCP tools, native messaging, batching, scoped semantic observations, per-target leases, workflow execution, adaptive concurrency, route learning, and explicit uncertain-outcome handling. A wholesale rewrite or a larger tool catalog would not address the clearest bottlenecks.
 
 This is a repository-wide architectural and static review with targeted execution, not an exhaustive correctness proof or a live performance certification. I inventoried all 408 files and retrieved all 405 text files through GitHub. Their Git blob hashes match the pinned revision. Two documentation PNGs and one binary fixture were not downloaded. Deep inspection concentrated on the runtime, extension, observation, transport, scheduling, state, client, and benchmark paths. Proposals and historical reports were treated as context, not proof that a feature works today.
 
@@ -24,7 +24,7 @@ This is a repository-wide architectural and static review with targeted executio
 
 **Priority: P0. Confidence: high. Benefit: enables reliable optimization decisions.**
 
-The [verification matrix](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/docs/verification-matrix.md) records a local simulated-bridge fixture:
+The [verification matrix](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/docs/verification-matrix.md) records a local simulated-bridge fixture:
 
 | Task | Bridge request frames | CDP commands | Important repeated work |
 |---|---:|---:|---|
@@ -34,7 +34,7 @@ The [verification matrix](https://github.com/Praket7/chrome-controlla/blob/34924
 
 These are repository-recorded observations, not measurements from this review. The original frame targets of 6/12/20 were missed. The later 16/17/47 ceilings prevent regressions but do not establish desirable performance or a competitive win.
 
-More fundamentally, [phase11-verifier.mjs](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/bench/adapters/phase11-verifier.mjs) deliberately returns `passed:false`: its fixture event log is writable by the acting browser and cannot independently prove task success. This is a correctly closed gate, but it blocks useful qualification.
+More fundamentally, [phase11-verifier.mjs](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/bench/adapters/phase11-verifier.mjs) deliberately returns `passed:false`: its fixture event log is writable by the acting browser and cannot independently prove task success. This is a correctly closed gate, but it blocks useful qualification.
 
 Build a separate acceptance oracle that checks actual resulting state through an independently controlled fixture service or authorized app readback. An agent-emitted event must not create a passing result. Connect actual client prompt-submission and result-delivery hooks; keep missing model/token counters null. Measure cold and warm runs separately, retain failures, and use paired workloads with pinned versions. The existing runner already provides much of this structure.
 
@@ -44,7 +44,7 @@ Build a separate acceptance oracle that checks actual resulting state through an
 
 **Priority: P1. Confidence: high that duplication exists; speedup unmeasured.**
 
-[`shared_frame_identity`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/mcp.rs#L2385) performs a CDP frame-tree request. `shared_identity_and_epoch` already batches an epoch read with identity, and the extension's [`dispatchBatch`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/extensions/chrome-controlla/background.js#L1197) executes a bounded list. The improvement is to extend that existing mechanism across whole guarded operations, rather than add batching from scratch.
+[`shared_frame_identity`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/mcp.rs#L2385) performs a CDP frame-tree request. `shared_identity_and_epoch` already batches an epoch read with identity, and the extension's [`dispatchBatch`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/extensions/navichrome/background.js#L1197) executes a bounded list. The improvement is to extend that existing mechanism across whole guarded operations, rather than add batching from scratch.
 
 Create operation-specific commands that carry expected lease, tab, document, frame, and interaction identity. Resolve and validate the target near the browser, perform the allowed action, then return bounded verification evidence. Retain a final pre-dispatch guard and invalidate state on navigation, frame replacement, detach, topology changes, and conflicting edits. Use event-maintained identity as an optimization with authoritative reconciliation when uncertain; do not replace correctness checks with a time-to-live cache.
 
@@ -56,9 +56,9 @@ A batch is not a transaction: navigation or page script can interleave between C
 
 **Priority: P1. Confidence: high. Benefit: browser CPU, transport, memory, and model context.**
 
-[`snapshot_impl`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/mcp/v2.rs#L1000) passes a 100,000-byte collection ceiling to the legacy snapshot route and applies the smaller public budget afterwards. Targeted responses default to 12 KiB; many task/action receipts default to 2 KiB. Those compact outputs do not by themselves bound the upstream work to the same size.
+[`snapshot_impl`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/mcp/v2.rs#L1000) passes a 100,000-byte collection ceiling to the legacy snapshot route and applies the smaller public budget afterwards. Targeted responses default to 12 KiB; many task/action receipts default to 2 KiB. Those compact outputs do not by themselves bound the upstream work to the same size.
 
-The [page collector](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/shared_page/snapshot.js) walks up to 65,536 nodes, computes presentation, text, dates, and fingerprints, and can read bounding boxes more than once for a selected element. Scoped queries and early stopping already exist.
+The [page collector](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/shared_page/snapshot.js) walks up to 65,536 nodes, computes presentation, text, dates, and fingerprints, and can read bounding boxes more than once for a selected element. Scoped queries and early stopping already exist.
 
 Separate internal action-reference retention from returned evidence. Propagate a task-specific field and byte budget into the collector; avoid dates, card text, and geometry when the next decision does not need them. Cache geometry and computed style within a single collection pass. Prefer narrow role/label/scope queries before broad scans. Consider incremental observations only after defining invalidation for navigation, shadow roots, frames, focus, selection, and viewport changes.
 
@@ -70,11 +70,11 @@ Do not equate truncation with uniqueness or exhaustiveness. A short candidate li
 
 **Priority: P1/P2. Confidence: code-level contention opportunities; impact needs profiling.**
 
-The runtime frequently holds a shared-session mutex across awaited browser operations, including [form execution](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/mcp/v3_full.rs#L5201). The DAG can launch independent read nodes concurrently, but shared locks may limit the benefit. The browser scheduler already has per-target gates and adaptive limits; simply increasing concurrency is unlikely to solve contention.
+The runtime frequently holds a shared-session mutex across awaited browser operations, including [form execution](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/mcp/v3_full.rs#L5201). The DAG can launch independent read nodes concurrently, but shared locks may limit the benefit. The browser scheduler already has per-target gates and adaptive limits; simply increasing concurrency is unlikely to solve contention.
 
 Separate immutable transport/lease handles from per-tab mutable snapshot state. Keep critical sections short and retain serialization for actions on the same target/document. Measure lock queue time before changing the boundaries; release/reconnect must still fence in-flight operations correctly.
 
-The native host scans pairing requests every 75 ms and refreshes inventory every five seconds ([native_host.rs](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/native_host.rs#L328)). Contended target leases retry every 25 ms ([v3_full.rs](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/mcp/v3_full.rs#L11755)). Pairing polling is primarily an idle-efficiency and cold-open issue, not the main warm-action bottleneck.
+The native host scans pairing requests every 75 ms and refreshes inventory every five seconds ([native_host.rs](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/native_host.rs#L328)). Contended target leases retry every 25 ms ([v3_full.rs](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/mcp/v3_full.rs#L11755)). Pairing polling is primarily an idle-efficiency and cold-open issue, not the main warm-action bottleneck.
 
 Use in-process notifications for lease release and consider a cross-platform notification channel or filesystem watcher for pairing. Keep a slow reconciliation fallback for lost notifications and service-worker restarts. Do not remove the inventory heartbeat without preserving freshness guarantees.
 
@@ -84,7 +84,7 @@ Use in-process notifications for lease release and consider a cross-platform not
 
 **Priority: P1/P2. Confidence: high on synchronous paths; latency impact unmeasured.**
 
-[`task_checkpoints.rs`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/task_checkpoints.rs#L63) uses synchronous file locking and filesystem operations. Several V3 call sites invoke checkpoint methods while holding an async mutex. [`workflow_dag.rs`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/workflow_dag.rs#L56) periodically serializes and writes cost histories from synchronous methods called by async execution paths.
+[`task_checkpoints.rs`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/task_checkpoints.rs#L63) uses synchronous file locking and filesystem operations. Several V3 call sites invoke checkpoint methods while holding an async mutex. [`workflow_dag.rs`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/workflow_dag.rs#L56) periodically serializes and writes cost histories from synchronous methods called by async execution paths.
 
 Use a bounded storage worker or `spawn_blocking` with owned inputs and controlled ordering. Coalesce noncritical telemetry/history updates and avoid repeatedly rewriting entire stores. Execution-cost recording and skill-trace persistence already use background work in relevant paths; preserve that rather than proposing it as missing everywhere.
 
@@ -96,7 +96,7 @@ Correctness-critical checkpoints are different: the write-ahead dispatch state m
 
 **Priority: P2. Confidence: high.**
 
-[`execution_cost_router.rs`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/execution_cost_router.rs) already records latency distributions, failures, expiry, and sixteen clean observations before learned routing. The DAG cost history uses a 300 ms initial parallel-setup estimate and observed node histories. These are useful conservative mechanisms, but their estimates are not calibrated end-to-end client economics.
+[`execution_cost_router.rs`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/execution_cost_router.rs) already records latency distributions, failures, expiry, and sixteen clean observations before learned routing. The DAG cost history uses a 300 ms initial parallel-setup estimate and observed node histories. These are useful conservative mechanisms, but their estimates are not calibrated end-to-end client economics.
 
 After recommendation 1, compare routes on verified completion latency, reliability, caller turns, and response size. Keep provider/site/task-size/warmth distinctions; account for build or browser changes that invalidate historical cost estimates. Use bounded exploration only for safe read-only alternatives, not speculative mutations. Reject unmeasured universal claims such as "semantic is always faster" or "more tabs is always faster."
 
@@ -106,7 +106,7 @@ After recommendation 1, compare routes on verified completion latency, reliabili
 
 **Priority: P1 for the workflows users need most; P2 for broad expansion.**
 
-The current [blockers document](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/docs/blockers.md) distinguishes substantial local implementation from outstanding installed-Chrome, application, and client qualification. More primitives alone will not close these gaps.
+The current [blockers document](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/docs/blockers.md) distinguishes substantial local implementation from outstanding installed-Chrome, application, and client qualification. More primitives alone will not close these gaps.
 
 Prioritize three task families: (1) cross-frame form completion with rich-editor readback, (2) download-to-upload with independently confirmed bytes and application acceptance, and (3) long tasks interrupted by navigation, reconnect, or process restart. Extend existing recipes, checkpoint contracts, and site adapters instead of creating overlapping APIs. For visual applications, prove the selected object or slide matches the captured pixels and persisted result; a successful click or screenshot call is insufficient.
 
@@ -118,7 +118,7 @@ Maintain separate capability levels: implemented, fixture-tested, installed-Chro
 
 **Priority: P2. Confidence: high on opportunity, site-dependent availability.**
 
-[`v3_runtime.rs`](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/controlla-runtime/src/v3_runtime.rs#L30) already implements `document.modelContext` discovery, schema checks, tool-change invalidation, and bounded invocation. The gap is qualification and coverage, not initial integration.
+[`v3_runtime.rs`](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/crates/navichrome-runtime/src/v3_runtime.rs#L30) already implements `document.modelContext` discovery, schema checks, tool-change invalidation, and bounded invocation. The gap is qualification and coverage, not initial integration.
 
 Chrome's current documentation describes WebMCP as a proposed standard with an origin trial beginning in Chrome 149 and a local testing flag. It has imperative and declarative APIs; cross-origin use depends on permissions policy. Pin a tested Chrome/API matrix and run against real registered tools, not just mocked JavaScript objects. Treat tool descriptions and read-only claims as untrusted; preserve runtime-owned operation classification and independent postcondition verification. Fall back to semantic operations when unavailable or changed.
 
@@ -138,7 +138,7 @@ Extract browser lifecycle, observation, actions, files, workflow execution, task
 
 **Priority: P2. Confidence: high on workflow configuration.**
 
-The [CI workflow](https://github.com/Praket7/chrome-controlla/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/.github/workflows/ci.yml) has a useful OS matrix, but no explicit Rust build cache. Its concurrency group includes the commit SHA and does not cancel obsolete runs. Several platform-independent checks repeat across the matrix. The headless job downloads the moving stable Chrome package.
+The [CI workflow](https://github.com/Praket7/navichrome/blob/34924239529bdc6bf2cfa389d933a0bb75d828a4/.github/workflows/ci.yml) has a useful OS matrix, but no explicit Rust build cache. Its concurrency group includes the commit SHA and does not cancel obsolete runs. Several platform-independent checks repeat across the matrix. The headless job downloads the moving stable Chrome package.
 
 Add a Rust cache keyed by OS/toolchain/lockfile, keep canonical JS/docs checks in one job where platform independence is established, and retain platform-specific install/launch/native-host checks. Cancel superseded PR runs while preserving release runs and required evidence. Use a pinned Chrome-for-Testing build for reproducible performance comparisons and a separate current-stable compatibility lane. A Chrome-for-Testing native host may require different registration paths on newer versions, so test packaging explicitly.
 
@@ -164,15 +164,15 @@ Six Exa search workstreams requested 30 results, followed by direct reads of fou
 2. [Extension service-worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle): native connections and disconnect/reconnect behavior. Supports event-driven work with reconciliation, not unguarded removal of lifecycle recovery.
 3. [Chrome debugger frame/session model](https://developer.chrome.com/docs/extensions/reference/api/debugger): flat child sessions and non-recursive auto-attach; same-process frames need execution-context handling. Supports precise frame identity and OOPIF qualification.
 4. [CDP Runtime](https://chromedevtools.github.io/devtools-protocol/tot/Runtime/): evaluation, context lifecycle, remote object management. Treat experimental/version-specific fields as capability-detected.
-5. [Playwright actionability](https://playwright.dev/docs/actionability) and [locators](https://playwright.dev/docs/locators): bounded waiting, visibility/stability/hit-target checks, fresh target resolution, open-shadow support and closed-shadow limits. Useful behavior to test against, not evidence that replacing Controlla with Playwright is faster.
+5. [Playwright actionability](https://playwright.dev/docs/actionability) and [locators](https://playwright.dev/docs/locators): bounded waiting, visibility/stability/hit-target checks, fresh target resolution, open-shadow support and closed-shadow limits. Useful behavior to test against, not evidence that replacing NaviChrome with Playwright is faster.
 6. [Playwright MCP snapshots](https://playwright.dev/mcp/snapshots): subtree/depth scoping and optional snapshots. Supports task-specific observation budgets; does not justify comparing tools on different evidence requirements.
 7. [Chrome forced reflow guidance](https://developer.chrome.com/docs/performance/insights/forced-reflow) and [web.dev layout guidance](https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing): profile style/layout work, batch reads, avoid unnecessary read/write alternation.
 8. [Chrome WebMCP](https://developer.chrome.com/docs/ai/webmcp): proposed API, origin-trial/flag availability, declarative/imperative tools and iframe permissions policy. Supports progressive enhancement with fallback.
 
 ## Verification performed and limits
 
-- Verified all 405 retrieved text files against the Git blob hashes at the pinned revision. Coverage is recorded in `chrome-controlla-review-coverage.json`.
-- Ran the four benchmark-analysis test files and V3 release-gate tests: **31 passed, 0 failed**. The log is `chrome-controlla-analysis-tests.log`.
+- Verified all 405 retrieved text files against the Git blob hashes at the pinned revision. Coverage is recorded in `navichrome-review-coverage.json`.
+- Ran the four benchmark-analysis test files and V3 release-gate tests: **31 passed, 0 failed**. The log is `navichrome-analysis-tests.log`.
 - The broader attempted Node run was not clean: 5 of 10 file-level suites failed. One adapter hit sandbox `listen EPERM`; client child-process tests also failed. A standalone child-process stdout probe behaved unexpectedly in this environment, so those failures are retained as unresolved execution-environment/test results rather than asserted product defects.
 - No Rust compiler was installed, so Cargo tests, Clippy, builds, and packaged-binary tests were not run. No live user Chrome or account-backed benchmark was performed. The GitHub workflow lookup returned no runs for this commit; this does not establish that hosted CI passed or failed.
 - No source changes, commits, issues, or pull requests were published to GitHub. This report and the local source snapshot are analysis artifacts.

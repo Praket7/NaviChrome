@@ -22,7 +22,7 @@
 - `cargo test --workspace --all-targets`: passed; live shared-browser and ESPN network qualification cases remain ignored behind their existing gates.
 - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
 - `cargo fmt --all -- --check` and `git diff --check`: passed.
-- `node packages/chrome-controlla/test-agent-ux.cjs`: 21 passed.
+- `node packages/navichrome/test-agent-ux.cjs`: 21 passed.
 - The ESPN/Bills/newest-story plugin fixture compiles to one browser call with an inline verified workflow. This does not measure end-to-end model latency.
 
 ## Explicit limits

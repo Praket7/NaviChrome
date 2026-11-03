@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('extensions/chrome-controlla/background.js', 'utf8');
+const source = fs.readFileSync('extensions/navichrome/background.js', 'utf8');
 const match = source.match(/async function manageTabTopology\([\s\S]*?(?=\nasync function dispatchCommand\()/);
 assert.ok(match, 'production tab management implementation must exist');
 function fixture() {

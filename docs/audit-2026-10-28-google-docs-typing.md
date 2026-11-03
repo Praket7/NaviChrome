@@ -1,7 +1,7 @@
-# Controlla and Google Docs: failure diagnosis — 2026-10-28
+# NaviChrome and Google Docs: failure diagnosis — 2026-10-28
 
 Task: type a ~3,900-character essay into an already-open Google Doc through the V3 six-tool
-surface, at human pace. Result: Controlla inserted nothing. Every guarded attempt was
+surface, at human pace. Result: NaviChrome inserted nothing. Every guarded attempt was
 refused before dispatch. The text was eventually entered with operating-system keystrokes.
 
 This document records the observed failures and their causes. It is a session diagnosis,
@@ -9,7 +9,7 @@ not a code audit: no claim is made about paths that were not exercised.
 
 ## Evidence
 
-Each row is a receipt returned by `target/release/controlla-v2 mcp` through the documented
+Each row is a receipt returned by `target/release/navichrome-v2 mcp` through the documented
 stdio client.
 
 | Step | Result |
@@ -185,7 +185,7 @@ Typing now works end to end on an installed Chrome profile:
 | --- | --- |
 | Guard | A canvas/blank-frame editor is reported as unreadable (`value_readable: false`, `source_kind: same_origin_blank_frame`) and the type guard no longer demands a value or focus precondition it cannot satisfy. |
 | Rebind | A revision change between snapshot and dispatch re-resolves the same control by role, accessible name, and tag; the receipt reports `resolution.status: rebound` with one attempt. |
-| Verification | After dispatch, Controlla selects all and asks the document to copy its selection into a `DataTransfer` (`document_copy_event`), with the clipboard path (`clipboard_document_text`) as fallback. Evidence is a character count, a hash, and matched/sampled windows, never page text. |
+| Verification | After dispatch, NaviChrome selects all and asks the document to copy its selection into a `DataTransfer` (`document_copy_event`), with the clipboard path (`clipboard_document_text`) as fallback. Evidence is a character count, a hash, and matched/sampled windows, never page text. |
 | Hidden tabs | Chrome keeps a hidden tab's selection out of reach, so the receipt is `dispatched_unverified` with `verification: "tab_hidden"` and a next action instead of comparing the user's untouched clipboard and calling the insert a mismatch. The clipboard is not read or written in that case. |
 
 Live receipts from 2026-10-28 on the installed extension and a fresh Google Doc:

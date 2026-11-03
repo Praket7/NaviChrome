@@ -1,0 +1,19 @@
+{
+  "name": "navichrome",
+  "version": "0.1.0",
+  "description": "Package-relative NaviChrome CLI launcher, compact MCP server, and local plugin",
+  "license": "Apache-2.0",
+  "bin": {
+    "navichrome": "bin/navichrome.cjs",
+    "navichrome-client": "bin/navichrome-client.cjs"
+  },
+  "files": [
+    "bin/",
+    "plugin/",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=24"
+  }
+}

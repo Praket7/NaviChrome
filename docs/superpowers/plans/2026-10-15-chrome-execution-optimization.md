@@ -31,9 +31,9 @@
 ### Task 1: Coalesced identity and interaction reads
 
 **Files:**
-- Modify: `crates/controlla-runtime/src/mcp.rs`
-- Modify: `crates/controlla-browser/src/providers.rs`
-- Test: `crates/controlla-runtime/src/mcp.rs`
+- Modify: `crates/navichrome-runtime/src/mcp.rs`
+- Modify: `crates/navichrome-browser/src/providers.rs`
+- Test: `crates/navichrome-runtime/src/mcp.rs`
 
 **Interfaces:**
 - Add `PageSessionTransport::command_batch` use through a helper returning `(frame_identity, interaction_epoch)`.
@@ -47,8 +47,8 @@
 ### Task 2: Per-operation read reuse and invalidation
 
 **Files:**
-- Modify: `crates/controlla-runtime/src/mcp.rs`
-- Test: `crates/controlla-runtime/src/mcp.rs`
+- Modify: `crates/navichrome-runtime/src/mcp.rs`
+- Test: `crates/navichrome-runtime/src/mcp.rs`
 
 **Interfaces:**
 - Add an operation-local read record carrying identity, interaction epoch, and optional viewport/frame topology.
@@ -61,9 +61,9 @@
 ### Task 3: Safe extension read parallelism and telemetry
 
 **Files:**
-- Modify: `extensions/chrome-controlla/background.js`
-- Modify: `extensions/chrome-controlla/test-background.cjs`
-- Modify: `crates/controlla-browser/src/telemetry.rs`
+- Modify: `extensions/navichrome/background.js`
+- Modify: `extensions/navichrome/test-background.cjs`
+- Modify: `crates/navichrome-browser/src/telemetry.rs`
 - Modify: docs/verification-matrix.md
 
 **Interfaces:**

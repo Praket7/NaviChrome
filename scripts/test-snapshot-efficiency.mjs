@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const source = readFileSync(new URL('../crates/controlla-runtime/src/shared_page/snapshot.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../crates/navichrome-runtime/src/shared_page/snapshot.js', import.meta.url), 'utf8');
 let browser;
 before(async () => {
-  browser = await chromium.launch({ headless: true, ...(process.env.CONTROLLA_CHROME ? { executablePath: process.env.CONTROLLA_CHROME } : { channel: 'chrome' }) });
+  browser = await chromium.launch({ headless: true, ...(process.env.NAVICHROME_CHROME ? { executablePath: process.env.NAVICHROME_CHROME } : { channel: 'chrome' }) });
 });
 after(async () => { await browser?.close(); });
 
@@ -105,4 +105,25 @@ test('exhaustive role filtering retains duplicate matches in open shadow roots',
   assert.equal(result.items.filter(item => item.name === 'Target').length, 2);
   assert.equal(result.result.shadow_roots_seen, 1);
   assert.equal(result.result.scope_complete, true);
+});
+
+test('hidden same-origin nonblank iframe does not invent a nested scope overflow', async () => {
+  const result = await collect('<a href="about:blank#/story/new">Newest</a><iframe style="display:none" srcdoc="<a href=/story/hidden>Hidden</a>"></iframe>', {
+    goal: { roles: ['link'], href_hint: '/story/', exhaustive: true },
+    max_bytes: 20000,
+  });
+  assert.deepEqual(result.items.map(item => item.name), ['Newest']);
+  assert.equal(result.result.first_party_complete, true);
+  assert.equal(result.result.scope_complete, true);
+  assert.equal(result.result.incomplete_reasons.includes('nested_scope_limit'), false);
+});
+
+test('scope root cap marks omitted shadow content incomplete', async () => {
+  const hosts = Array.from({ length: 65 }, (_, i) => `<div id="host${i}"></div>`).join('');
+  const result = await collect(`${hosts}<script>for (const host of document.querySelectorAll('[id^="host"]')) host.attachShadow({mode:'open'}).innerHTML = '<button>Nested</button>';</script>`, {
+    goal: { roles: ['button'], exhaustive: true }, max_items: 100, max_bytes: 100000,
+  });
+  assert.equal(result.result.scope_complete, false);
+  assert.equal(result.result.truncation_reason, 'nested_scope_limit');
+  assert.ok(result.result.incomplete_reasons.includes('nested_scope_limit'));
 });

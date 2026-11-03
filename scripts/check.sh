@@ -20,15 +20,15 @@ case "$suite" in
         cargo test --workspace --locked
         ;;
     interference)
-        cargo test --locked -p controlla-browser input::tests
-        cargo test --locked -p controlla-browser --test phase2 --test phase5_advanced
+        cargo test --locked -p navichrome-browser input::tests
+        cargo test --locked -p navichrome-browser --test phase2 --test phase5_advanced
         ;;
     extraction)
-        cargo test --locked -p controlla-browser observe::tests
-        cargo test --locked -p controlla-browser --test phase5_advanced
+        cargo test --locked -p navichrome-browser observe::tests
+        cargo test --locked -p navichrome-browser --test phase5_advanced
         ;;
     security)
-        cargo test --locked -p controlla-runtime --test phase7
+        cargo test --locked -p navichrome-runtime --test phase7
         ;;
     clients)
         npm run check:clients

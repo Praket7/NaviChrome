@@ -6,7 +6,7 @@
   "source": "Benchmark contracts and the extension regression harness before the execution-core changes.",
   "measurement_kind": "code-path-derived-and-red-test-observed",
   "notes": [
-    "The child-frame HumanKeys path issues one Controlla.frameHumanTypeCharacter native command per character and re-reads Page.getFrameTree plus full AX state for every character.",
+    "The child-frame HumanKeys path issues one NaviChrome.frameHumanTypeCharacter native command per character and re-reads Page.getFrameTree plus full AX state for every character.",
     "The 1000-character transaction test is intentionally red at this commit; it asserts one native transaction, zero warm frame-tree reads, zero AX reads, and zero auto-attach toggles.",
     "These are deterministic local baselines, not installed-Chrome or application qualification."
   ],
@@ -20,7 +20,7 @@
       "auto_attach_calls": 0,
       "input_commands_upper_bound": 3500,
       "verification_reads_upper_bound": 1100,
-      "framework": "Controlla.fastType/humanTypeCharacter previously dispatched per character with an in-page guard before and after each key."
+      "framework": "NaviChrome.fastType/humanTypeCharacter previously dispatched per character with an in-page guard before and after each key."
     },
     "child_frame_1000_char": {
       "model_visible_calls": 1,
@@ -46,8 +46,8 @@
     }
   },
   "red_tests": [
-    "extensions/chrome-controlla/test-background.cjs: oopif-type-transaction",
-    "crates/controlla-runtime/src/mcp/v3_full.rs: frame transaction route (added with Phase 4)"
+    "extensions/navichrome/test-background.cjs: oopif-type-transaction",
+    "crates/navichrome-runtime/src/mcp/v3_full.rs: frame transaction route (added with Phase 4)"
   ],
   "recorded_metrics": [
     "model_visible_calls",

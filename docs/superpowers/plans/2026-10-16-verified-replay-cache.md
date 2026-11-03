@@ -29,8 +29,8 @@
 ### Task 1: Replay record contract
 
 **Files:**
-- Modify: `crates/controlla-runtime/src/page_action_memory.rs`
-- Test: `crates/controlla-runtime/src/page_action_memory.rs`
+- Modify: `crates/navichrome-runtime/src/page_action_memory.rs`
+- Test: `crates/navichrome-runtime/src/page_action_memory.rs`
 
 **Interfaces:**
 - Add a bounded replay-plan field to `ActionMemoryEntry` with serde compatibility.
@@ -44,8 +44,8 @@
 ### Task 2: V3 replay admission and self-healing
 
 **Files:**
-- Modify: `crates/controlla-runtime/src/mcp/v3_full.rs`
-- Test: `crates/controlla-runtime/src/mcp/v3_full.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v3_full.rs`
+- Test: `crates/navichrome-runtime/src/mcp/v3_full.rs`
 
 **Interfaces:**
 - Add a bounded replay lookup result carrying cache status and the verified semantic target.
@@ -59,7 +59,7 @@
 ### Task 3: Metrics and benchmark evidence
 
 **Files:**
-- Modify: `crates/controlla-runtime/src/mcp/v3_full.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v3_full.rs`
 - Modify: `bench/runners/phase11-public-readonly-pilot.mjs` only if required by the existing schema
 - Test: existing runtime and benchmark suites
 

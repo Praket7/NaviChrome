@@ -1,6 +1,6 @@
 # Compact Agent Surface v3
 
-Controlla v3 exposes six default concepts to an agent and keeps implementation-specific diagnostics out of the default schema budget.
+NaviChrome v3 exposes six default concepts to an agent and keeps implementation-specific diagnostics out of the default schema budget.
 
 | Tool | Purpose |
 | --- | --- |
@@ -15,7 +15,7 @@ The serialized default schemas must stay at or below 48 KiB. Results must stay a
 
 ## Execution hierarchy
 
-Controlla chooses the highest reliable route in this order: native page tool or WebMCP capability, qualified deterministic skill, compact semantic workflow, DOM or accessibility grounding, bounded visual probe, then strict low-level input. Deterministic operations never require a second model.
+NaviChrome chooses the highest reliable route in this order: native page tool or WebMCP capability, qualified deterministic skill, compact semantic workflow, DOM or accessibility grounding, bounded visual probe, then strict low-level input. Deterministic operations never require a second model.
 
 ## Safety contract
 

@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 // in the runtime, so the only faithful test is the real program against a real
 // DOM. Read the shipped source instead of copying the program here.
 const runtimeSource = readFileSync(
-  new URL('../crates/controlla-runtime/src/mcp/v3_full.rs', import.meta.url),
+  new URL('../crates/navichrome-runtime/src/mcp/v3_full.rs', import.meta.url),
   'utf8',
 );
 const selectorTemplate = (() => {
@@ -34,7 +34,7 @@ let page;
 before(async () => {
   browser = await chromium.launch({
     headless: true,
-    ...(process.env.CONTROLLA_CHROME ? { executablePath: process.env.CONTROLLA_CHROME } : { channel: 'chrome' }),
+    ...(process.env.NAVICHROME_CHROME ? { executablePath: process.env.NAVICHROME_CHROME } : { channel: 'chrome' }),
   });
   page = await browser.newPage();
 });
@@ -223,7 +223,7 @@ test('a plain textarea keeps exact value semantics', async () => {
 // guard; it must agree with the runtime guard about what an empty editor is.
 const transactionGuardSource = (() => {
   const extensionSource = readFileSync(
-    new URL('../extensions/chrome-controlla/lib/input.js', import.meta.url), 'utf8');
+    new URL('../extensions/navichrome/lib/input-guards.js', import.meta.url), 'utf8');
   const match = extensionSource.match(/export const TRANSACTION_GUARD = `([\s\S]*?)`;/);
   assert.ok(match, 'extension must still ship the transaction guard');
   // The guard lives in a template literal, so evaluate it to get the program
@@ -254,7 +254,7 @@ test('the extension transaction still refuses real content', async () => {
 
 const surfaceProbeSource = (() => {
   const extensionSource = readFileSync(
-    new URL('../extensions/chrome-controlla/lib/input.js', import.meta.url), 'utf8');
+    new URL('../extensions/navichrome/lib/input-guards.js', import.meta.url), 'utf8');
   const match = extensionSource.match(/export const SURFACE_PROBE = `([\s\S]*?)`;/);
   assert.ok(match, 'extension must still ship the surface probe');
   return new Function(`return \`${match[1]}\`;`)();

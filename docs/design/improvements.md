@@ -1,4 +1,4 @@
-# Chrome Controlla: extraction and improvement specification
+# NaviChrome: extraction and improvement specification
 
 > **Superseded note 2026-10-10:** The five-tool proposal in §5 (session/observe/execute/jobs/guide) is superseded by `compact-agent-surface-v3.md` which defines the authoritative six default tools (`browser`, `snapshot`, `act`, `workflow`, `extract`, `verify`) and 48KiB/512KiB budgets. The six-tool contract is the source of truth for V3; do not implement the five-tool surface.
 
@@ -7,7 +7,7 @@ Status: proposed engineering specification, 2026-10-06. Source baseline: Comptro
 
 ## 1. Product boundary
 
-Chrome Controlla controls Chrome and web apps running in it. It provides foreground-allowed, strict-background, dedicated-headless, and optionally remote sessions; independent tabs; fast sequential typing; clicking and dragging; bounded scripting; complete or explicitly partial extraction; scoped design-app workflows; and clear client instructions.
+NaviChrome controls Chrome and web apps running in it. It provides foreground-allowed, strict-background, dedicated-headless, and optionally remote sessions; independent tabs; fast sequential typing; clicking and dragging; bounded scripting; complete or explicitly partial extraction; scoped design-app workflows; and clear client instructions.
 
 Non-goals: universal desktop control, generic filesystem/terminal authority, native CapCut or Resolve editing, automatic credential extraction, CAPTCHA bypass, invisible irreversible writes, universal success, and unsupported claims of superiority. Browser downloads/uploads and artifact export are in scope through a constrained artifact broker.
 
@@ -17,14 +17,14 @@ Paths below are observed source paths. Proposed destination paths are new and mu
 
 | Existing component | Decision | Proposed destination / condition |
 |---|---|---|
-| `crates/comptrol-browser/src/{lib,manager,session,blocking}.rs` | Extract then refactor | `crates/controlla-browser/src/`; preserve provenance; isolate blocking façade from asynchronous hot path |
-| Browser-specific dispatch in `crates/comptrol-core/src/lib.rs` | Selective port | `crates/controlla-runtime/src/dispatch.rs`; no monolithic core dependency |
-| `crates/comptrol-core/src/browser.rs` | Audit protocol helpers and reuse selectively | `controlla-browser`; remove duplicate transports only after parity tests |
-| `crates/comptrol-core/src/browser_bridge.rs` | Selective port | `controlla-runtime/src/bridge.rs`; retain durable state and useful recovery but unify source of liveness |
-| `extensions/comptrol-browser-bridge/` | Optional shared-browser provider | `extensions/chrome-controlla/`; least privileges, explicit tab grants, protocol negotiation |
-| `packages/mcp/` launchers | Replace package wiring | `packages/chrome-controlla/`; no dependency on global `comptrolling` |
+| `crates/comptrol-browser/src/{lib,manager,session,blocking}.rs` | Extract then refactor | `crates/navichrome-browser/src/`; preserve provenance; isolate blocking façade from asynchronous hot path |
+| Browser-specific dispatch in `crates/comptrol-core/src/lib.rs` | Selective port | `crates/navichrome-runtime/src/dispatch.rs`; no monolithic core dependency |
+| `crates/comptrol-core/src/browser.rs` | Audit protocol helpers and reuse selectively | `navichrome-browser`; remove duplicate transports only after parity tests |
+| `crates/comptrol-core/src/browser_bridge.rs` | Selective port | `navichrome-runtime/src/bridge.rs`; retain durable state and useful recovery but unify source of liveness |
+| `extensions/comptrol-browser-bridge/` | Optional shared-browser provider | `extensions/navichrome/`; least privileges, explicit tab grants, protocol negotiation |
+| `packages/mcp/` launchers | Replace package wiring | `packages/navichrome/`; no dependency on global `comptrolling` |
 | `plugins/comptrol/scripts/launch-comptrol-mcp.cjs` | Replace | Package-relative, pinned launcher; no silent install or PATH guessing |
-| Verification/workflow/consent crates | Port minimal concepts and tests | `controlla-runtime`; avoid carrying unrelated app registries |
+| Verification/workflow/consent crates | Port minimal concepts and tests | `navichrome-runtime`; avoid carrying unrelated app registries |
 | Canva / Google Workspace adapters | Optional scoped app modules | `apps/canva/`, `apps/slides/`; live qualification required |
 | Browser fixture and conformance scripts | Retain as regression seeds | `tests/fixtures/`, `tests/e2e/`; relabel portable versus live evidence |
 | macOS/Windows/Linux native automation, Blender, Resolve, email/OBS adapters | Omit | Not linked, not packaged, not advertised |
@@ -76,7 +76,7 @@ Evidence levels: `reported` (tester), `source_observed`, `fixture_verified`, `li
 2. `observe`: bounded structured facts, DOM/AX subtree, tab inventory, visual crop, or extraction; explicit completeness/truncation and target freshness.
 3. `execute`: a typed workflow graph, registered workflow, or constrained script. Compiles guards and runs until completion, limit, or yield. Does not conceal internal model calls.
 4. `jobs`: `status`, `wait`, `cancel`, `reconcile`, `artifacts`. Durable operation IDs; bounded wait with revision/cursor. Cancellation stops future work but may not undo dispatched effects.
-5. `guide`: schema-derived topic/recipe/error/capability lookup, plus a canonical resource such as `controlla://guide/master`. It reports the server/schema/doc version.
+5. `guide`: schema-derived topic/recipe/error/capability lookup, plus a canonical resource such as `navichrome://guide/master`. It reports the server/schema/doc version.
 
 These are proposed names. Implement them consistently across transports, SDK, CLI and guide. Keep schemas small but typed; a generic JSON blob or universal eval-only tool would reduce advertised tool count while increasing mistakes.
 

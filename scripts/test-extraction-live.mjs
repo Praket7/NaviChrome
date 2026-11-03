@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const source = readFileSync(
-  new URL('../crates/controlla-browser/src/observe.rs', import.meta.url),
+  new URL('../crates/navichrome-browser/src/observe.rs', import.meta.url),
   'utf8',
 );
 
@@ -46,8 +46,8 @@ let browser;
 before(async () => {
   browser = await chromium.launch({
     headless: true,
-    ...(process.env.CONTROLLA_CHROME
-      ? { executablePath: process.env.CONTROLLA_CHROME }
+    ...(process.env.NAVICHROME_CHROME
+      ? { executablePath: process.env.NAVICHROME_CHROME }
       : { channel: 'chrome' }),
   });
 });

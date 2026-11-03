@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+package_dir=$(CDPATH= cd -- "${0%/*}/.." && pwd -P)
+if [ "${1-}" = "mcp" ]; then
+  exec "$package_dir/bin/navichrome-v2-core" "$@"
+fi
+exec "$package_dir/bin/navichrome-core" "$@"

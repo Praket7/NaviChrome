@@ -4,11 +4,11 @@ import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const runtime = readFileSync(
-  new URL('../crates/controlla-runtime/src/mcp/v2.rs', import.meta.url),
+  new URL('../crates/navichrome-runtime/src/mcp/v2.rs', import.meta.url),
   'utf8',
 );
 const snapshotSource = readFileSync(
-  new URL('../crates/controlla-runtime/src/shared_page/snapshot.js', import.meta.url),
+  new URL('../crates/navichrome-runtime/src/shared_page/snapshot.js', import.meta.url),
   'utf8',
 );
 
@@ -23,8 +23,8 @@ let browser;
 before(async () => {
   browser = await chromium.launch({
     headless: true,
-    ...(process.env.CONTROLLA_CHROME
-      ? { executablePath: process.env.CONTROLLA_CHROME }
+    ...(process.env.NAVICHROME_CHROME
+      ? { executablePath: process.env.NAVICHROME_CHROME }
       : { channel: 'chrome' }),
   });
 });

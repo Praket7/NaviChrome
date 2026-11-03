@@ -2,7 +2,7 @@
 
 ## Method and scope
 
-Fresh blind documentation/schema evaluation using current `docs/MASTER_GUIDE.md` version `master-2026-10-06-v3` and the rebuilt packaged executable `packages/chrome-controlla/dist/bin/controlla-core`. I started it as an MCP server with a newly created temporary `CONTROLLA_STATE_DIR` and sent JSONL `initialize`, `notifications/initialized`, then `tools/list`. The initialize response identified `controlla-runtime` version `0.1.0`. I inspected the returned schemas for `extract`, `workflow`, `workflow_status`, `artifact_register`, and `file_select`. No browser or app connection was made.
+Fresh blind documentation/schema evaluation using current `docs/MASTER_GUIDE.md` version `master-2026-10-06-v3` and the rebuilt packaged executable `packages/navichrome/dist/bin/navichrome-core`. I started it as an MCP server with a newly created temporary `NAVICHROME_STATE_DIR` and sent JSONL `initialize`, `notifications/initialized`, then `tools/list`. The initialize response identified `navichrome-runtime` version `0.1.0`. I inspected the returned schemas for `extract`, `workflow`, `workflow_status`, `artifact_register`, and `file_select`. No browser or app connection was made.
 
 Outcomes judge whether the current guide and advertised tool schemas explain the novice task. They are not execution results or evidence of live app behavior, real-client usability, or successful browser operation.
 

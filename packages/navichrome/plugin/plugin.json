@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "navichrome",
+  "version": "0.1.0",
+  "description": "Control Chrome through NaviChrome's compact six-tool local MCP with direct routing, bounded workflows, and verification.",
+  "author": {
+    "name": "Praket7"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "NaviChrome",
+        "shortDescription": "Fast verified Chrome control",
+        "longDescription": "Use NaviChrome's six stable local MCP tools to open the most specific verified destination, observe only what the next decision needs, execute deterministic browser work in bounded workflows, and verify uncertain mutations without browser-orchestration overhead.",
+        "developerName": "Praket7",
+        "category": "Productivity",
+        "capabilities": [
+          "Interactive"
+        ],
+          "defaultPrompt": "Use NaviChrome immediately. If its six tools are already exposed, do not inspect MCP schemas, call describe, search repository source, or reread browser documentation before normal actions. Route semantic controls first, then a live qualified page tool, then fresh bounded visual evidence; use desktop fallback only when the server advertises platform capability. If no existing tab is a safe match, use the bounded candidate/reason receipt: open the exact URL in a new NaviChrome-owned tab, or ask for an exact tab selection when an existing tab is required. Take one targeted semantic observation only when needed; compile deterministic work into one browser/workflow call; verify only uncertain mutations; never replay unknown outcomes. If a result is not_dispatched, follow its reason_code, retry_class, and next_action; if it is unknown, perform one read-only verification and do not replay; if a target is occupied or already leased, release the owning session, rediscover the tab, and pair its current document identity. In background mode, use an active tab inside a NaviChrome-owned unfocused automation window for pointer input, or navigate by an observed href. Never use desktop fallback for secrets, orders, challenge bypass, or user-owned background activation. Always release the session after the task. Optimize total prompt-to-verified-result latency, not just browser execution time."
+      }
+    }
+  }
+}

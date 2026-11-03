@@ -5,8 +5,8 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { recordPromptTraceEvent } from './prompt-send-trace.mjs';
 
-const TRACE_FILE = process.env.CONTROLLA_PROMPT_TRACE_FILE;
-const TRACE_ID = process.env.CONTROLLA_PROMPT_TRACE_ID;
+const TRACE_FILE = process.env.NAVICHROME_PROMPT_TRACE_FILE;
+const TRACE_ID = process.env.NAVICHROME_PROMPT_TRACE_ID;
 const MODEL_CALLS = new Set(['act', 'browser', 'extract', 'snapshot', 'verify', 'workflow']);
 const pending = new Map();
 let outputBuffer = Buffer.alloc(0);
@@ -105,8 +105,8 @@ function observeServerLine(line, bytes) {
   if (typeof name !== 'string' || !MODEL_CALLS.has(name)) return;
   const callId = String(message.id);
   pending.set(callId, { kind: 'tool', name, call_id: callId });
-  trace('controlla_received', { tool: name, call_id: callId, tool_input_bytes: bytes,
-    ...(process.env.CONTROLLA_PROMPT_COLD_WARM ? { cold_warm: process.env.CONTROLLA_PROMPT_COLD_WARM } : {}) });
+  trace('navichrome_received', { tool: name, call_id: callId, tool_input_bytes: bytes,
+    ...(process.env.NAVICHROME_PROMPT_COLD_WARM ? { cold_warm: process.env.NAVICHROME_PROMPT_COLD_WARM } : {}) });
 }
 
 function inspectServerChunk(chunk) {
@@ -156,7 +156,7 @@ function inspectServerChunk(chunk) {
     }
   }
   if (outputBuffer.length > 1024 * 1024) {
-    process.stderr.write('Controlla trace proxy stopped parsing an oversized MCP line.\n');
+    process.stderr.write('NaviChrome trace proxy stopped parsing an oversized MCP line.\n');
     outputBuffer = Buffer.alloc(0);
   }
 }

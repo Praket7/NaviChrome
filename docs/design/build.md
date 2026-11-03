@@ -1,4 +1,4 @@
-# Chrome Controlla implementation plan and autonomous build prompt
+# NaviChrome implementation plan and autonomous build prompt
 
 > **For agentic workers:** Use `superpowers:executing-plans` if available to implement this plan task by task. Use subagents only when the user or applicable instructions authorize them. Every unchecked item is unfinished; a written plan, scaffold, passing mock, or accepted command is not completion.
 
@@ -12,7 +12,7 @@
 
 ## Copy this assignment to the implementing AI
 
-You are responsible for building **Chrome Controlla**, a new repository derived selectively from `https://github.com/Praket7/Comptrol`. Treat this document and its three companion documents as the project’s controlling specification, while respecting higher-priority instructions, user authorization, actual APIs and observed evidence. “Holy grail” means complete traceability and persistence, not permission to invent facts or follow an obsolete instruction after it is disproved.
+You are responsible for building **NaviChrome**, a new repository derived selectively from `https://github.com/Praket7/Comptrol`. Treat this document and its three companion documents as the project’s controlling specification, while respecting higher-priority instructions, user authorization, actual APIs and observed evidence. “Holy grail” means complete traceability and persistence, not permission to invent facts or follow an obsolete instruction after it is disproved.
 
 Do the work, not merely another plan. Retrieve the source, reconcile its current revision with the researched baseline, create a clean Chrome-only repository, implement the phases, run meaningful tests, validate the actual clients and apps where credentials/environment permit, and produce reproducible release artifacts and a measured comparison. Continue fixing failed gates. Do not stop at a stub, mocked adapter, cosmetic rename, successful handshake or a flattering performance claim.
 
@@ -54,7 +54,7 @@ Use approved existing permissions. Ask only for missing decisions or unavoidable
 ## Proposed repository structure
 
 ```text
-chrome-controlla/
+navichrome/
   Cargo.toml
   Cargo.lock
   rust-toolchain.toml
@@ -63,13 +63,13 @@ chrome-controlla/
   README.md
   AGENTS.md
   crates/
-    controlla-browser/src/{lib,connection,targets,frames,input,observe}.rs
-    controlla-runtime/src/{lib,registry,policy,identity,journal,jobs,scheduler,compiler,verifier,extract,cache,bridge,artifacts}.rs
-    controlla-mcp/src/{main,stdio,http,tools,errors}.rs
-    controlla-cli/src/{main,args,doctor}.rs
-    controlla-script/src/{main,protocol,limits}.rs
-  extensions/chrome-controlla/
-  packages/chrome-controlla/       # distribution launcher and platform artifacts
+    navichrome-browser/src/{lib,connection,targets,frames,input,observe}.rs
+    navichrome-runtime/src/{lib,registry,policy,identity,journal,jobs,scheduler,compiler,verifier,extract,cache,bridge,artifacts}.rs
+    navichrome-mcp/src/{main,stdio,http,tools,errors}.rs
+    navichrome-cli/src/{main,args,doctor}.rs
+    navichrome-script/src/{main,protocol,limits}.rs
+  extensions/navichrome/
+  packages/navichrome/       # distribution launcher and platform artifacts
   sdk/                           # typed broker calls available to scripts
   schemas/{capabilities,workflow,result,errors}.json
   apps/{slides,canva,capcut-web}/
@@ -112,7 +112,7 @@ Make workflow/script/workflow_ref mutually exclusive in schema. Validate unknown
 
 - [x] Inspect workspace instructions, Git identity/auth and existing repositories before cloning. Do not overwrite a user checkout or discard uncommitted changes.
 - [x] Clone upstream into a separate source directory. Record fetched HEAD, remote URL and dirty state. Compare browser/core/bridge/package changes to the researched SHA; determine whether reported regressions correspond to an older binary or another route.
-- [x] Inspect licenses and dependencies. Create a new local repository named `chrome-controlla`, preserving notices and provenance, with no credentials or browser profiles.
+- [x] Inspect licenses and dependencies. Create a new local repository named `navichrome`, preserving notices and provenance, with no credentials or browser profiles.
 - [x] If executing this prompt includes authorized GitHub repository creation, use the authenticated user's intended owner and create **a separate repository**, never rename/delete Comptrol. Default private when visibility is unspecified; record that choice. If the name exists, inspect ownership/content and stop before overwriting. Do not guess an alternate name or push into an unrelated repo.
 - [x] Select and pin Rust, Node/reference runner, MCP SDK/protocol and Chrome for Testing versions supported by the environment. Document rationale and supported OS targets.
 - [x] Extract minimal browser engine and tests, not the monolithic app registry. Create provenance mapping and a dependency check that fails if native desktop platform crates/adapters re-enter the distribution.
@@ -209,14 +209,14 @@ The local/code review gate passed on 2026-10-06. Live extension attachment, inde
 
 ## Phase 6 — constrained scripts and guarded workflow compiler
 
-**Files:** `controlla-script`, `sdk/`, `compiler.rs`, `scheduler.rs`, workflow schema, execute tool, script/security tests.
+**Files:** `navichrome-script`, `sdk/`, `compiler.rs`, `scheduler.rs`, workflow schema, execute tool, script/security tests.
 
 **Interfaces:** `compile(request, capabilities) -> WorkflowGraph`; `run(graph, budget) -> OperationReceipt`; broker API `call(session_handle, operation, args) -> TypedResult`.
 
 - [x] Spike candidate runtimes for interruption, memory bounds and asynchronous host calls. Wasmtime remains a WebAssembly engine, not a JavaScript runtime. A runnable pinned `rquickjs 0.14.0` probe and official crate API confirm interrupt handlers, memory/stack limits and futures-based async host calls. See [rquickjs 0.14.0 API](https://docs.rs/rquickjs/0.14.0/rquickjs/), [Wasmtime interruption](https://docs.wasmtime.dev/examples-interrupting-wasm.html), and [Wasmtime ResourceLimiter](https://docs.wasmtime.dev/api/wasmtime/trait.ResourceLimiter.html). `node:vm` is not treated as a security boundary.
 - [x] Add red-first compiler and worker tests for cross-session handles, unavailable imports and ambient file/network/process access, loop interruption, heap/output limits, and workflow step/wait/output bounds.
 - [x] Enforce the script deadline around pending async JavaScript as well as active bytecode; a never-settling Promise regression returns an error and releases the worker future.
-- [x] Implement typed bounded graph/script IR and a fresh-context QuickJS worker. Its only host function is an asynchronous, per-call reauthorized read broker; scripts are local-trust-only and disabled unless `CHROME_CONTROLLA_ENABLE_TRUSTED_SCRIPTS=1`. QuickJS runs in a bounded child process with a cleared environment, but no kernel sandbox or OS RSS/CPU quota is enforced; untrusted and production scripts remain gated pending those controls and platform qualification.
+- [x] Implement typed bounded graph/script IR and a fresh-context QuickJS worker. Its only host function is an asynchronous, per-call reauthorized read broker; scripts are local-trust-only and disabled unless `NAVICHROME_ENABLE_TRUSTED_SCRIPTS=1`. QuickJS runs in a bounded child process with a cleared environment, but no kernel sandbox or OS RSS/CPU quota is enforced; untrusted and production scripts remain gated pending those controls and platform qualification.
 - [x] Add bounded asynchronous MCP admission, a 60-second durable job deadline, resumable `workflow_status`, persistent checkpoints/partial receipts, pre-dispatch operation claims/counting, unknown delivery after timeout, and receipts bound to operation, target, and revisions. Startup takes an exclusive state-directory lifetime lock before recovery: accepted and running/not-sent work fails as not sent; running work after a dispatch claim becomes unknown while preserving delivery/checkpoints; browser effects are never retried. Script broker calls reserve their declared output budget against the workflow-wide cap before dispatch. Client disconnect does not cancel an accepted job; there is no workflow-cancel tool.
 - [x] Accept one explicit {kind:"artifact",filename,media_type,bytes:[...]} return from the gated sole-script workflow step. Validate exact fields, filename, allowlisted media types, and 1–12 KiB byte bounds; store bytes, SHA-256, and operation/principal/session binding inline in the existing journal receipt for `workflow_status` retrieval and idempotent replay. No artifact file is written.
 - [x] Add dependency-scoped invalidation and effect-aware splitting as deterministic planning rules. The fixture covers direct/transitive dependents and isolates non-read effects; declared effects remain hints, not proof that page code has no side effects.
@@ -268,7 +268,7 @@ The local/code review gate passed on 2026-10-06. Live extension attachment, inde
 
 **Interfaces:** identical operation/result semantics across supported transports; `guide(topic, server_version) -> GuideSection`; versioned client config generators.
 
-**Current local slice (2026-10-07):** `docs/clients.md` records local stdio examples for Freebuff/Codebuff, OpenCode v1/v2, and Claude Code, plus ChatGPT's local-stdio limitation. A read-only `guide` tool and canonical `controlla://guide/{topic}/{server_version}` resources serve `clients` and `master` Markdown for exact server version `0.1.0`; pinned rmcp child-process tests exercise every initialize revision advertised by the pinned SDK and its current discovery lifecycle, resource listing/reading, tool schemas, and invalid requests over stdio. A four-group, 20-task fresh-agent B35 run passed against the packaged local MCP schemas after guide corrections. An opt-in authenticated Streamable HTTP endpoint is implemented for loopback only. A 2026-10-07 bounded live process smoke completed HTTP initialize, tool discovery, a versioned guide call, and missing-bearer rejection; OpenCode 1.18.5 separately connected over stdio and discovered tools, without a tool action. No supported external-client tool action or HTTP-client acceptance is claimed.
+**Current local slice (2026-10-07):** `docs/clients.md` records local stdio examples for Freebuff/Codebuff, OpenCode v1/v2, and Claude Code, plus ChatGPT's local-stdio limitation. A read-only `guide` tool and canonical `navichrome://guide/{topic}/{server_version}` resources serve `clients` and `master` Markdown for exact server version `0.1.0`; pinned rmcp child-process tests exercise every initialize revision advertised by the pinned SDK and its current discovery lifecycle, resource listing/reading, tool schemas, and invalid requests over stdio. A four-group, 20-task fresh-agent B35 run passed against the packaged local MCP schemas after guide corrections. An opt-in authenticated Streamable HTTP endpoint is implemented for loopback only. A 2026-10-07 bounded live process smoke completed HTTP initialize, tool discovery, a versioned guide call, and missing-bearer rejection; OpenCode 1.18.5 separately connected over stdio and discovered tools, without a tool action. No supported external-client tool action or HTTP-client acceptance is claimed.
 
 The B35 task descriptions, individual outcomes, schema evidence and limitations are recorded in [route evaluation](../review/phase9-b35-routes.md), [professional-app cases](../review/phase9-b35-apps.md), [long-task cases](../review/phase9-b35-long-tasks.md), and [extraction/file-selection cases](../review/phase9-b35-extract-file.md). They are task/evaluation records, not live browser or client acceptance.
 
@@ -280,7 +280,7 @@ The B35 task descriptions, individual outcomes, schema evidence and limitations 
 - [x] Generate dated client-specific configuration examples with per-client state isolation and validate their shapes against the checked-in schemas. Installed versions and client acceptance remain open; do not assume every platform has the same config nesting or local process support.
 - [x] Add an installer for JSON-based Freebuff/OpenCode configuration files; it preserves unrelated entries and refuses ambiguous or conflicting entries. It atomically replaces the file and best-effort detects edits before replacement, but does not serialize with arbitrary external writers. Claude's CLI command remains a human-reviewed output, and no live client config was changed.
 - [ ] In each available real client, run session setup, observation, guarded edit, long job, reconnect/reconcile, structured result/artifact and cleanup. Record client version and server SHA. A raw JSON-RPC smoke alone does not qualify a client.
-- [x] Turn the companion master guide into runnable setup, observation, extraction/resume, workflow-polling, and artifact/file-selection examples. Checks parse examples and verify supported names. The initialize bootstrap lists runtime-derived tool names and directs clients to `tools/list` for schemas. Descriptive facts remain partly human-maintained. Version-bound `guide` tool and `controlla://guide/{topic}/{server_version}` resources serve `clients` and `master`.
+- [x] Turn the companion master guide into runnable setup, observation, extraction/resume, workflow-polling, and artifact/file-selection examples. Checks parse examples and verify supported names. The initialize bootstrap lists runtime-derived tool names and directs clients to `tools/list` for schemas. Descriptive facts remain partly human-maintained. Version-bound `guide` tool and `navichrome://guide/{topic}/{server_version}` resources serve `clients` and `master`.
 - [x] Run the 20-task fresh-agent B35 usability suite in four five-task groups; 20/20 passed after guide corrections. Evaluators queried packaged MCP schemas over isolated stdio and did not connect a browser or app. Real-client acceptance remains open.
 - [ ] Commit `feat: qualify MCP clients and ship executable master guide`.
 
@@ -321,17 +321,17 @@ The B35 task descriptions, individual outcomes, schema evidence and limitations 
 
 **Files:** release workflow, package manifests, checksums/SBOM, support matrix, release notes, benchmark report, guide, rollback instructions.
 
-- [x] Run the configured Rust, dependency, client, app-brief, benchmark, docs, provenance, extension, and package checks on the candidate source commit. Hosted run [37618717861](https://github.com/Praket7/chrome-controlla/actions/runs/37618717861) passed Windows, macOS, and Linux build/package jobs for `13c64e3`.
+- [x] Run the configured Rust, dependency, client, app-brief, benchmark, docs, provenance, extension, and package checks on the candidate source commit. Hosted run [37618717861](https://github.com/Praket7/navichrome/actions/runs/37618717861) passed Windows, macOS, and Linux build/package jobs for `13c64e3`.
 - [x] Test clean-prefix installation, package-version upgrade/rollback, uninstall, and unrelated user-data preservation on the current host. The lifecycle harness supports distinct binaries and verifies the installed executable digest at each version; see the dated evidence record for exact revisions and digests.
 - [x] Prepare the local release-candidate bundle path: host package and extension archives, runtime dependency SBOM, artifact checksums, support matrix, release notes, and rollback instructions. The bundle remains unpublished and must be generated from a clean release commit.
 - [x] Generate the unpublished macOS arm64 release-candidate bundle from clean source commit `2f4fb06`; verify the recorded SBOM and archive checksums. This does not qualify other hosts or consumer installation.
 - [x] Reject stale or missing shared-extension versions during pairing and verify the extension releases its debugger attachment on mismatch. This local fixture does not qualify release-binary upgrade compatibility.
 - [x] Test a local distinct-binary package upgrade/rollback on the current host, checking installed executable digests and user-data preservation. The macOS arm64 lifecycle passed; see [distinct-binary lifecycle evidence](../review/phase12-binary-lifecycle.md). This does not establish live MCP client/server compatibility.
 - [x] Generate an unpublished local macOS arm64 candidate from clean commit `13c64e3`; verify npm package, extension, and SBOM checksums. The package remains unpublished and live acceptance is not run.
-- [x] Verify fresh clean-prefix consumer installs on Windows, macOS, and Linux through `package-check.sh`, which installs each host-matched archive and runs the installed command shim. Hosted run [37628108314](https://github.com/Praket7/chrome-controlla/actions/runs/37628108314) passed all three jobs; this is not a published GitHub install.
+- [x] Verify fresh clean-prefix consumer installs on Windows, macOS, and Linux through `package-check.sh`, which installs each host-matched archive and runs the installed command shim. Hosted run [37628108314](https://github.com/Praket7/navichrome/actions/runs/37628108314) passed all three jobs; this is not a published GitHub install.
 - [ ] Verify stale/current MCP client/server behavior beyond the extension handshake, signed release artifacts/SBOM, and consumer installation from GitHub. No credential/browser-profile deletion on uninstall without explicit request.
 - [x] Review packaged files for desktop baggage, secrets, stale docs, test-only capabilities and unqualified marketing claims; archive listings contain only expected CLI, license/notice, core binary, and Chrome extension files.
-- [x] Prepare and checksum a local macOS arm64 release candidate from clean commit `2f4fb06`; push the feature branch to the authorized Chrome Controlla repository. The candidate is unpublished; no GitHub release was created.
+- [x] Prepare and checksum a local macOS arm64 release candidate from clean commit `2f4fb06`; push the feature branch to the authorized NaviChrome repository. The candidate is unpublished; no GitHub release was created.
 - [x] Pass hosted build/package CI on the candidate source commit; run `37564319202` passed Windows, macOS, and Linux.
 - [ ] Verify published Windows/Linux consumer installs; CI-built artifacts are not a public consumer installation.
 - [ ] Publish/deploy only within actual authorization. If final approval is required, present exact version, diff, test report, visibility, costs and artifact destinations so approval is the last step.

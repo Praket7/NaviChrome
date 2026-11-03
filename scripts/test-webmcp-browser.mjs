@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 
-const directory = new URL('../crates/controlla-runtime/src/shared_page/', import.meta.url);
+const directory = new URL('../crates/navichrome-runtime/src/shared_page/', import.meta.url);
 const discovery = readFileSync(new URL('webmcp_discovery.js', directory), 'utf8');
 const invocation = readFileSync(new URL('webmcp_invocation.js', directory), 'utf8');
 let browser, server, base;
@@ -12,7 +12,7 @@ before(async () => {
   server = createServer((req, res) => res.end('<!doctype html><title>WebMCP fixture</title>'));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch({ headless: true, args:['--enable-blink-features=WebMCP'], ...(process.env.CONTROLLA_CHROME ? { executablePath:process.env.CONTROLLA_CHROME } : { channel:'chrome' }) });
+  browser = await chromium.launch({ headless: true, args:['--enable-blink-features=WebMCP'], ...(process.env.NAVICHROME_CHROME ? { executablePath:process.env.NAVICHROME_CHROME } : { channel:'chrome' }) });
 });
 after(async () => { await browser?.close(); if (server) await new Promise(resolve => server.close(resolve)); });
 

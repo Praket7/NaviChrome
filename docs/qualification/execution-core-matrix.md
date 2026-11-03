@@ -53,7 +53,7 @@ node bench/runners/phase12-competitor-report.mjs
 
 The report covers all six configured adapters on one shared read-only task with
 three counterbalanced repetitions, the same Chrome, model, and prompt per
-adapter, and an independent HTTPS title/paragraph verifier. Controlla passed
+adapter, and an independent HTTPS title/paragraph verifier. NaviChrome passed
 3/3 runs with one browser call per run and the lowest median in this pilot.
 This is directional, not a p50/p95 release distribution or a universal speed
 claim. The generated report is
@@ -90,7 +90,7 @@ record a `phase12_evidence` file:
       "client_completed": true,
       "assertions_passed": true,
       "evidence_hash": "sha256:...",
-      "controlla_version": "3.x.y",
+      "navichrome_version": "3.x.y",
       "recorded_at_ms": 0
     }
   ]

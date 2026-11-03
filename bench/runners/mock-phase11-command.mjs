@@ -94,6 +94,7 @@ process.stdout.write(JSON.stringify({
   ...(process.env.PHASE11_MOCK_UNOBSERVED_FINAL === '1' ? { prompt_to_final_ms: 2 } : {}),
   ...(process.env.PHASE11_MOCK_EXTRA_EVIDENCE ? { unbounded_page_dump: 'x'.repeat(900_000) } : {}),
   ...(promptSentNs ? { prompt_trace: { trace_valid: tracePromptBoundary, prompt_sent_observed: tracePromptBoundary,
+    ...(process.env.PHASE11_MOCK_NAVICHROME_TRACE === '1' ? { prompt_to_navichrome_received_ms: 2 } : {}),
     final_answer_observed: false,
     ...(tracePromptBoundary ? { prompt_boundary: 'actual_user_submit', prompt_sent_monotonic_ns: promptSentNs } : {}),
     clock_domain: 'local_host_monotonic', clock_offset_ms: 0, clock_uncertainty_ms: 0.1,

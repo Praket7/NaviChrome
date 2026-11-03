@@ -37,17 +37,17 @@
 ### Task 1: Freeze the baseline and add fixtures
 
 Files:
-- Create crates/controlla-runtime/tests/visual_stability_fixtures.rs
-- Create crates/controlla-runtime/tests/native_fallback_fixtures.rs
-- Modify crates/controlla-runtime/tests/live_espn_foreground.rs
-- Modify packages/chrome-controlla/test-agent-ux.cjs
+- Create crates/navichrome-runtime/tests/visual_stability_fixtures.rs
+- Create crates/navichrome-runtime/tests/native_fallback_fixtures.rs
+- Modify crates/navichrome-runtime/tests/live_espn_foreground.rs
+- Modify packages/navichrome/test-agent-ux.cjs
 - Create docs/superpowers/evidence/2026-10-18-taboom-derived-baseline.md
 
 Interfaces:
 - Consumes existing V3ReadyWhen, workflow schemas, plugin route profiles, and benchmark telemetry.
 - Produces deterministic fixtures and a baseline record that later tasks must not regress.
 
-- [ ] Step 1: Record the current baseline. Run cargo test --workspace --all-targets and node packages/chrome-controlla/test-agent-ux.cjs. Record pass counts, ESPN call count, browser/CDP/host round trips, observation bytes, and prompt-to-verified-result latency. Do not claim live verification if the browser fixture is unavailable.
+- [ ] Step 1: Record the current baseline. Run cargo test --workspace --all-targets and node packages/navichrome/test-agent-ux.cjs. Record pass counts, ESPN call count, browser/CDP/host round trips, observation bytes, and prompt-to-verified-result latency. Do not claim live verification if the browser fixture is unavailable.
 - [ ] Step 2: Add deterministic frame fixtures for changing, changing, stable, stable and for a sequence that never repeats before timeout.
 - [ ] Step 3: Add native fallback JSON fixtures for valid, stale, unowned, unsupported-capability, acknowledged, and delivery-uncertain envelopes. Assert malformed and oversized envelopes fail closed.
 - [ ] Step 4: Run the baseline tests. Commit with message: test: freeze Taboom-derived capability baseline.
@@ -55,9 +55,9 @@ Interfaces:
 ### Task 2: Implement the bounded visual stability service
 
 Files:
-- Create crates/controlla-runtime/src/visual_stability.rs
-- Modify crates/controlla-runtime/src/lib.rs
-- Test crates/controlla-runtime/tests/visual_stability_fixtures.rs
+- Create crates/navichrome-runtime/src/visual_stability.rs
+- Modify crates/navichrome-runtime/src/lib.rs
+- Test crates/navichrome-runtime/tests/visual_stability_fixtures.rs
 
 Interfaces:
 - Consumes existing screenshot/visual evidence identity types and the runtime command budget.
@@ -73,9 +73,9 @@ Interfaces:
 ### Task 3: Wire visual stability into readiness and workflows
 
 Files:
-- Modify crates/controlla-runtime/src/mcp/v3_full.rs at the V3ReadyWhen, V3WorkflowStep, workflow-host, step-name, execution, and schema sections.
-- Modify crates/controlla-runtime/src/mcp/v2.rs only if the compatibility schema mirrors V3 readiness.
-- Test crates/controlla-runtime/src/mcp/v3_full.rs and crates/controlla-runtime/tests/v2_stdio.rs.
+- Modify crates/navichrome-runtime/src/mcp/v3_full.rs at the V3ReadyWhen, V3WorkflowStep, workflow-host, step-name, execution, and schema sections.
+- Modify crates/navichrome-runtime/src/mcp/v2.rs only if the compatibility schema mirrors V3 readiness.
+- Test crates/navichrome-runtime/src/mcp/v3_full.rs and crates/navichrome-runtime/tests/v2_stdio.rs.
 
 Interfaces:
 - Consumes visual_stability::wait_for_visual_stability and existing ProbeRegionArgs/visual identity validation.
@@ -91,12 +91,12 @@ Interfaces:
 ### Task 4: Add the compact generated route manifest
 
 Files:
-- Modify crates/controlla-runtime/src/compact_catalog.rs.
-- Modify crates/controlla-runtime/src/mcp/v3_full.rs server instructions.
-- Modify packages/chrome-controlla/plugin/agent-ux-proxy.cjs.
-- Modify packages/chrome-controlla/plugin/plugin.json.
-- Modify packages/chrome-controlla/plugin/skills/browser-control/SKILL.md.
-- Test compact_catalog.rs and packages/chrome-controlla/test-agent-ux.cjs.
+- Modify crates/navichrome-runtime/src/compact_catalog.rs.
+- Modify crates/navichrome-runtime/src/mcp/v3_full.rs server instructions.
+- Modify packages/navichrome/plugin/agent-ux-proxy.cjs.
+- Modify packages/navichrome/plugin/plugin.json.
+- Modify packages/navichrome/plugin/skills/browser-control/SKILL.md.
+- Test compact_catalog.rs and packages/navichrome/test-agent-ux.cjs.
 
 Interfaces:
 - Consumes capability registry route names, existing six-tool descriptions, and route-selection fallback text.
@@ -106,16 +106,16 @@ Interfaces:
 - [ ] Step 2: Implement a pure manifest builder in compact_catalog.rs capped at 8 KiB. Derive availability from the runtime registry; do not scan tabs or call the native host merely to build guidance.
 - [ ] Step 3: Include the manifest in browser action=describe and summarize only route order and the no-safe-match fallback in initialize instructions.
 - [ ] Step 4: Add one short plugin paragraph covering semantic first, visual stability before visual mutation, native fallback only with fresh visual evidence and owned foreground/automation-window scope, and no native fallback for secrets/orders/challenge bypass.
-- [ ] Step 5: Run cargo test -p controlla-runtime compact_catalog v3_full -- --nocapture and node packages/chrome-controlla/test-agent-ux.cjs. Commit with message: docs: expose compact generated browser route guidance.
+- [ ] Step 5: Run cargo test -p controlla-runtime compact_catalog v3_full -- --nocapture and node packages/navichrome/test-agent-ux.cjs. Commit with message: docs: expose compact generated browser route guidance.
 
 ### Task 5: Define the native desktop fallback contract
 
 Files:
-- Create crates/controlla-runtime/src/desktop_fallback.rs.
-- Modify crates/controlla-runtime/src/lib.rs.
-- Modify crates/controlla-runtime/src/native_host.rs.
-- Modify crates/controlla-runtime/src/protocol_contract.rs.
-- Test crates/controlla-runtime/tests/native_fallback_fixtures.rs.
+- Create crates/navichrome-runtime/src/desktop_fallback.rs.
+- Modify crates/navichrome-runtime/src/lib.rs.
+- Modify crates/navichrome-runtime/src/native_host.rs.
+- Modify crates/navichrome-runtime/src/protocol_contract.rs.
+- Test crates/navichrome-runtime/tests/native_fallback_fixtures.rs.
 
 Interfaces:
 - Consumes session leases, visual identities, target ownership, command budgets, and native-message framing.
@@ -131,12 +131,12 @@ Interfaces:
 ### Task 6: Add platform adapters behind the contract
 
 Files:
-- Create crates/controlla-runtime/src/desktop_platform.rs.
-- Create crates/controlla-runtime/src/desktop_platform/macos.rs.
-- Create crates/controlla-runtime/src/desktop_platform/windows.rs.
-- Create crates/controlla-runtime/src/desktop_platform/linux.rs.
-- Modify crates/controlla-runtime/src/main.rs and Cargo.toml.
-- Test crates/controlla-runtime/tests/native_bridge_process.rs.
+- Create crates/navichrome-runtime/src/desktop_platform.rs.
+- Create crates/navichrome-runtime/src/desktop_platform/macos.rs.
+- Create crates/navichrome-runtime/src/desktop_platform/windows.rs.
+- Create crates/navichrome-runtime/src/desktop_platform/linux.rs.
+- Modify crates/navichrome-runtime/src/main.rs and Cargo.toml.
+- Test crates/navichrome-runtime/tests/native_bridge_process.rs.
 
 Interfaces:
 - Consumes DesktopAction from Task 5.
@@ -151,10 +151,10 @@ Interfaces:
 ### Task 7: Route native fallback through act and workflow
 
 Files:
-- Modify crates/controlla-runtime/src/mcp/v3_full.rs at workflow schema, workflow host, execution, and action validation sections.
-- Modify crates/controlla-runtime/src/mcp/v2.rs compatibility translation if required.
-- Modify crates/controlla-browser/src/providers.rs and cancellation.rs.
-- Test crates/controlla-runtime/src/mcp/v3_full.rs and crates/controlla-runtime/tests/native_bridge_roundtrip.rs.
+- Modify crates/navichrome-runtime/src/mcp/v3_full.rs at workflow schema, workflow host, execution, and action validation sections.
+- Modify crates/navichrome-runtime/src/mcp/v2.rs compatibility translation if required.
+- Modify crates/navichrome-browser/src/providers.rs and cancellation.rs.
+- Test crates/navichrome-runtime/src/mcp/v3_full.rs and crates/navichrome-runtime/tests/native_bridge_roundtrip.rs.
 
 Interfaces:
 - Consumes DesktopFallbackProvider, capability manifest, visual stability, and existing workflow verification.
@@ -169,8 +169,8 @@ Interfaces:
 ### Task 8: Add end-to-end benchmark and failure coverage
 
 Files:
-- Create crates/controlla-runtime/tests/taboom_derived_benchmark.rs.
-- Modify live ESPN tests and packages/chrome-controlla/test-agent-ux.cjs.
+- Create crates/navichrome-runtime/tests/taboom_derived_benchmark.rs.
+- Modify live ESPN tests and packages/navichrome/test-agent-ux.cjs.
 - Create docs/benchmarks/taboom-derived-capabilities.md.
 
 Interfaces:
@@ -180,7 +180,7 @@ Interfaces:
 - [ ] Step 1: Measure at least 10 warm and 10 cold ESPN/Bills/newest-story runs. Assert at most three MCP calls, no unrelated-tab scan, and telemetry for route selection, browser commands, CDP commands, host round trips, observation bytes, and verification latency.
 - [ ] Step 2: Exercise animation settling, timeout, document replacement during polling, and a stable region with unrelated changes outside the region.
 - [ ] Step 3: Exercise browser chrome target, stale visual reference, unsupported platform, foreground owned window, user-owned background window, and uncertain delivery. Assert secret/order/challenge bypass is never admitted.
-- [ ] Step 4: Run cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets, and node packages/chrome-controlla/test-agent-ux.cjs. Resolve all new warnings and format drift introduced by this branch.
+- [ ] Step 4: Run cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets, and node packages/navichrome/test-agent-ux.cjs. Resolve all new warnings and format drift introduced by this branch.
 - [ ] Step 5: Run live tests only when the configured extension/native host is available. Record executed, skipped, or blocked; do not report unit/integration results as live verification.
 - [ ] Step 6: Commit with message: test: benchmark Taboom-derived browser capabilities.
 
@@ -198,7 +198,7 @@ Interfaces:
 - [ ] Step 2: Document macOS Accessibility/Input Monitoring and equivalent platform gates. Permission absence returns capability_unavailable and does not retry.
 - [ ] Step 3: Document that native fallback cannot type secrets, submit orders, bypass challenges, or activate user-owned background tabs.
 - [ ] Step 4: Separate implemented local behavior, platform-tested behavior, live browser verification, hosted CI, and future platform work in the roadmap.
-- [ ] Step 5: Run node packages/chrome-controlla/test-agent-ux.cjs and cargo test --workspace --all-targets. Commit with message: docs: document visual stability and desktop fallback boundaries.
+- [ ] Step 5: Run node packages/navichrome/test-agent-ux.cjs and cargo test --workspace --all-targets. Commit with message: docs: document visual stability and desktop fallback boundaries.
 
 ### Task 10: Final branch review and handoff
 
@@ -208,7 +208,7 @@ Files:
 
 - [ ] Step 1: Confirm no seventh MCP tool, unrelated refactor, copied Taboom code, unbounded native command, or implicit user-window activation was introduced.
 - [ ] Step 2: Check every new refusal and unknown receipt for reason_code, retry_class, next_action, and correct dispatch uncertainty. Check that no-safe-existing-tab fallback remains compact and actionable.
-- [ ] Step 3: Run git diff --check, cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets, and node packages/chrome-controlla/test-agent-ux.cjs.
+- [ ] Step 3: Run git diff --check, cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets, and node packages/navichrome/test-agent-ux.cjs.
 - [ ] Step 4: Record exact commit, tests, benchmark runs, platform adapters, live browser status, and skipped checks. Do not call a platform or live workflow verified without observed evidence.
 - [ ] Step 5: Commit with message: chore: record Taboom-derived capability verification.
 

@@ -16,10 +16,10 @@ All implementation work for the current performance/web-writing continuation is 
 
 `git status` showed these seven modified tracked files before this handoff was added:
 
-- `crates/controlla-runtime/src/mcp/v3_full.rs`
-- `extensions/chrome-controlla/background.js`
-- `extensions/chrome-controlla/test-background.cjs`
-- `packages/chrome-controlla/plugin/skills/browser-control/references/advanced.md`
+- `crates/navichrome-runtime/src/mcp/v3_full.rs`
+- `extensions/navichrome/background.js`
+- `extensions/navichrome/test-background.cjs`
+- `packages/navichrome/plugin/skills/browser-control/references/advanced.md`
 - `docs/progress.md`
 - `docs/verification-matrix.md`
 - `docs/blockers.md`
@@ -35,12 +35,12 @@ The latest repo ledger records these passes:
 - `cargo test --workspace --locked --offline --quiet`
 - `cargo test -p controlla-runtime frame_editor_reference_binds_frame_loader_and_backend_node`
 - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`
-- `node --check extensions/chrome-controlla/background.js`
-- `node --test extensions/chrome-controlla/test-background.cjs`
+- `node --check extensions/navichrome/background.js`
+- `node --test extensions/navichrome/test-background.cjs`
 - `npm run check:docs` and `git diff --check`
 - `./scripts/package-build.sh` and `./scripts/package-check.sh` (darwin/arm64 package lifecycle)
 
-`cargo fmt --all -- --check` remains blocked by existing formatting differences in untouched `crates/controlla-runtime/tests/v2_stdio.rs` and `tests/v3_tasks.rs`; those files were not reformatted. These results are local evidence, not hosted CI or live app qualification. See the dated entries in `docs/progress.md`, `docs/verification-matrix.md`, and `docs/blockers.md`.
+`cargo fmt --all -- --check` remains blocked by existing formatting differences in untouched `crates/navichrome-runtime/tests/v2_stdio.rs` and `tests/v3_tasks.rs`; those files were not reformatted. These results are local evidence, not hosted CI or live app qualification. See the dated entries in `docs/progress.md`, `docs/verification-matrix.md`, and `docs/blockers.md`.
 
 ## Latest live Docs attempt
 

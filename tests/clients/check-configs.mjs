@@ -6,14 +6,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate, install } from '../../integrations/generate-config.mjs';
 
-const binary = '/opt/chrome-controlla/controlla';
-const state = '/var/lib/chrome-controlla';
+const binary = '/opt/navichrome/navichrome';
+const state = '/var/lib/navichrome';
 const clients = ['freebuff', 'opencode-v1', 'opencode-v2'];
 const generated = clients.map((client) => generate(client, binary, state));
 const entries = generated.map((config) => {
-  const entry = config.mcpServers?.['chrome-controlla'] ??
-    config.mcp?.['chrome-controlla'] ??
-    config.mcp?.servers?.['chrome-controlla'];
+  const entry = config.mcpServers?.['navichrome'] ??
+    config.mcp?.['navichrome'] ??
+    config.mcp?.servers?.['navichrome'];
   assert.ok(entry, 'config contains the named server');
   return entry;
 });
@@ -21,7 +21,7 @@ assert.deepEqual(entries[0], {
   command: binary,
   args: ['mcp'],
   env: {
-    CONTROLLA_STATE_DIR: path.join(state, 'freebuff'),
+    NAVICHROME_STATE_DIR: path.join(state, 'freebuff'),
   },
 });
 assert.deepEqual(entries[1], {
@@ -29,32 +29,32 @@ assert.deepEqual(entries[1], {
   command: [binary, 'mcp'],
   enabled: true,
   environment: {
-    CONTROLLA_STATE_DIR: path.join(state, 'opencode-v1'),
+    NAVICHROME_STATE_DIR: path.join(state, 'opencode-v1'),
   },
 });
 assert.deepEqual(entries[2], {
   type: 'local',
   command: [binary, 'mcp'],
   environment: {
-    CONTROLLA_STATE_DIR: path.join(state, 'opencode-v2'),
+    NAVICHROME_STATE_DIR: path.join(state, 'opencode-v2'),
   },
 });
-assert.equal(new Set(entries.map((entry) => entry.env?.CONTROLLA_STATE_DIR ?? entry.environment.CONTROLLA_STATE_DIR)).size, 3);
-assert.match(generate('claude', binary, state), /^claude mcp add .*--transport stdio --scope user chrome-controlla -- '\/opt\/chrome-controlla\/controlla' mcp/m);
-const quotedClaude = generate('claude', "/tmp/agent's $(touch nope)/controlla", "/tmp/state with spaces");
-assert.ok(quotedClaude.includes("'/tmp/agent'\"'\"'s $(touch nope)/controlla'"));
-assert.ok(quotedClaude.includes(`'CONTROLLA_STATE_DIR=${path.join('/tmp/state with spaces', 'claude')}'`));
-assert.throws(() => generate('chatgpt', binary, state), /packaged Chrome Controlla local plugin/);
-assert.throws(() => generate('freebuff', 'controlla', state), /absolute paths/);
+assert.equal(new Set(entries.map((entry) => entry.env?.NAVICHROME_STATE_DIR ?? entry.environment.NAVICHROME_STATE_DIR)).size, 3);
+assert.match(generate('claude', binary, state), /^claude mcp add .*--transport stdio --scope user navichrome -- '\/opt\/navichrome\/navichrome' mcp/m);
+const quotedClaude = generate('claude', "/tmp/agent's $(touch nope)/navichrome", "/tmp/state with spaces");
+assert.ok(quotedClaude.includes("'/tmp/agent'\"'\"'s $(touch nope)/navichrome'"));
+assert.ok(quotedClaude.includes(`'NAVICHROME_STATE_DIR=${path.join('/tmp/state with spaces', 'claude')}'`));
+assert.throws(() => generate('chatgpt', binary, state), /packaged NaviChrome local plugin/);
+assert.throws(() => generate('freebuff', 'navichrome', state), /absolute paths/);
 
-const pluginRoot = fileURLToPath(new URL('../../packages/chrome-controlla/plugin/', import.meta.url));
+const pluginRoot = fileURLToPath(new URL('../../packages/navichrome/plugin/', import.meta.url));
 const plugin = JSON.parse(await readFile(path.join(pluginRoot, 'plugin.json'), 'utf8'));
-assert.equal(plugin.name, 'chrome-controlla');
+assert.equal(plugin.name, 'navichrome');
 assert.equal(plugin.version, '0.1.0');
 const shortDescription = plugin.extensions?.['com.openai']?.interface?.shortDescription;
 assert.ok(typeof shortDescription === 'string' && shortDescription.length <= 30, 'plugin short description stays within listing limit');
 const mcp = JSON.parse(await readFile(path.join(pluginRoot, 'mcp.json'), 'utf8'));
-assert.deepEqual(mcp.mcpServers?.['chrome-controlla'], {
+assert.deepEqual(mcp.mcpServers?.['navichrome'], {
   type: 'stdio',
   command: 'node',
   args: ['${PLUGIN_ROOT}/launch.cjs'],
@@ -62,23 +62,23 @@ assert.deepEqual(mcp.mcpServers?.['chrome-controlla'], {
 });
 const launch = await readFile(path.join(pluginRoot, 'launch.cjs'), 'utf8');
 assert.match(launch, /spawn\(binary, \['mcp'\]/);
-assert.match(launch, /CONTROLLA_V2_BIN/);
-const packageBin = fileURLToPath(new URL('../../packages/chrome-controlla/bin/', import.meta.url));
+assert.match(launch, /NAVICHROME_V2_BIN/);
+const packageBin = fileURLToPath(new URL('../../packages/navichrome/bin/', import.meta.url));
 const [defaultLauncher, shellLauncher, windowsLauncher, clientLauncher] = await Promise.all([
-  readFile(path.join(packageBin, 'controlla.cjs'), 'utf8'),
-  readFile(path.join(packageBin, 'controlla'), 'utf8'),
-  readFile(path.join(packageBin, 'controlla.cmd'), 'utf8'),
-  readFile(path.join(packageBin, 'controlla-client.cjs'), 'utf8'),
+  readFile(path.join(packageBin, 'navichrome.cjs'), 'utf8'),
+  readFile(path.join(packageBin, 'navichrome'), 'utf8'),
+  readFile(path.join(packageBin, 'navichrome.cmd'), 'utf8'),
+  readFile(path.join(packageBin, 'navichrome-client.cjs'), 'utf8'),
 ]);
 assert.match(defaultLauncher, /spawnSync\(target, process\.argv\.slice\(2\)/);
-assert.match(shellLauncher, /if \[ "\$\{1-\}" = "mcp" \][\s\S]*controlla-v2-core/);
-assert.match(windowsLauncher, /"%~1".*"mcp"[\s\S]*controlla-v2-core\.exe/);
-assert.match(clientLauncher, /controlla-v2-core/);
+assert.match(shellLauncher, /if \[ "\$\{1-\}" = "mcp" \][\s\S]*navichrome-v2-core/);
+assert.match(windowsLauncher, /"%~1".*"mcp"[\s\S]*navichrome-v2-core\.exe/);
+assert.match(clientLauncher, /navichrome-v2-core/);
 const skill = await readFile(path.join(pluginRoot, 'skills/browser-control/SKILL.md'), 'utf8');
 assert.match(skill, /Never blind retry `unknown`/);
 assert.match(skill, /local_unrestricted/);
 
-const tempDir = await mkdtemp(path.join(os.tmpdir(), 'controlla-config-install-'));
+const tempDir = await mkdtemp(path.join(os.tmpdir(), 'navichrome-config-install-'));
 try {
   const configPath = path.join(tempDir, 'freebuff.json');
   await writeFile(configPath, JSON.stringify({ keep: { enabled: true }, mcpServers: { other: { command: 'safe' } } }, null, 2));
@@ -88,15 +88,15 @@ try {
   const installed = JSON.parse(installedText);
   assert.deepEqual(installed.keep, { enabled: true });
   assert.deepEqual(installed.mcpServers.other, { command: 'safe' });
-  assert.deepEqual(installed.mcpServers['chrome-controlla'], entries[0]);
+  assert.deepEqual(installed.mcpServers['navichrome'], entries[0]);
   assert.equal((await stat(configPath)).mode & 0o777, beforeMode);
   assert.deepEqual(await install('freebuff', configPath, binary, state), { installed: false, path: configPath });
   assert.equal(await readFile(configPath, 'utf8'), installedText, 'identical install is a no-op');
 
   const conflictPath = path.join(tempDir, 'conflict.json');
-  const conflictText = JSON.stringify({ mcpServers: { 'chrome-controlla': { command: '/different' } } });
+  const conflictText = JSON.stringify({ mcpServers: { 'navichrome': { command: '/different' } } });
   await writeFile(conflictPath, conflictText);
-  await assert.rejects(install('freebuff', conflictPath, binary, state), /different chrome-controlla entry/);
+  await assert.rejects(install('freebuff', conflictPath, binary, state), /different navichrome entry/);
   assert.equal(await readFile(conflictPath, 'utf8'), conflictText, 'conflicting entry remains untouched');
 
   const malformedPath = path.join(tempDir, 'malformed.json');
@@ -109,7 +109,7 @@ try {
   const generatorPath = fileURLToPath(new URL('../../integrations/generate-config.mjs', import.meta.url));
   const cliResult = execFileSync(process.execPath, [generatorPath, '--install', 'freebuff', cliConfigPath, binary, state], { encoding: 'utf8' });
   assert.match(cliResult, /"installed": true/);
-  assert.deepEqual(JSON.parse(await readFile(cliConfigPath, 'utf8')).mcpServers['chrome-controlla'], entries[0]);
+  assert.deepEqual(JSON.parse(await readFile(cliConfigPath, 'utf8')).mcpServers['navichrome'], entries[0]);
   for (const [client, configName, parentPath] of [
     ['opencode-v1', 'opencode-v1.json', ['mcp']],
     ['opencode-v2', 'opencode-v2.json', ['mcp', 'servers']],
@@ -120,7 +120,7 @@ try {
     const result = JSON.parse(await readFile(clientPath, 'utf8'));
     let parent = result;
     for (const key of parentPath) parent = parent[key];
-    assert.ok(parent['chrome-controlla'], `${client} installs at its version-specific config path`);
+    assert.ok(parent['navichrome'], `${client} installs at its version-specific config path`);
     assert.equal(result.existing, true, `${client} preserves unrelated settings`);
   }
 } finally {
@@ -144,9 +144,9 @@ assert.deepEqual(documentedJson('## OpenCode v1'), normalizePathSeparators(gener
 assert.deepEqual(documentedJson('## OpenCode v2'), normalizePathSeparators(generate('opencode-v2')));
 const claudeSection = docs.split('## Claude Code\n')[1]?.split('\n## ')[0] ?? '';
 assert.ok(claudeSection.includes(normalizePathSeparators(generate('claude')).split('\n')[0]), 'Claude command matches generator output');
-assert.match(docs, /ChatGPT Desktop uses the packaged Chrome Controlla local plugin/);
+assert.match(docs, /ChatGPT Desktop uses the packaged NaviChrome local plugin/);
 const chatgptDocs = await readFile(new URL('../../docs/integrations/chatgpt-desktop.md', import.meta.url), 'utf8');
 assert.match(chatgptDocs, /`browser`, `snapshot`, `act`, `workflow`, `extract`, and `verify`/);
-assert.match(chatgptDocs, /bin\/controlla mcp/);
+assert.match(chatgptDocs, /bin\/navichrome mcp/);
 assert.match(chatgptDocs, /live ChatGPT Desktop acceptance/i);
 console.log('Versioned client configs, safe JSON merge installation, and ChatGPT local plugin checks passed.');

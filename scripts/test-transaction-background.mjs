@@ -9,13 +9,13 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
-import { typeTextTransaction } from "../extensions/chrome-controlla/lib/input.js";
+import { typeTextTransaction } from "../extensions/navichrome/lib/input.js";
 
 let browser;
 before(async () => {
   browser = await chromium.launch({
     headless: true,
-    ...(process.env.CONTROLLA_CHROME ? { executablePath: process.env.CONTROLLA_CHROME } : { channel: "chrome" }),
+    ...(process.env.NAVICHROME_CHROME ? { executablePath: process.env.NAVICHROME_CHROME } : { channel: "chrome" }),
   });
 });
 after(async () => { await browser?.close(); });

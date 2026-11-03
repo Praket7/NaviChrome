@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>navichrome-dev-reload:loading</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Extension pages run under the manifest CSP (`script-src 'self'`), so the
+      behaviour must live in dev-reload.js. An inline <script> here is blocked
+      by Chrome and the reload silently never happens.
+    -->
+    <script src="dev-reload.js" type="module"></script>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #0b0d10; color: #e6e9ef;
+        font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 34rem; padding: 2rem; }
+      h1 { margin: 0 0 .35rem; font-size: 1.05rem; letter-spacing: -.01em; }
+      p { margin: .25rem 0; color: #9aa4b2; }
+      #status { color: #e6e9ef; font-weight: 600; }
+      #detail { margin-top: 1rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; color: #7d8797; }
+      button {
+        margin-top: 1rem; padding: .5rem .9rem; border-radius: .5rem; cursor: pointer;
+        border: 1px solid #2a3340; background: #151a21; color: #e6e9ef; font: inherit;
+      }
+      button:hover { background: #1b2230; }
+      button:disabled { opacity: .5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>NaviChrome extension reload</h1>
+      <p id="status" data-state="loading">Starting…</p>
+      <p>Reloading re-reads background.js and lib/* from disk. Sessions and paired tabs are released and must be rediscovered.</p>
+      <p id="detail"></p>
+      <button id="reload" type="button">Reload extension</button>
+    </main>
+  </body>
+</html>

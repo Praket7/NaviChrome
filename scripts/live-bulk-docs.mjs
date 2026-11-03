@@ -12,11 +12,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const BIN = process.env.CONTROLLA_BIN ?? resolve(here, "../target/release/controlla-v2");
-const STATE = process.env.CONTROLLA_STATE_DIR ?? "/tmp/controlla-live-bulk-state";
+const BIN = process.env.NAVICHROME_BIN ?? resolve(here, "../target/release/navichrome-v2");
+const STATE = process.env.NAVICHROME_STATE_DIR ?? "/tmp/navichrome-live-bulk-state";
 const SKIP_DOCS = process.env.SKIP_DOCS === "1";
 
-const child = spawn(BIN, ["mcp"], { env: { ...process.env, CONTROLLA_STATE_DIR: STATE }, stdio: ["pipe", "pipe", "pipe"] });
+const child = spawn(BIN, ["mcp"], { env: { ...process.env, NAVICHROME_STATE_DIR: STATE }, stdio: ["pipe", "pipe", "pipe"] });
 let stderr = "";
 child.stderr.on("data", chunk => { stderr += chunk.toString(); });
 let buffer = "";

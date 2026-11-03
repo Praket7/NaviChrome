@@ -23,8 +23,8 @@ export function validateClientSmoke(clientId, result, requiredCapabilities, expe
   if (!isAbsolute(result.evidence_path) || !/^[a-f0-9]{64}$/.test(result.evidence_sha256 ?? '')) {
     throw new Error(`${clientId} adapter must return an absolute evidence_path and SHA-256`);
   }
-  if (![result.client_version, result.controlla_version].every(value => typeof value === 'string' && value.trim())) {
-    throw new Error(`${clientId} adapter must report client_version and controlla_version`);
+  if (![result.client_version, result.navichrome_version].every(value => typeof value === 'string' && value.trim())) {
+    throw new Error(`${clientId} adapter must report client_version and navichrome_version`);
   }
   const reported = new Set(Array.isArray(result.verified_capabilities) ? result.verified_capabilities : []);
   const missing = requiredCapabilities.filter(capability => !reported.has(capability));
@@ -47,7 +47,7 @@ export function validateClientEvidence(clientId, result, evidence, requiredCapab
   if (expectedConfigHash && (result.integration_config_sha256 !== expectedConfigHash || evidence.integration_config_sha256 !== expectedConfigHash)) {
     throw new Error(`${clientId} evidence is not bound to the resolved integration config`);
   }
-  for (const field of ['client_version', 'controlla_version']) {
+  for (const field of ['client_version', 'navichrome_version']) {
     if (evidence[field] !== result[field]) throw new Error(`${clientId} evidence ${field} does not match adapter result`);
   }
   if (!Array.isArray(evidence.cases) || evidence.cases.length === 0) throw new Error(`${clientId} evidence must contain observed test cases`);

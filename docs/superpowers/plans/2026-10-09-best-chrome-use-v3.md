@@ -65,11 +65,11 @@ This ledger supersedes the initial unchecked template only where it cites curren
 ### Task 1: Browser Mode Abstraction for Foreground, Background, and Headless
 
 **Files:**
-- Create: `crates/controlla-browser/src/browser_mode.rs`
-- Modify: `crates/controlla-browser/src/providers.rs`
-- Modify: `crates/controlla-runtime/src/lib.rs`
-- Modify: `crates/controlla-runtime/src/mcp/v2_full.rs`
-- Test: `crates/controlla-runtime/tests/browser_modes.rs`
+- Create: `crates/navichrome-browser/src/browser_mode.rs`
+- Modify: `crates/navichrome-browser/src/providers.rs`
+- Modify: `crates/navichrome-runtime/src/lib.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v2_full.rs`
+- Test: `crates/navichrome-runtime/tests/browser_modes.rs`
 
 **Interfaces:**
 - Produces: `BrowserMode::{Foreground, Background, Headless}` and a single launch/attach contract that preserves target identity and verification across modes.
@@ -99,12 +99,12 @@ Commit message: `feat: add foreground background and headless browser modes`
 ### Task 2: In-Browser Low-Latency Execution Plane
 
 **Files:**
-- Modify: `extensions/chrome-controlla/background.js`
-- Modify: `crates/controlla-runtime/src/shared_page/guard.js`
-- Modify: `crates/controlla-runtime/src/shared_page/outcome.js`
-- Modify: `crates/controlla-runtime/src/browser_workflow.rs`
-- Test: `extensions/chrome-controlla/test-background.cjs`
-- Test: `crates/controlla-runtime/tests/v2_stdio.rs`
+- Modify: `extensions/navichrome/background.js`
+- Modify: `crates/navichrome-runtime/src/shared_page/guard.js`
+- Modify: `crates/navichrome-runtime/src/shared_page/outcome.js`
+- Modify: `crates/navichrome-runtime/src/browser_workflow.rs`
+- Test: `extensions/navichrome/test-background.cjs`
+- Test: `crates/navichrome-runtime/tests/v2_stdio.rs`
 
 **Interfaces:**
 - Produces: a bounded batch executor that can run multiple deterministic DOM/CDP-adjacent actions inside the browser bridge with one host round trip while rechecking authority/document identity at mutation boundaries.
@@ -132,11 +132,11 @@ Commit message: `feat: execute deterministic browser batches near the page`
 ### Task 3: Dual Typing Engine — Ultra-Fast Block and High-Rate Individual Keystrokes
 
 **Files:**
-- Modify: `crates/controlla-browser/src/input_strategy.rs`
-- Create: `crates/controlla-browser/src/typing.rs`
-- Modify: `crates/controlla-runtime/src/mcp/v2_full.rs`
-- Modify: `crates/controlla-runtime/src/browser_workflow.rs`
-- Test: `crates/controlla-runtime/tests/typing_modes.rs`
+- Modify: `crates/navichrome-browser/src/input_strategy.rs`
+- Create: `crates/navichrome-browser/src/typing.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v2_full.rs`
+- Modify: `crates/navichrome-runtime/src/browser_workflow.rs`
+- Test: `crates/navichrome-runtime/tests/typing_modes.rs`
 
 **Interfaces:**
 - Produces: `TypingMode::{Block, FastKeys, HumanKeys, Ime}` with explicit dispatch semantics.
@@ -168,12 +168,12 @@ Commit message: `feat: add block fast-key human-key and ime typing modes`
 ### Task 4: User-Change Resistance and Cooperative Concurrency
 
 **Files:**
-- Create: `crates/controlla-runtime/src/interaction_epoch.rs`
-- Modify: `crates/controlla-runtime/src/jobs.rs`
-- Modify: `crates/controlla-runtime/src/scheduler.rs`
-- Modify: `crates/controlla-runtime/src/semantic_state.rs`
-- Modify: `extensions/chrome-controlla/background.js`
-- Test: `crates/controlla-runtime/tests/user_interference.rs`
+- Create: `crates/navichrome-runtime/src/interaction_epoch.rs`
+- Modify: `crates/navichrome-runtime/src/jobs.rs`
+- Modify: `crates/navichrome-runtime/src/scheduler.rs`
+- Modify: `crates/navichrome-runtime/src/semantic_state.rs`
+- Modify: `extensions/navichrome/background.js`
+- Test: `crates/navichrome-runtime/tests/user_interference.rs`
 
 **Interfaces:**
 - Produces: monotonic interaction epochs for target, focus, selection, document, viewport, and semantic-state changes; mutations carry the epoch they were grounded against.
@@ -197,11 +197,11 @@ Commit message: `feat: resist live user and multi-client browser changes`
 ### Task 5: Session and Target Ownership for Multiple Agent Clients
 
 **Files:**
-- Create: `crates/controlla-runtime/src/client_sessions.rs`
-- Modify: `crates/controlla-runtime/src/mcp/v2.rs`
-- Modify: `crates/controlla-runtime/src/mcp/v2_full.rs`
-- Modify: `crates/controlla-runtime/src/shared_page_tests.rs`
-- Test: `crates/controlla-runtime/tests/multi_client.rs`
+- Create: `crates/navichrome-runtime/src/client_sessions.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v2.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v2_full.rs`
+- Modify: `crates/navichrome-runtime/src/shared_page_tests.rs`
+- Test: `crates/navichrome-runtime/tests/multi_client.rs`
 
 **Interfaces:**
 - Produces: client/session IDs, explicit target ownership, read sharing, and conflict-safe mutation leases.
@@ -225,10 +225,10 @@ Commit message: `feat: add conflict-safe multi-agent browser sessions`
 ### Task 6: Compact Universal Agent Surface
 
 **Files:**
-- Modify: `packages/chrome-controlla/plugin/skills/browser-control/SKILL.md`
-- Modify: `crates/controlla-runtime/src/mcp/v2_full.rs`
+- Modify: `packages/navichrome/plugin/skills/browser-control/SKILL.md`
+- Modify: `crates/navichrome-runtime/src/mcp/v2_full.rs`
 - Create: `docs/design/compact-agent-surface-v3.md`
-- Test: `crates/controlla-runtime/tests/v2_stdio.rs`
+- Test: `crates/navichrome-runtime/tests/v2_stdio.rs`
 
 **Interfaces:**
 - Produces exactly six default agent tools: `browser`, `snapshot`, `act`, `workflow`, `extract`, `verify`; advanced diagnostics are hidden behind capability negotiation or a secondary namespace.
@@ -286,10 +286,10 @@ Commit message: `feat: add freebuff opencode claude code and codex integrations`
 ### Task 8: Research, Assignment, and Work Automation Primitives
 
 **Files:**
-- Create: `crates/controlla-runtime/src/task_primitives.rs`
-- Modify: `crates/controlla-runtime/src/capability_router.rs`
-- Modify: `crates/controlla-runtime/src/browser_workflow.rs`
-- Test: `crates/controlla-runtime/tests/task_primitives.rs`
+- Create: `crates/navichrome-runtime/src/task_primitives.rs`
+- Modify: `crates/navichrome-runtime/src/capability_router.rs`
+- Modify: `crates/navichrome-runtime/src/browser_workflow.rs`
+- Test: `crates/navichrome-runtime/tests/task_primitives.rs`
 
 **Interfaces:**
 - Produces bounded primitives for multi-page research, table/list extraction, citation URL capture, form completion, file download/upload, repeated item workflows, and save-without-submit behavior.
@@ -313,10 +313,10 @@ Commit message: `feat: add research and productivity workflow primitives`
 ### Task 9: Native Page Tools / WebMCP Route
 
 **Files:**
-- Create: `crates/controlla-browser/src/page_tools.rs`
-- Modify: `crates/controlla-runtime/src/capability_router.rs`
-- Modify: `crates/controlla-runtime/src/mcp/v2_full.rs`
-- Test: `crates/controlla-runtime/tests/page_tools.rs`
+- Create: `crates/navichrome-browser/src/page_tools.rs`
+- Modify: `crates/navichrome-runtime/src/capability_router.rs`
+- Modify: `crates/navichrome-runtime/src/mcp/v2_full.rs`
+- Test: `crates/navichrome-runtime/tests/page_tools.rs`
 
 **Interfaces:**
 - Produces discovery/invocation of page-exposed structured tools when Chrome exposes them, ahead of UI driving in the capability hierarchy.
@@ -336,9 +336,9 @@ Commit message: `feat: prefer structured page tools before ui automation`
 ### Task 10: Headless/Background Reliability Hardening
 
 **Files:**
-- Create: `crates/controlla-runtime/tests/headless_stress.rs`
-- Modify: `crates/controlla-browser/src/providers.rs`
-- Modify: `crates/controlla-runtime/src/runtime_observer.rs`
+- Create: `crates/navichrome-runtime/tests/headless_stress.rs`
+- Modify: `crates/navichrome-browser/src/providers.rs`
+- Modify: `crates/navichrome-runtime/src/runtime_observer.rs`
 - Modify: `.github/workflows/ci.yml`
 
 **Interfaces:**

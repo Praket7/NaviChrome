@@ -73,6 +73,11 @@ function sanitizePromptTrace(value) {
     'prompt_to_tool_result_delivered_ms', 'prompt_to_final_ms']) {
     if (Number.isFinite(value[key]) && value[key] >= 0) output[key] = value[key];
   }
+  // Phase 11 report keys are frozen; current NaviChrome traces use the new
+  // name but must map to the same historical measurement, not disappear.
+  if (output.prompt_to_controlla_received_ms === undefined && Number.isFinite(value.prompt_to_navichrome_received_ms) && value.prompt_to_navichrome_received_ms >= 0) {
+    output.prompt_to_controlla_received_ms = value.prompt_to_navichrome_received_ms;
+  }
   if (value.counters && typeof value.counters === 'object' && !Array.isArray(value.counters)) {
     const counters = {};
     if (typeof value.counters.partial_counters === 'boolean') counters.partial_counters = value.counters.partial_counters;
@@ -403,7 +408,7 @@ async function runOne({ adapter, command, task, mode, executionMode, concurrency
       prompt_sent_observed: promptTrace.prompt_sent_observed === true,
       final_answer_observed: promptTrace.final_answer_observed === true,
       first_tool_decision_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_first_tool_decision_ms) ? promptTrace.prompt_to_first_tool_decision_ms : null,
-      controlla_received_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_controlla_received_ms) ? promptTrace.prompt_to_controlla_received_ms : null,
+      controlla_received_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_controlla_received_ms ?? promptTrace.prompt_to_navichrome_received_ms) ? (promptTrace.prompt_to_controlla_received_ms ?? promptTrace.prompt_to_navichrome_received_ms) : null,
       first_browser_op_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_first_browser_op_ms) ? promptTrace.prompt_to_first_browser_op_ms : null,
       last_browser_op_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_last_browser_op_ms) ? promptTrace.prompt_to_last_browser_op_ms : null,
       tool_result_delivered_ms: exactPromptTrace && Number.isFinite(promptTrace.prompt_to_tool_result_delivered_ms)

@@ -15,7 +15,7 @@ const requiredFiles = [
   'bench/runners/phase11-suite.mjs',
   'apps/qualification-matrix.json',
   'docs/design/best-chrome-use-v2.md',
-  'crates/controlla-runtime/tests/best_chrome_use_faults.rs'
+  'crates/navichrome-runtime/tests/best_chrome_use_faults.rs'
 ];
 for (const path of requiredFiles) await access(new URL(path, root));
 

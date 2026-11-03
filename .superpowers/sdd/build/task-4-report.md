@@ -6,7 +6,7 @@ Partial implementation; Phase 4 acceptance is **not complete**. This commit prov
 
 ## Changes
 
-- Added `crates/controlla-browser/src/input.rs` with typed semantic locator/action/snapshot/decision/invalidation/evidence records.
+- Added `crates/navichrome-browser/src/input.rs` with typed semantic locator/action/snapshot/decision/invalidation/evidence records.
 - `validate_step` fails closed on navigation/account/document revision or dependency snapshot differences; strict-background plus a declared native requirement returns `NeedsForeground`.
 - `perform_input` validates immediately before calling an injected action callback. It is a fixture seam, not a CDP dispatch function.
 - `on_external_change` records an explicit invalidation key. `measure_check_dispatch_race` times an arbitrary closure only; it is not a measured real browser race.

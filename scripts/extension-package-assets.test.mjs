@@ -33,12 +33,12 @@ test('extension release asset validation rejects omitted files matched by wildca
 });
 
 test('current Chrome extension build hash assets cover every manifest resource', async () => {
-  const manifest = JSON.parse(await readFile(resolve(root, 'extensions/chrome-controlla/manifest.json'), 'utf8'));
-  const background = await readFile(resolve(root, 'extensions/chrome-controlla/background.js'), 'utf8');
-  const declaration = background.match(/const CONTROLLA_EXTENSION_BUILD_ASSETS = (\[[\s\S]*?\]);/);
+  const manifest = JSON.parse(await readFile(resolve(root, 'extensions/navichrome/manifest.json'), 'utf8'));
+  const background = await readFile(resolve(root, 'extensions/navichrome/background.js'), 'utf8');
+  const declaration = background.match(/const NAVICHROME_EXTENSION_BUILD_ASSETS = (\[[\s\S]*?\]);/);
   assert.ok(declaration, 'background must declare its build hash assets');
   const files = resolveExtensionPackageAssets(manifest, JSON.parse(declaration[1]));
-  for (const asset of files) await readFile(resolve(root, 'extensions/chrome-controlla', asset));
+  for (const asset of files) await readFile(resolve(root, 'extensions/navichrome', asset));
 });
 
 test('release check runs the extension package asset contract', async () => {

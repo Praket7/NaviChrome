@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const target = path.join(root, 'packages/chrome-controlla/dist');
+const target = path.join(root, 'packages/navichrome/dist');
 const osNames = { darwin: 'darwin', linux: 'linux', win32: 'win32' };
 const cpuNames = { x64: 'x64', arm64: 'arm64' };
 const os = osNames[process.platform];
@@ -18,19 +18,19 @@ const rustCpu = host.startsWith('aarch64-') ? 'arm64' : host.startsWith('x86_64-
 const rustOs = host.includes('apple-darwin') ? 'darwin' : host.includes('windows') ? 'win32' : host.includes('linux') ? 'linux' : '';
 if (os !== rustOs || cpu !== rustCpu) throw new Error(`Node ${os}/${cpu} and Rust host ${host} differ; refusing to mislabel native binary`);
 
-const core = path.join(root, 'packages/chrome-controlla/bin', os === 'win32' ? 'controlla-core.exe' : 'controlla-core');
-const v2Core = path.join(root, 'packages/chrome-controlla/bin', os === 'win32' ? 'controlla-v2-core.exe' : 'controlla-v2-core');
+const core = path.join(root, 'packages/navichrome/bin', os === 'win32' ? 'navichrome-core.exe' : 'navichrome-core');
+const v2Core = path.join(root, 'packages/navichrome/bin', os === 'win32' ? 'navichrome-v2-core.exe' : 'navichrome-v2-core');
 await rm(target, { recursive: true, force: true });
 await mkdir(path.join(target, 'bin'), { recursive: true });
-const manifest = JSON.parse(await readFile(path.join(root, 'packages/chrome-controlla/package.json'), 'utf8'));
+const manifest = JSON.parse(await readFile(path.join(root, 'packages/navichrome/package.json'), 'utf8'));
 manifest.os = [os];
 manifest.cpu = [cpu];
 await writeFile(path.join(target, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-for (const file of ['controlla.cjs', 'controlla-client.cjs', 'controlla', 'controlla.cmd']) {
-  await cp(path.join(root, 'packages/chrome-controlla/bin', file), path.join(target, 'bin', file));
+for (const file of ['navichrome.cjs', 'navichrome-client.cjs', 'navichrome', 'navichrome.cmd']) {
+  await cp(path.join(root, 'packages/navichrome/bin', file), path.join(target, 'bin', file));
 }
 await cp(core, path.join(target, 'bin', path.basename(core)));
 await cp(v2Core, path.join(target, 'bin', path.basename(v2Core)));
-await cp(path.join(root, 'packages/chrome-controlla/plugin'), path.join(target, 'plugin'), { recursive: true });
+await cp(path.join(root, 'packages/navichrome/plugin'), path.join(target, 'plugin'), { recursive: true });
 await cp(path.join(root, 'LICENSE'), path.join(target, 'LICENSE'));
 await cp(path.join(root, 'NOTICE'), path.join(target, 'NOTICE'));

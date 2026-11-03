@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Chrome Controlla local doctor configuration",
+  "title": "NaviChrome local doctor configuration",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "service_pid", "loopback_addr", "bearer_token", "principal_id", "heartbeat_unix_seconds", "heartbeat_max_age_seconds", "policy_revision"],

@@ -41,7 +41,7 @@ The article candidates had real `href` values, but the listing had no structured
 
 ### P0 — Natural-language query is a hard literal filter
 
-In [`snapshot.js`](../../crates/controlla-runtime/src/shared_page/snapshot.js#L169), `queryScore` only gives a match when the normalized candidate label/value equals or contains the entire normalized `goal.query`; line 176 discards nonmatches. This contradicts the public schema's description of `query` as task intent used to rank returned page content and the runtime instruction to use a visible query. A task-intent query with extra words can exclude every target before ranking.
+In [`snapshot.js`](../../crates/navichrome-runtime/src/shared_page/snapshot.js#L169), `queryScore` only gives a match when the normalized candidate label/value equals or contains the entire normalized `goal.query`; line 176 discards nonmatches. This contradicts the public schema's description of `query` as task intent used to rank returned page content and the runtime instruction to use a visible query. A task-intent query with extra words can exclude every target before ranking.
 
 **Concrete case:** `Bills` returned two story candidates; `Buffalo Bills story headlines with publication dates` returned none.
 **Consequence:** no target reference or `href` reaches workflow selection, so there is no click.
@@ -89,7 +89,7 @@ The initial audit ran at the listed base revision before the follow-up fixes. Fo
 | `npm run check:clients` | PASS, 12 tests |
 | `npm run check:docs`, `check:provenance`, `check:apps`, `check:bench`, `check:release`, `check:v3`, `check:agent-ux` | PASS; release check explicitly keeps the superiority claim disabled without Phase 11 measurements |
 | Extension background test, repeated 8 times | PASS, 8/8 |
-| `node extensions/chrome-controlla/test-background.cjs --reconnect-only` | PASS |
+| `node extensions/navichrome/test-background.cjs --reconnect-only` | PASS |
 | `./scripts/check-dependencies.sh && ./scripts/package-check.sh` | PASS; clean-prefix packed npm install, stdio startup, six-tool discovery, rollback/uninstall checks succeeded for darwin/arm64 |
 
 The headless Chrome runs printed macOS `CVDisplayLinkCreateWithCGDisplay` / GPU mailbox diagnostics but completed successfully. These did not indicate test failure or open a GUI prompt.

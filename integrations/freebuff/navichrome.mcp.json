@@ -1,0 +1,18 @@
+{
+  "name": "navichrome",
+  "transport": "stdio",
+  "command": "/absolute/path/to/navichrome",
+  "args": ["mcp"],
+  "env": {
+    "NAVICHROME_STATE_DIR": "/absolute/path/to/navichrome-state",
+    "NAVICHROME_AGENT_SURFACE": "v3-compact"
+  },
+  "session": {
+    "lifetime": "client",
+    "reuseProcess": true
+  },
+  "safety": {
+    "explicitTargetAuthority": true,
+    "unknownMutationRetry": false
+  }
+}

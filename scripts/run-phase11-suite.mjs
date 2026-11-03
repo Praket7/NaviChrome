@@ -92,12 +92,12 @@ async function main() {
       });
       fixture.once('error', reject);
     });
-    const binary = process.env.PHASE11_CONTROLLA_BINARY ?? resolve(root, 'target/release/controlla-v2');
+    const binary = process.env.PHASE11_CONTROLLA_BINARY ?? resolve(root, 'target/release/navichrome-v2');
     const chrome = process.env.PHASE11_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     const codex = process.env.PHASE11_CODEX_PATH ?? '/Users/pcg/.local/bin/codex';
     const sha = async path => createHash('sha256').update(await readFile(path)).digest('hex');
     const [runtimeHash, extensionHash] = await Promise.all([
-      sha(binary), hashDirectory(resolve(root, 'extensions/chrome-controlla')),
+      sha(binary), hashDirectory(resolve(root, 'extensions/controlla')),
     ]);
     verifyAdapterVersions(clientVersions, runtimeHash);
     let playwrightCliHash = null;

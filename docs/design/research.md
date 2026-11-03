@@ -1,4 +1,4 @@
-# Chrome Controlla: research and proposed architecture
+# NaviChrome: research and proposed architecture
 
 Research date: 2026-10-06. Status: research and design, not an implemented product or measured performance result.
 
@@ -6,11 +6,11 @@ Research date: 2026-10-06. Status: research and design, not an implemented produ
 
 These sources were refreshed during v3 implementation with Exa and checked against their current first-party pages. They inform implementation choices; they are not comparative performance evidence.
 
-- [Stagehand v4 reference](https://docs.stagehand.dev/v4/reference/stagehand) documents an experimental service-worker batch callback that avoids an SDK-to-browser round trip per operation. Its timeout prevents later work from starting, but an in-flight operation may still finish. Controlla should keep its bounded executor near the extension, reauthorize each mutation, stop before subsequent dispatch on deadline, and report uncertain in-flight effects as `unknown`; a batch is not atomic.
-- [Browser Use MCP guide](https://github.com/webllm/browser-use/blob/main/docs/MCP_SERVER.md) documents a minimal coding-agent profile with two tools, an in-process command runner, serialized access to persistent state, and bounded output. This supports keeping Controlla's default schema compact while preserving one explicit command surface and strict authorization. It does not imply that serialization alone resolves human or external-client interference.
-- [Vercel agent-browser](https://github.com/vercel-labs/agent-browser) is a strong CLI-first baseline. Its current repository describes a native Rust CLI and recommends installing a pinned Chrome for Testing runtime. Controlla's comparisons should include CLI-plus-skill usage rather than comparing MCP tool counts alone.
-- [Chrome's WebMCP overview](https://developer.chrome.com/docs/ai/webmcp) (updated 2026-10-07) describes WebMCP as a proposed standard and a progressive enhancement for page-declared tools. The [imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api) documents JSON-schema input and optional annotations such as read-only and untrusted-content hints. Page declarations remain page-controlled input: rediscover/revalidate schemas, keep page-tool authority explicit, and retain UI fallback. The current docs do not qualify Controlla's real-browser execution or cancellation behavior.
-- [Emergence WebVoyager](https://arxiv.org/html/2603.29020v1) reports that clearer task instantiation, failure handling, annotation, and reporting materially changed a previously reported Operator success rate in its audit. For Controlla's competitor harness, preserve raw failed attempts, use fixed task instantiations and independent verification, publish environment/version manifests, and count failures in latency/cost summaries; do not infer leadership from selected successful runs.
+- [Stagehand v4 reference](https://docs.stagehand.dev/v4/reference/stagehand) documents an experimental service-worker batch callback that avoids an SDK-to-browser round trip per operation. Its timeout prevents later work from starting, but an in-flight operation may still finish. NaviChrome should keep its bounded executor near the extension, reauthorize each mutation, stop before subsequent dispatch on deadline, and report uncertain in-flight effects as `unknown`; a batch is not atomic.
+- [Browser Use MCP guide](https://github.com/webllm/browser-use/blob/main/docs/MCP_SERVER.md) documents a minimal coding-agent profile with two tools, an in-process command runner, serialized access to persistent state, and bounded output. This supports keeping NaviChrome's default schema compact while preserving one explicit command surface and strict authorization. It does not imply that serialization alone resolves human or external-client interference.
+- [Vercel agent-browser](https://github.com/vercel-labs/agent-browser) is a strong CLI-first baseline. Its current repository describes a native Rust CLI and recommends installing a pinned Chrome for Testing runtime. NaviChrome's comparisons should include CLI-plus-skill usage rather than comparing MCP tool counts alone.
+- [Chrome's WebMCP overview](https://developer.chrome.com/docs/ai/webmcp) (updated 2026-10-07) describes WebMCP as a proposed standard and a progressive enhancement for page-declared tools. The [imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api) documents JSON-schema input and optional annotations such as read-only and untrusted-content hints. Page declarations remain page-controlled input: rediscover/revalidate schemas, keep page-tool authority explicit, and retain UI fallback. The current docs do not qualify NaviChrome's real-browser execution or cancellation behavior.
+- [Emergence WebVoyager](https://arxiv.org/html/2603.29020v1) reports that clearer task instantiation, failure handling, annotation, and reporting materially changed a previously reported Operator success rate in its audit. For NaviChrome's competitor harness, preserve raw failed attempts, use fixed task instantiations and independent verification, publish environment/version manifests, and count failures in latency/cost summaries; do not infer leadership from selected successful runs.
 
 The refreshed material strengthens the implementation and evaluation requirements above. No competitor run, real-client smoke, or universal superiority result was produced by this research refresh.
 
@@ -75,7 +75,7 @@ Do not delete the other tester’s scratch helpers or close their tabs as part o
 
 ## 4. Competitive landscape and closest prior art
 
-| System | Relevant documented capability | What Chrome Controlla must demonstrate beyond it |
+| System | Relevant documented capability | What NaviChrome must demonstrate beyond it |
 |---|---|---|
 | [Playwright MCP](https://github.com/microsoft/playwright-mcp) | Accessibility snapshots, persistent/isolated browser modes, extension connection, script execution; README discusses CLI token efficiency | Better verified task economics, not merely fewer exposed tools |
 | [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Puppeteer-based automation, performance/network debugging, slim mode, CLI | Better general task completion and recovery while retaining useful debugging |
@@ -99,7 +99,7 @@ Do not publish a performance ranking from documentation. Product internals, vers
 5. **Learning task structure has closer prior art than a simple macro recorder.** Full-text review of [Inducing Task Models from Computer-Use Traces](https://arxiv.org/abs/2608.20319) found explicit goal and procedure models for interleaved activity. Adopt typed control flow and provenance; avoid copying its benchmark claims into this product.
 6. **RL depends on trustworthy tasks and rewards.** Full-text review of [SCALECUA](https://arxiv.org/abs/2607.11185) supports verifiable task generation and selecting tasks near the learning frontier. Its desktop benchmarks and training results are not browser-MCP performance measurements. Start with a small scheduler policy; foundation-model RL is a separate costly program.
 7. **Verifiers are a first-class subsystem.** [The Art of Building Verifiers for Computer Use Agents](https://arxiv.org/abs/2604.06240), reviewed in full text, separates process and outcome evidence and emphasizes rubric quality and trajectory coverage. Use independent state checks where possible; score visual aesthetics separately. Do not claim a perfect verifier.
-8. **Code execution and progressive tool discovery are established.** [Anthropic’s MCP engineering article](https://www.anthropic.com/engineering/code-execution-with-mcp) describes reducing schema and intermediate-result overhead. Its illustrative savings are not a Chrome Controlla target or expected result.
+8. **Code execution and progressive tool discovery are established.** [Anthropic’s MCP engineering article](https://www.anthropic.com/engineering/code-execution-with-mcp) describes reducing schema and intermediate-result overhead. Its illustrative savings are not a NaviChrome target or expected result.
 
 Additional discovery leads, not relied on for detailed performance claims: [TGPO](https://arxiv.org/abs/2509.14172), [Qwen-AgentWorld](https://www.alphaxiv.org/abs/2606.24597), [Probe to Act](https://www.alphaxiv.org/abs/2609.33646), and [CUA-Sandbox](https://www.alphaxiv.org/abs/2609.32750). Inspect code, licenses, compute, and actual task overlap before adopting them. Literature indexing includes preprints; “found in SciSpace” does not mean peer reviewed.
 
@@ -132,7 +132,7 @@ The intermediate representation is a directed graph containing `observe`, `read`
 7. Collect actual outcomes. Commit a durable receipt for completed steps; checkpoint before crossing the next effect boundary.
 8. On unexpected state, return the minimal useful diff and remaining graph. Do not replay completed external effects.
 
-This is **not an ACID browser transaction**. JavaScript tasks, browser input, page event handlers, remote servers, and human collaborators can interleave. A tab lease coordinates Chrome Controlla workers, not the person, website, or every other program. Native server revision checks provide stronger protection where available.
+This is **not an ACID browser transaction**. JavaScript tasks, browser input, page event handlers, remote servers, and human collaborators can interleave. A tab lease coordinates NaviChrome workers, not the person, website, or every other program. Native server revision checks provide stronger protection where available.
 
 ### Joint optimization
 

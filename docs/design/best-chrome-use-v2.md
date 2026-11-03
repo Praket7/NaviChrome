@@ -2,7 +2,7 @@
 
 ## Goal
 
-Controlla is designed as a verified execution engine for AI-driven Chrome work. The priority is not to maximize raw action count. The priority is to complete browser work with low model overhead while preserving target identity, authority, stale-reference rejection, bounded recovery, and independent verification.
+NaviChrome is designed as a verified execution engine for AI-driven Chrome work. The priority is not to maximize raw action count. The priority is to complete browser work with low model overhead while preserving target identity, authority, stale-reference rejection, bounded recovery, and independent verification.
 
 ## Capability hierarchy
 
@@ -31,7 +31,7 @@ The v2 workflow contract is bounded to twenty steps and supports navigation, fin
 
 ## Reusable skills
 
-A reusable skill starts as a candidate and can become qualified only after distinct successful training and validation runs plus trusted runtime verification. Qualified replays use zero Controlla internal model calls. Exact site scope and structural signatures are preconditions. Structural drift, severe safety failures, expiry, or a failed rolling verification window quarantine or expire the skill instead of replaying it blindly.
+A reusable skill starts as a candidate and can become qualified only after distinct successful training and validation runs plus trusted runtime verification. Qualified replays use zero NaviChrome internal model calls. Exact site scope and structural signatures are preconditions. Structural drift, severe safety failures, expiry, or a failed rolling verification window quarantine or expire the skill instead of replaying it blindly.
 
 ## Visual fallback
 
@@ -47,7 +47,7 @@ Caller-provided evidence is not independent verification. Mutating workflows req
 
 ## ChatGPT Desktop
 
-The packaged local plugin starts the compact `controlla-v2` stdio server from the plugin package. Browser access still requires the native bridge and explicit shared-tab pairing. Installation or tool discovery does not grant every tab and does not prove browser reachability.
+The packaged local plugin starts the compact `navichrome-v2` stdio server from the plugin package. Browser access still requires the native bridge and explicit shared-tab pairing. Installation or tool discovery does not grant every tab and does not prove browser reachability.
 
 ## Qualification
 

@@ -2,7 +2,7 @@
 
 ## 2026-10-06 — Phase 0
 
-- Create a separate workspace with one member, `controlla-browser`, extracted from `Praket7/Comptrol` at `38a9d7eae0808a04b66e57d8658167c7667b4935`. The upstream checkout was clean and its remote was `https://github.com/Praket7/Comptrol.git`.
+- Create a separate workspace with one member, `navichrome-browser`, extracted from `Praket7/Comptrol` at `38a9d7eae0808a04b66e57d8658167c7667b4935`. The upstream checkout was clean and its remote was `https://github.com/Praket7/Comptrol.git`.
 - Retain the browser crate's four Rust source files and inline tests. Do not copy the monolithic core, platform automation crates, adapters, release assets, profiles, or credentials.
 - Pin the implementation baseline to Rust 1.99.0, Node.js 24.19.0, npm 11.17.0, Playwright 1.63.0, Rust MCP SDK `rmcp` 3.5.1, MCP protocol `2026-07-28` (with `2025-11-25` compatibility), and Chrome for Testing 154.0.8037.92. Rust 1.99.0 is the installed compiler; Node/npm are the installed tooling; Playwright is the reference browser runner; `rmcp` is the official Rust SDK and its docs state compatibility with these protocol revisions; CfT 154.0.8037.92 is the Stable last-known-good browser build. Rust/direct browser-crate dependencies and Node/Playwright have lockfiles. The MCP SDK/protocol and CfT pins are selected references for later phases; they have not been integrated or client qualified.
 - Planned target OS: macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64. Phase 0 CI exercises hosted macOS/Linux/Windows runners; this is a build matrix only, not live browser or OS-interference qualification.
@@ -10,4 +10,4 @@
 - Carry upstream Apache-2.0 LICENSE and NOTICE. Exact imported source files are unmodified; package metadata is adapted for this workspace and the extraction manifest records origin and digests.
 - The extracted crate is a starting point, not an approved product architecture. Its Chrome profile discovery and native messaging behavior need review against the strict session and ownership contract before product use.
 - Keep `research.md`, `improvements.md`, and `build.md` in `docs/design/`; the draft `MASTER_GUIDE.md` is at `docs/MASTER_GUIDE.md`. These are design inputs, not operational documentation.
-- GitHub publication target: owner `Praket7`, repository `chrome-controlla`, private visibility by default. This follows the explicitly authorized separate-repository request and the inspected upstream owner; repository creation/publication remains pending and must not be confused with the local Phase 0 repository.
+- GitHub publication target: owner `Praket7`, repository `navichrome`, private visibility by default. This follows the explicitly authorized separate-repository request and the inspected upstream owner; repository creation/publication remains pending and must not be confused with the local Phase 0 repository.

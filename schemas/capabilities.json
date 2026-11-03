@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Chrome Controlla capability decision",
+  "title": "NaviChrome capability decision",
   "type": "object",
   "required": ["action", "supported", "configured", "reachable", "authorized", "qualified", "reason", "policy_revision", "capability_revision", "provider_source"],
   "properties": {

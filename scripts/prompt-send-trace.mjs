@@ -2,7 +2,7 @@ import { mkdir, readFile, appendFile, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 export const PROMPT_TRACE_EVENTS = Object.freeze([
-  'prompt_sent', 'prompt_input_written', 'first_tool_decision', 'client_tool_decision', 'controlla_received', 'browser_operation',
+  'prompt_sent', 'prompt_input_written', 'first_tool_decision', 'client_tool_decision', 'navichrome_received', 'browser_operation',
   'verified_outcome', 'schema_delivered', 'tool_result_delivered', 'final_answer', 'model_turn',
   'model_visible_observation', 'process_start', 'process_end',
 ]);
@@ -34,7 +34,7 @@ export async function recordPromptTraceEvent(path, traceId, event, fields = {}, 
     monotonic_ns: monotonicNs.toString(),
     boundary: event,
     provenance: typeof fields.provenance === 'string' ? fields.provenance.slice(0, 80) : 'client_adapter_hook',
-    build_id: typeof fields.build_id === 'string' ? fields.build_id.slice(0, 128) : process.env.CONTROLLA_BUILD_ID ?? 'unknown',
+    build_id: typeof fields.build_id === 'string' ? fields.build_id.slice(0, 128) : process.env.NAVICHROME_BUILD_ID ?? 'unknown',
     event,
     ...safeFields,
   };
@@ -129,7 +129,7 @@ export function summarizePromptTrace(events) {
   const lastBrowser = eventTimes.get('browser_operation');
   const callEvents = new Map();
   for (const event of events) {
-    if (!['controlla_received', 'browser_operation', 'tool_result_delivered'].includes(event.event)
+    if (!['navichrome_received', 'browser_operation', 'tool_result_delivered'].includes(event.event)
       || typeof event.call_id !== 'string') continue;
     const call = callEvents.get(event.call_id) ?? {};
     const time = BigInt(event.monotonic_ns);
@@ -148,7 +148,7 @@ export function summarizePromptTrace(events) {
     const promptDecision = [first('prompt_sent'), first('first_tool_decision')].filter(time => time !== undefined);
     if (promptDecision.some((time, index) => index > 0 && time < promptDecision[index - 1])) traceValid = false;
     for (const call of callEvents.values()) {
-      const ordered = [call.controlla_received, call.browser, call.tool_result_delivered].filter(time => time !== undefined);
+      const ordered = [call.navichrome_received, call.browser, call.tool_result_delivered].filter(time => time !== undefined);
       if (ordered.some((time, index) => index > 0 && time < ordered[index - 1])) traceValid = false;
       if (prompt !== undefined && ordered.some(time => time < prompt)) traceValid = false;
     }
@@ -157,7 +157,7 @@ export function summarizePromptTrace(events) {
     if (lastResult !== undefined && first('final_answer') !== undefined && first('final_answer') < lastResult) traceValid = false;
   } else {
     const orderedPipeline = [
-      first('prompt_sent'), first('first_tool_decision'), first('controlla_received'),
+      first('prompt_sent'), first('first_tool_decision'), first('navichrome_received'),
       lastBrowser?.[0], first('tool_result_delivered'), first('final_answer'),
     ].filter(time => time !== undefined);
     if (orderedPipeline.some((time, index) => index > 0 && time < orderedPipeline[index - 1])) traceValid = false;
@@ -184,12 +184,12 @@ export function summarizePromptTrace(events) {
     }
     return keyed.size + unkeyed;
   };
-  const externalCalls = distinctCalls('controlla_received');
+  const externalCalls = distinctCalls('navichrome_received');
   const modelTurns = events.filter(event => event.event === 'model_turn').length;
   const observations = events.filter(event => event.event === 'model_visible_observation').length;
   const clientToolDecisions = events.filter(event => event.event === 'client_tool_decision'
     && typeof event.tool === 'string' && typeof event.client_call_id === 'string');
-  const mcpToolCalls = events.filter(event => event.event === 'controlla_received'
+  const mcpToolCalls = events.filter(event => event.event === 'navichrome_received'
     && typeof event.tool === 'string' && typeof event.call_id === 'string');
   const callCorrelations = [];
   const correlatedClientIds = new Set();
@@ -255,12 +255,12 @@ export function summarizePromptTrace(events) {
     if (value === null && (required || reportedMissing || conflictingOrIncomplete)) missingCounters.push(name);
   }
   if (browserCommands === null && browserCommandEvents.some(event => Object.hasOwn(event, 'cdp_commands'))) missingCounters.push('cdp_commands');
-  const receivedInputBytes = perCallCounter(events.filter(event => event.event === 'controlla_received'), 'tool_input_bytes');
+  const receivedInputBytes = perCallCounter(events.filter(event => event.event === 'navichrome_received'), 'tool_input_bytes');
   if (receivedInputBytes === null && externalCalls > 0) missingCounters.push('tool_input_bytes');
   const normalizedMissingCounters = [...new Set(missingCounters)].sort();
   const partialCounters = events.some(event => event.partial_counters === true) || normalizedMissingCounters.length > 0;
   const promptToFirstToolDecisionMs = elapsed('first_tool_decision');
-  const promptToControllaReceivedMs = elapsed('controlla_received');
+  const promptToNaviChromeReceivedMs = elapsed('navichrome_received');
   const promptToFirstBrowserOpMs = elapsed('first_browser_op');
   const promptToLastBrowserOpMs = elapsed('last_browser_op');
   const promptToVerifiedMs = elapsed('verified_outcome');
@@ -285,7 +285,7 @@ export function summarizePromptTrace(events) {
     clock_offset_ms: Number.isFinite(promptEvent?.clock_offset_ms) ? promptEvent.clock_offset_ms : null,
     clock_uncertainty_ms: Number.isFinite(promptEvent?.clock_uncertainty_ms) ? promptEvent.clock_uncertainty_ms : null,
     prompt_to_first_tool_decision_ms: promptToFirstToolDecisionMs,
-    prompt_to_controlla_received_ms: promptToControllaReceivedMs,
+    prompt_to_navichrome_received_ms: promptToNaviChromeReceivedMs,
     prompt_to_first_browser_op_ms: promptToFirstBrowserOpMs,
     prompt_to_last_browser_op_ms: promptToLastBrowserOpMs,
     prompt_to_verified_ms: promptToVerifiedMs,
@@ -293,7 +293,7 @@ export function summarizePromptTrace(events) {
     prompt_to_final_ms: promptToFinalMs,
     final_answer_observed: first('final_answer') !== undefined,
     counters: {
-      external_controlla_calls: externalCalls,
+      external_navichrome_calls: externalCalls,
       model_turns: hasHostEvents ? modelTurns : null,
       model_visible_observations: hasHostEvents ? observations : null,
       internal_model_calls: resultCounters.internal_model_calls,

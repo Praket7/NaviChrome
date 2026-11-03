@@ -26,7 +26,7 @@
 
 ### Task 1: Readiness and cold-open cleanup
 
-**Files:** `crates/controlla-runtime/src/mcp/v3_full.rs`; focused tests in the existing V3 MCP test module.
+**Files:** `crates/navichrome-runtime/src/mcp/v3_full.rs`; focused tests in the existing V3 MCP test module.
 
 - [x] Add failing coverage for a single browser-side bounded readiness wait and for cold-session cleanup when readiness returns an error.
 - [x] Implement a browser-side event wait for selector/semantic readiness with timeout, navigation cancellation, and one final independent readback.
@@ -34,7 +34,7 @@
 
 ### Task 2: Honest cost learning across browser workflows
 
-**Files:** `crates/controlla-runtime/src/execution_cost_router.rs`, `crates/controlla-runtime/src/mcp/v3_full.rs`, `crates/controlla-runtime/src/observation_router.rs`.
+**Files:** `crates/navichrome-runtime/src/execution_cost_router.rs`, `crates/navichrome-runtime/src/mcp/v3_full.rs`, `crates/navichrome-runtime/src/observation_router.rs`.
 
 - [x] Add failing tests for a statistically honest latency estimator and recency-based bounded profile retention.
 - [x] Replace the small-sample maximum with a nearest-rank p90 estimate and a 16-sample verified/clean cohort gate.
@@ -43,7 +43,7 @@
 
 ### Task 3: Align freshness contract
 
-**Files:** `crates/controlla-runtime/src/mcp/v3_full.rs`, `packages/chrome-controlla/plugin/skills/browser-control/SKILL.md`.
+**Files:** `crates/navichrome-runtime/src/mcp/v3_full.rs`, `packages/navichrome/plugin/skills/browser-control/SKILL.md`.
 
 - [x] Add/update contract coverage for structured listing timestamps, linked article metadata, and uniquely ranking coarse relative-age evidence.
 - [x] Make runtime schema/server instructions match the skill's safe evidence order and unresolved/tied behavior.

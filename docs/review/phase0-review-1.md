@@ -8,7 +8,7 @@ Status: original review was not approved. Corrections below are implemented; foc
 | Provenance omitted adapted manifest, license files, copied specs, and retained tests | Rebuilt `provenance/extraction.json` with SHA-256 source/destination hashes, per-file edits and license status, upstream revision, all 22 retained inline test names, version pins, OS targets, and publication decision. |
 | CI omitted package/docs checks; local dependency check skipped Windows; guide links were broken | Added `scripts/package-check.sh` and `scripts/check-doc-links.mjs`; added npm/Node lock install plus docs, package, and dependency checks to CI; dependency and package scripts run under Bash on Windows too; corrected links to the relocated master guide. |
 | Progress claimed Phase 0 complete and evidence lacked commit/artifact pointer | Changed progress to in-progress, no-commit, re-review pending. `docs/verification-matrix.md` records commands, environment, timestamps/results, and this evidence file. No commit has been made. |
-| GitHub owner/visibility decision missing | Recorded `Praket7/chrome-controlla`, private by default, authorized target selected, creation/publication pending. |
+| GitHub owner/visibility decision missing | Recorded `Praket7/navichrome`, private by default, authorized target selected, creation/publication pending. |
 
 ## Verification after corrections
 

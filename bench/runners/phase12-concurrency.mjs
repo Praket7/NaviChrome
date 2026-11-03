@@ -17,7 +17,7 @@ import { createMcpStdioClient } from './mcp-stdio-client.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
-const DEFAULT_BINARY = resolve(root, 'target/release/controlla-v2');
+const DEFAULT_BINARY = resolve(root, 'target/release/navichrome-v2');
 const DEFAULT_OUTPUT = resolve(root, 'bench/reports', `phase12-concurrency-${new Date().toISOString().replaceAll(/[:.]/g, '-')}.json`);
 
 function option(name, fallback) {

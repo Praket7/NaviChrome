@@ -41,7 +41,7 @@ test('proxy rejects nested/top-level CDP conflicts and conflicting or negative p
 });
 
 test('transparent stdio proxy records receive and delivered-result spans without claiming independent verification', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-1';
@@ -49,7 +49,7 @@ test('transparent stdio proxy records receive and delivered-result spans without
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_input_bytes: 9, prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId },
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const stdout = [];
@@ -64,7 +64,7 @@ test('transparent stdio proxy records receive and delivered-result spans without
     assert.equal(exit, 0, Buffer.concat(stderr).toString());
     assert.equal(Buffer.concat(stdout).toString().split('\n').filter(Boolean).length, 2);
     const events = await readPromptTrace(tracePath);
-    assert.ok(events.some(event => event.event === 'controlla_received' && event.tool === 'browser'));
+    assert.ok(events.some(event => event.event === 'navichrome_received' && event.tool === 'browser'));
     assert.equal(events.some(event => event.event === 'browser_operation'), false,
       'the proxy observes tool arrival, not the actual browser dispatch boundary');
     assert.equal(events.some(event => event.event === 'verified_outcome'), false, 'tool receipts are not the independent benchmark verifier');
@@ -88,7 +88,7 @@ test('transparent stdio proxy records receive and delivered-result spans without
     assert.ok(delivered.missing_phases.split(',').includes('runtime_attach_us'),
       'unmeasured attach is explicit missingness rather than a measured zero');
     const summary = summarizePromptTrace(events);
-    assert.equal(summary.counters.external_controlla_calls, 1);
+    assert.equal(summary.counters.external_navichrome_calls, 1);
     assert.equal(summary.counters.browser_cdp_commands, 3);
     assert.equal(summary.counters.internal_model_calls, 0);
     assert.equal(summary.execution_tier, 'qualified_skill');
@@ -100,7 +100,7 @@ test('transparent stdio proxy records receive and delivered-result spans without
 });
 
 test('multiple tool results, including a completed V3 task receipt, stay valid without acting as independent verification', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-multiple';
@@ -108,7 +108,7 @@ test('multiple tool results, including a completed V3 task receipt, stay valid w
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_MULTI_CALL: '1' },
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_MULTI_CALL: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.stdout.resume(); child.stderr.resume();
@@ -123,14 +123,14 @@ test('multiple tool results, including a completed V3 task receipt, stay valid w
     assert.equal(events.some(event => event.event === 'verified_outcome'), false);
     const summary = summarizePromptTrace(events);
     assert.equal(summary.trace_valid, true);
-    assert.equal(summary.counters.external_controlla_calls, 2);
+    assert.equal(summary.counters.external_navichrome_calls, 2);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test('partial workflow with an earlier verified receipt is not traced as a verified outcome', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-partial';
@@ -138,7 +138,7 @@ test('partial workflow with an earlier verified receipt is not traced as a verif
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_PARTIAL: '1' },
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_PARTIAL: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.stdout.resume(); child.stderr.resume();
@@ -153,7 +153,7 @@ test('partial workflow with an earlier verified receipt is not traced as a verif
 });
 
 test('unavailable browser-command telemetry stays null instead of becoming a false zero', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-no-metrics';
@@ -161,7 +161,7 @@ test('unavailable browser-command telemetry stays null instead of becoming a fal
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_NO_METRICS: '1' },
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_NO_METRICS: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.stdout.resume();
@@ -183,7 +183,7 @@ test('unavailable browser-command telemetry stays null instead of becoming a fal
 });
 
 test('fallback telemetry uses the explicit counter once across duplicate structured and text receipts', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-fallback-count';
@@ -191,7 +191,7 @@ test('fallback telemetry uses the explicit counter once across duplicate structu
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_DUPLICATE_FALLBACK: '1' },
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId, TRACE_FIXTURE_DUPLICATE_FALLBACK: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.stdout.resume();
@@ -213,7 +213,7 @@ test('fallback telemetry uses the explicit counter once across duplicate structu
 });
 
 test('conflicting fallback counters remain unknown instead of selecting a receipt traversal value', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-conflicting-fallback-count';
@@ -221,7 +221,7 @@ test('conflicting fallback counters remain unknown instead of selecting a receip
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     await recordPromptTraceEvent(tracePath, traceId, 'prompt_sent', { prompt_boundary: 'actual_user_submit' });
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId,
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId,
         TRACE_FIXTURE_DUPLICATE_FALLBACK: '1', TRACE_FIXTURE_CONFLICTING_FALLBACK: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -245,14 +245,14 @@ test('conflicting fallback counters remain unknown instead of selecting a receip
 });
 
 test('a missing internal model counter is explicitly partial at the tool boundary', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-trace-proxy-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-trace-proxy-'));
   try {
     const tracePath = join(directory, 'prompt-trace.jsonl');
     const traceId = 'prompt-missing-internal-counter';
     const proxy = resolve(fileURLToPath(new URL('./mcp-stdio-trace-proxy.mjs', import.meta.url)));
     const server = resolve(fileURLToPath(new URL('./test-fixtures/traced-mcp-server.mjs', import.meta.url)));
     const child = spawn(process.execPath, [proxy, process.execPath, server], {
-      env: { ...process.env, CONTROLLA_PROMPT_TRACE_FILE: tracePath, CONTROLLA_PROMPT_TRACE_ID: traceId,
+      env: { ...process.env, NAVICHROME_PROMPT_TRACE_FILE: tracePath, NAVICHROME_PROMPT_TRACE_ID: traceId,
         TRACE_FIXTURE_DUPLICATE_FALLBACK: '1', TRACE_FIXTURE_NO_INTERNAL: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('extensions/chrome-controlla/background.js','utf8');
+const source = fs.readFileSync('extensions/navichrome/background.js','utf8');
 const match = source.match(/function nativeLeaseAuthorizes\([\s\S]*?(?=\nfunction |\nasync function )/);
 assert.ok(match, 'native authorization must check live lease registration');
 function fixture() {

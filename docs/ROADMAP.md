@@ -10,7 +10,7 @@
 ## Capability status
 
 - Semantic and page-tool routes: available according to live page evidence and registered capability state.
-- Visual capture: available only where Controlla's paired screenshot path verifies the active renderer and document.
+- Visual capture: available only where NaviChrome's paired screenshot path verifies the active renderer and document.
 - Headless: available only when the runtime has a configured Chrome executable.
 - Native desktop fallback: disabled on all platforms. The experimental macOS Swift helper has no stable signed app identity, so the runtime refuses native input and `describe` reports the capability unavailable. Do not grant permissions to its ephemeral helper. Chrome page, tab, and window actions use the extension and do not require Accessibility.
 - Live ESPN and browser-window tests: require the user's paired Chrome extension and are not implied by local unit or plugin tests.

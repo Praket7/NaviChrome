@@ -60,7 +60,7 @@ export async function runClientMcpContract(clientId, row, options = {}) {
     const initialized = await request('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
-      clientInfo: { name: `controlla-${adapter.id}`, version: '1.0.0' },
+      clientInfo: { name: `navichrome-${adapter.id}`, version: '1.0.0' },
     });
     if (!initialized?.serverInfo?.name || !initialized?.capabilities) throw new Error(`${clientId} adapter received an invalid MCP initialize result`);
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);

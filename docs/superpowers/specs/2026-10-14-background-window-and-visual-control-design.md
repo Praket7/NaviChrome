@@ -20,7 +20,7 @@ The design covers the supplied live Canva run and the code-audit findings that a
 
 ### Source-level evidence in the current main tree
 
-- `extensions/chrome-controlla/background.js` defines `SHARED_COMMAND_METHODS` without `Page.captureScreenshot`, which is consistent with the shared visual-probe allowlist rejection. This is a likely direct cause; the live receipt should be retained to confirm the exact command that was rejected.
+- `extensions/navichrome/background.js` defines `SHARED_COMMAND_METHODS` without `Page.captureScreenshot`, which is consistent with the shared visual-probe allowlist rejection. This is a likely direct cause; the live receipt should be retained to confirm the exact command that was rejected.
 - The shared pointer path calls `chrome.tabs.update(tabId, {active:true})` for an inactive tab before sending mouse input, then tries to restore the previous tab. This explains the observed temporary activation.
 - `browser action=open` is the create/navigate path. The agent instructions need a stronger distinction between operating on an existing target and creating a destination tab.
 - The prior independent audit also identified OOPIF coordinate translation, action deadline mismatch, serial text-entry overhead, release archive omissions, oversized AX messages, scheduler feedback contamination, redundant CDP reads, stale V2 instructions, and benchmark measurement errors.

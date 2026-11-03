@@ -17,9 +17,9 @@ Do not confuse it with older Controlla 3/4 copies or the initial download checko
 
 The unpacked Chrome extension source is:
 
-`/Users/pcg/Documents/Codex/2026-10-12/controlla 4/extensions/chrome-controlla`
+`/Users/pcg/Documents/Codex/2026-10-12/controlla 4/extensions/navichrome`
 
-This is the source folder to select/keep in Chrome’s Extensions page. The user's recent Chrome screenshot identified the loaded-from path under this same `controlla 4/extensions/chrome-controlla` location. The extension manifest is Manifest V3, name **Chrome Controlla Shared Tab Bridge**, version **0.1.0**.
+This is the source folder to select/keep in Chrome’s Extensions page. The user's recent Chrome screenshot identified the loaded-from path under this same `controlla 4/extensions/navichrome` location. The extension manifest is Manifest V3, name **Chrome Controlla Shared Tab Bridge**, version **0.1.0**.
 
 The exact native-messaging allowed origin is:
 

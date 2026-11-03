@@ -3,7 +3,7 @@
 # unpacked extension.
 #
 # The runtime binary embeds a digest of the extension's runtime assets
-# (crates/controlla-runtime/build.rs), and the native host refuses to pair with
+# (crates/navichrome-runtime/build.rs), and the native host refuses to pair with
 # an extension whose assets do not match. Editing background.js or lib/* and
 # reloading Chrome alone therefore leaves the host refusing every pairing, so
 # this script does all three steps in the order that keeps them consistent.
@@ -18,15 +18,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXTENSION_ID="${1:-}"
-HOST_BIN="${CONTROLLA_NATIVE_HOST_BIN:-$HOME/.chrome-controlla/bin/controlla}"
+HOST_BIN="${NAVICHROME_NATIVE_HOST_BIN:-$HOME/.navichrome/bin/navichrome}"
 
-cargo build --locked --release -p controlla-runtime --manifest-path "$ROOT/Cargo.toml"
+cargo build --locked --release -p navichrome-runtime --manifest-path "$ROOT/Cargo.toml"
 
 if [ ! -d "$(dirname "$HOST_BIN")" ]; then
-  echo "Native host directory $(dirname "$HOST_BIN") does not exist; pass CONTROLLA_NATIVE_HOST_BIN." >&2
+  echo "Native host directory $(dirname "$HOST_BIN") does not exist; pass NAVICHROME_NATIVE_HOST_BIN." >&2
   exit 1
 fi
-cp "$ROOT/target/release/controlla" "$HOST_BIN"
+cp "$ROOT/target/release/navichrome" "$HOST_BIN"
 echo "Installed native host: $HOST_BIN"
 
 if [ -z "$EXTENSION_ID" ]; then

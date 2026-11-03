@@ -10,7 +10,7 @@ test('prompt trace computes monotonic prompt-to-verified and prompt-to-final spa
     { trace_id: 'r1', event: 'prompt_sent', monotonic_ns: '1000000', prompt_boundary: 'actual_user_submit' },
     { trace_id: 'r1', event: 'prompt_input_written', monotonic_ns: '1100000', prompt_input_bytes: 12, cold_warm: 'warm' },
     { trace_id: 'r1', event: 'first_tool_decision', monotonic_ns: '2000000' },
-    { trace_id: 'r1', event: 'controlla_received', monotonic_ns: '3000000', tool_input_bytes: 80 },
+    { trace_id: 'r1', event: 'navichrome_received', monotonic_ns: '3000000', tool_input_bytes: 80 },
     { trace_id: 'r1', event: 'browser_operation', monotonic_ns: '4000000', cdp_commands: 2, schema_bytes: 20 },
     { trace_id: 'r1', event: 'verified_outcome', monotonic_ns: '5000000', selected_execution_tier: 'qualified_skill' },
     { trace_id: 'r1', event: 'tool_result_delivered', monotonic_ns: '6000000', output_bytes: 40,
@@ -27,7 +27,7 @@ test('prompt trace computes monotonic prompt-to-verified and prompt-to-final spa
   assert.equal(summary.final_answer_observed, true);
   assert.equal(summary.prompt_sent_observed, true);
   assert.equal(summary.prompt_boundary, 'actual_user_submit');
-  assert.equal(summary.counters.external_controlla_calls, 1);
+  assert.equal(summary.counters.external_navichrome_calls, 1);
   assert.equal(summary.counters.browser_cdp_commands, 2);
   assert.equal(summary.counters.prompt_input_bytes, 12);
   assert.equal(summary.counters.tool_input_bytes, 80);
@@ -71,19 +71,19 @@ test('client and MCP call identities correlate only for a unique tool-name pair'
   const unique = summarizePromptTrace([
     { trace_id: 'join', event: 'client_tool_decision', monotonic_ns: '100',
       span_id: 'client_tool_decision:100', client_call_id: 'client-1', tool: 'snapshot' },
-    { trace_id: 'join', event: 'controlla_received', monotonic_ns: '200',
-      span_id: 'controlla_received:200', call_id: 'mcp-1', tool: 'snapshot' },
+    { trace_id: 'join', event: 'navichrome_received', monotonic_ns: '200',
+      span_id: 'navichrome_received:200', call_id: 'mcp-1', tool: 'snapshot' },
   ]);
   assert.deepEqual(unique.call_correlations, [{ client_call_id: 'client-1', mcp_call_id: 'mcp-1',
     tool: 'snapshot', method: 'unique_tool_name_within_trace',
-    client_span_id: 'client_tool_decision:100', mcp_span_id: 'controlla_received:200' }]);
+    client_span_id: 'client_tool_decision:100', mcp_span_id: 'navichrome_received:200' }]);
   assert.deepEqual(unique.unmatched_client_call_ids, []);
   assert.deepEqual(unique.unmatched_mcp_call_ids, []);
 
   const ambiguous = summarizePromptTrace([
     { trace_id: 'join', event: 'client_tool_decision', monotonic_ns: '100', client_call_id: 'client-1', tool: 'snapshot' },
     { trace_id: 'join', event: 'client_tool_decision', monotonic_ns: '110', client_call_id: 'client-2', tool: 'snapshot' },
-    { trace_id: 'join', event: 'controlla_received', monotonic_ns: '200', call_id: 'mcp-1', tool: 'snapshot' },
+    { trace_id: 'join', event: 'navichrome_received', monotonic_ns: '200', call_id: 'mcp-1', tool: 'snapshot' },
   ]);
   assert.deepEqual(ambiguous.call_correlations, []);
   assert.deepEqual(ambiguous.unmatched_client_call_ids, ['client-1', 'client-2']);
@@ -136,7 +136,7 @@ test('per-call result counters deduplicate repeated receipts and reject conflict
 test('process-argument timestamps are not reported as prompt-send timing', () => {
   const summary = summarizePromptTrace([
     { trace_id: 'arg', event: 'prompt_sent', monotonic_ns: '100', prompt_boundary: 'client_process_spawn_argument' },
-    { trace_id: 'arg', event: 'controlla_received', monotonic_ns: '400' },
+    { trace_id: 'arg', event: 'navichrome_received', monotonic_ns: '400' },
     { trace_id: 'arg', event: 'browser_operation', monotonic_ns: '500' },
     { trace_id: 'arg', event: 'tool_result_delivered', monotonic_ns: '700' },
     { trace_id: 'arg', event: 'verified_outcome', monotonic_ns: '800' },
@@ -184,7 +184,7 @@ test('prompt trace leaves unverifiable spans unavailable and rejects mixed trace
 
   const semanticOrder = summarizePromptTrace([
     { trace_id: 'r1', event: 'prompt_sent', monotonic_ns: '100', prompt_boundary: 'client_process_spawn_argument' },
-    { trace_id: 'r1', event: 'controlla_received', monotonic_ns: '200' },
+    { trace_id: 'r1', event: 'navichrome_received', monotonic_ns: '200' },
     { trace_id: 'r1', event: 'first_tool_decision', monotonic_ns: '300' },
     { trace_id: 'r1', event: 'verified_outcome', monotonic_ns: '400' },
   ]);
@@ -193,7 +193,7 @@ test('prompt trace leaves unverifiable spans unavailable and rejects mixed trace
 });
 
 test('prompt trace records bounded JSONL events and reads them back', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'controlla-prompt-trace-'));
+  const directory = await mkdtemp(join(tmpdir(), 'navichrome-prompt-trace-'));
   try {
     const path = join(directory, 'trace.jsonl');
     await recordPromptTraceEvent(path, 'r1', 'prompt_input_written', {

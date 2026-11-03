@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const runtime = new URL('../crates/controlla-runtime/src/', import.meta.url);
+const runtime = new URL('../crates/navichrome-runtime/src/', import.meta.url);
 const editableSource = readFileSync(new URL('shared_page/recovery_editable.js', runtime), 'utf8');
 const facade = readFileSync(new URL('mcp/v3_full.rs', runtime), 'utf8');
 const start = facade.indexOf('const EDITOR_GUARD: &str = r#"');
@@ -25,7 +25,7 @@ let browser;
 before(async () => {
   browser = await chromium.launch({
     headless: true,
-    ...(process.env.CONTROLLA_CHROME ? { executablePath: process.env.CONTROLLA_CHROME } : { channel: 'chrome' }),
+    ...(process.env.NAVICHROME_CHROME ? { executablePath: process.env.NAVICHROME_CHROME } : { channel: 'chrome' }),
   });
 });
 after(async () => { await browser?.close(); });

@@ -64,7 +64,7 @@ The original attachment was reread in full after implementation. Its 40 bullets 
 
 | # | Status | Reconciliation |
 |---|---|---|
-| 01 | Existing, partial | Typed one-call tasks and capsule-like programs exist (`crates/controlla-runtime/src/v3_tasks.rs`); the universal target/observe/branch/artifact fast path is not complete. |
+| 01 | Existing, partial | Typed one-call tasks and capsule-like programs exist (`crates/navichrome-runtime/src/v3_tasks.rs`); the universal target/observe/branch/artifact fast path is not complete. |
 | 02 | Partial; performance gap remains | VM and browser workflows execute bounded programs, but guarded click/readback still measured 16 bridge frames in the fixture; no claim of a fully browser-local hot loop. |
 | 03 | Not met; safer revision gate added | Current measured click/readback is 16 frames, above 3–4. Removing identity/guard reads without an equivalent browser-local verifier would weaken safety, so it was not done. |
 | 04 | Partial, new code tested | Extension now maintains a bounded session-persisted event mirror for tabs/windows/groups; list response revisions are bound to the same fresh snapshot, and supplied revisions are enforced at click/scroll/swipe/pinch dispatch. The mirror still omits the complete URL/frame/loader/interaction graph. |

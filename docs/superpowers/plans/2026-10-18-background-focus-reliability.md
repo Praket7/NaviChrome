@@ -32,7 +32,7 @@
 
 ### Task 1: Add failing runtime tests for the approved contract
 
-- [ ] **Files:** `crates/controlla-runtime/src/mcp/v2.rs`, `crates/controlla-runtime/src/mcp/v3_full.rs`
+- [ ] **Files:** `crates/navichrome-runtime/src/mcp/v2.rs`, `crates/navichrome-runtime/src/mcp/v3_full.rs`
 - [ ] Add tests for stale watcher revision being eligible for one re-acquisition, refusal after document identity changes, and the existing warning-only foreground open behavior.
 - [ ] Add a test that invalid tool arguments are returned as structured results with `reason_code` and `next_action`.
 - [ ] Run the focused Rust tests and confirm the new stale/error tests fail for the current implementation.
@@ -41,7 +41,7 @@
 
 ### Task 2: Implement bounded stale watcher re-acquisition
 
-- [ ] **Files:** `crates/controlla-runtime/src/mcp/v2.rs`, related reference/receipt helpers and tests.
+- [ ] **Files:** `crates/navichrome-runtime/src/mcp/v2.rs`, related reference/receipt helpers and tests.
 - [ ] Extend the retained click/mutation retry predicate to include `stale_watcher_revision` only for `not_dispatched` receipts.
 - [ ] Reuse the existing bounded snapshot and `reference_reacquire` path; require same tab, document identity, unique role/name/href/ancestor match, and one retry maximum.
 - [ ] Preserve `unknown` as terminal and include `reacquisition` evidence in the receipt.
@@ -51,7 +51,7 @@
 
 ### Task 3: Harden structured invalid and stale tool results
 
-- [ ] **Files:** `crates/controlla-runtime/src/mcp/v3_full.rs`, error helpers/tests.
+- [ ] **Files:** `crates/navichrome-runtime/src/mcp/v3_full.rs`, error helpers/tests.
 - [ ] Audit every V3 invalid/stale route that can escape `call_tool` and normalize it through the structured tool-result path.
 - [ ] Ensure receipts consistently include `status`, `reason_code`, `reason`, `dispatch_may_have_occurred`, and `next_action` where applicable.
 - [ ] Replace any stale or invalid error text that names tools outside the six-tool surface.
@@ -61,7 +61,7 @@
 
 ### Task 4: Make routing and focus semantics explicit in tests
 
-- [ ] **Files:** `crates/controlla-runtime/src/mcp/v3_full.rs`, `packages/chrome-controlla/test-agent-ux.cjs`, `extensions/chrome-controlla/test-background.cjs`.
+- [ ] **Files:** `crates/navichrome-runtime/src/mcp/v3_full.rs`, `packages/navichrome/test-agent-ux.cjs`, `extensions/navichrome/test-background.cjs`.
 - [ ] Add route tests for bounded rejected candidates, redacted URLs, exact new-target cold-open fallback, and explicit existing-tab `no_safe_tab_match` refusal.
 - [ ] Add agent-UX coverage for foreground warning with workflow dispatch, background semantic work without activation, and direct ESPN/Bills/newest-story call budget.
 - [ ] Add extension coverage for inactive semantic operations and continued refusal of inactive user-owned pointer input.
@@ -71,7 +71,7 @@
 
 ### Task 5: Rewrite runtime instructions and the browser-control skill
 
-- [ ] **Files:** `crates/controlla-runtime/src/mcp/v3_full.rs`, `packages/chrome-controlla/plugin/skills/browser-control/SKILL.md`, relevant instruction tests.
+- [ ] **Files:** `crates/navichrome-runtime/src/mcp/v3_full.rs`, `packages/navichrome/plugin/skills/browser-control/SKILL.md`, relevant instruction tests.
 - [ ] Replace duplicated prose with the three canonical recipes and a compact state machine from the spec.
 - [ ] State the focus/capability matrix, one stale-reacquisition rule, unknown-outcome rule, `$name` syntax, and no-safe-tab fallback in the first screenful.
 - [ ] Keep sensitive-work confirmation and challenge hand-off rules explicit.
@@ -101,10 +101,10 @@
 ## Verification commands
 
 ```bash
-node extensions/chrome-controlla/test-background.cjs
+node extensions/navichrome/test-background.cjs
 cargo test -p controlla-runtime --locked --bin controlla-v2 v2:: -- --nocapture
 cargo test -p controlla-runtime --locked --bin controlla-v2 v3_batch_delivery_tests -- --nocapture
-node packages/chrome-controlla/test-agent-ux.cjs
+node packages/navichrome/test-agent-ux.cjs
 cargo fmt --all -- --check
 git diff --check
 ```

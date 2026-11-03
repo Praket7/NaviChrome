@@ -18,7 +18,7 @@ const complete = {
     status: 'verified',
     evidence_hash: `client-smoke-${client}-evidence`,
     client_version: 'client-1.0',
-    controlla_version: 'controlla-test',
+    navichrome_version: 'navichrome-test',
   })),
   headless_recovery_bounded: true,
   page_tools_fail_closed: true,

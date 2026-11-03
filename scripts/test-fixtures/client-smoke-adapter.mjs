@@ -31,14 +31,14 @@ const cases = request.required_capabilities.map(capability => {
 });
 const evidence = { schema_version: 1, synthetic: true, run_id: request.run_id, client: request.client,
   integration_config_sha256: request.client_adapter.config_sha256,
-  client_version: 'fixture-client-1', controlla_version: 'fixture-controlla-1', cases, host_task_runs: request.host_task_runs ?? [] };
+  client_version: 'fixture-client-1', navichrome_version: 'fixture-navichrome-1', cases, host_task_runs: request.host_task_runs ?? [] };
 const bytes = Buffer.from(`${JSON.stringify(evidence)}\n`);
-const dir = process.env.CONTROLLA_TEST_EVIDENCE_ROOT;
+const dir = process.env.NAVICHROME_TEST_EVIDENCE_ROOT;
 if (!dir) throw new Error('test evidence directory is required');
 await mkdir(dir, { recursive: true });
 const evidencePath = join(dir, `${request.client}-${request.run_id}.json`);
 await writeFile(evidencePath, bytes, { flag: 'wx' });
 process.stdout.write(JSON.stringify({ schema_version: 1, run_id: request.run_id, client: request.client, status: 'passed', live: true,
   evidence_path: evidencePath, evidence_sha256: createHash('sha256').update(bytes).digest('hex'), client_version: evidence.client_version,
-  controlla_version: evidence.controlla_version, integration_config_sha256: evidence.integration_config_sha256,
+  navichrome_version: evidence.navichrome_version, integration_config_sha256: evidence.integration_config_sha256,
   verified_capabilities: request.required_capabilities, host_task_runs: request.host_task_runs ?? [] }));

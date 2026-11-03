@@ -26,9 +26,9 @@ jobs:
       - run: npm run check:release
       - run: npm run check:v3
       - run: npm run check:topology
-      - run: node extensions/chrome-controlla/test-background.cjs
-      - run: node extensions/chrome-controlla/test-v3-batch.cjs
-      - run: node --check extensions/chrome-controlla/background.js
+      - run: node extensions/navichrome/test-background.cjs
+      - run: node extensions/navichrome/test-v3-batch.cjs
+      - run: node --check extensions/navichrome/background.js
   headless-background-stress:
     strategy:
       fail-fast: false
@@ -55,22 +55,22 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check:background-dom
         env:
-          CONTROLLA_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          NAVICHROME_CHROME: ${{ steps.chrome.outputs.chrome-path }}
       - run: npm run check:snapshot-efficiency
         env:
-          CONTROLLA_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          NAVICHROME_CHROME: ${{ steps.chrome.outputs.chrome-path }}
       - run: npm run check:webmcp-browser
         env:
-          CONTROLLA_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          NAVICHROME_CHROME: ${{ steps.chrome.outputs.chrome-path }}
       - run: npm run check:editor-ladder
         env:
-          CONTROLLA_CHROME: ${{ steps.chrome.outputs.chrome-path }}
-      - run: cargo test -p controlla-browser --test headless_stress --locked -- --ignored --nocapture
+          NAVICHROME_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      - run: cargo test -p navichrome-browser --test headless_stress --locked -- --ignored --nocapture
         env:
-          CONTROLLA_CHROME: ${{ steps.chrome.outputs.chrome-path }}
-          CONTROLLA_CHROME_NO_SANDBOX: '1'
-      - run: node extensions/chrome-controlla/test-background.cjs --reconnect-only
-      - run: for run in {1..8}; do node extensions/chrome-controlla/test-background.cjs; done
+          NAVICHROME_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          NAVICHROME_CHROME_NO_SANDBOX: '1'
+      - run: node extensions/navichrome/test-background.cjs --reconnect-only
+      - run: for run in {1..8}; do node extensions/navichrome/test-background.cjs; done
         shell: bash
   rust:
     strategy:
@@ -106,18 +106,18 @@ jobs:
       - run: npm install --global npm@11.17.0 && test "$(npm --version)" = "11.17.0"
         shell: bash
       - run: npm ci --ignore-scripts
-      - run: node --test packages/chrome-controlla/test-client.cjs
+      - run: node --test packages/navichrome/test-client.cjs
       - run: npm run check:clients
       - name: Verify packaged six-client MCP launch contracts
         if: runner.os != 'Windows'
         run: npm run smoke:client-mcp-contracts
         env:
-          CONTROLLA_BINARY_PATH: ${{ github.workspace }}/packages/chrome-controlla/bin/controlla-v2-core
+          NAVICHROME_BINARY_PATH: ${{ github.workspace }}/packages/navichrome/bin/navichrome-v2-core
       - name: Verify packaged six-client MCP launch contracts on Windows
         if: runner.os == 'Windows'
         run: npm run smoke:client-mcp-contracts
         env:
-          CONTROLLA_BINARY_PATH: ${{ github.workspace }}/packages/chrome-controlla/bin/controlla-v2-core.exe
+          NAVICHROME_BINARY_PATH: ${{ github.workspace }}/packages/navichrome/bin/navichrome-v2-core.exe
       - run: ./scripts/check-dependencies.sh
         shell: bash
       - run: ./scripts/package-check.sh

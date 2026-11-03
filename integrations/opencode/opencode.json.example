@@ -1,13 +1,13 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "chrome-controlla": {
+    "navichrome": {
       "type": "local",
-      "command": ["/absolute/path/to/controlla", "mcp"],
+      "command": ["/absolute/path/to/navichrome", "mcp"],
       "enabled": true,
       "environment": {
-        "CONTROLLA_STATE_DIR": "/absolute/path/to/controlla-state",
-        "CONTROLLA_AGENT_SURFACE": "v3-compact"
+        "NAVICHROME_STATE_DIR": "/absolute/path/to/navichrome-state",
+        "NAVICHROME_AGENT_SURFACE": "v3-compact"
       }
     }
   }

@@ -203,48 +203,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
-name = "controlla-browser"
-version = "0.1.0"
-dependencies = [
- "base64",
- "dirs",
- "futures-util",
- "getrandom 0.3.4",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
-]
-
-[[package]]
-name = "controlla-runtime"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "controlla-browser",
- "futures-util",
- "getrandom 0.3.4",
- "libc",
- "png",
- "rmcp",
- "rquickjs",
- "rusqlite",
- "schemars",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tower",
- "url",
-]
-
-[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -981,6 +939,48 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "navichrome-browser"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "dirs",
+ "futures-util",
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+]
+
+[[package]]
+name = "navichrome-runtime"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "futures-util",
+ "getrandom 0.3.4",
+ "libc",
+ "navichrome-browser",
+ "png",
+ "rmcp",
+ "rquickjs",
+ "rusqlite",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tower",
+ "url",
 ]
 
 [[package]]

@@ -3,11 +3,11 @@
 ## Method
 
 - Read the current `docs/MASTER_GUIDE.md` extraction and file selection sections before using the packaged MCP.
-- Started `packages/chrome-controlla/dist/bin/controlla-core mcp` with a fresh temporary `CONTROLLA_STATE_DIR`.
+- Started `packages/navichrome/dist/bin/navichrome-core mcp` with a fresh temporary `NAVICHROME_STATE_DIR`.
 - Sent JSONL MCP `initialize` with protocol version `2025-11-25`, followed by `notifications/initialized` and `tools/list`.
 - The process exited successfully with no stderr. Repeated the packaged MCP query while recording this note to check the current `file_select` schema.
 - No browser or application was connected. Results below are a documentation/schema usability evaluation, not live page behavior.
-- Follow-up run: repeated the same JSONL initialization and `tools/list` sequence against the freshly packaged executable with temporary state at `/var/folders/yt/j9qyd4k52m53js3dxv_xr4200000gq/T/controlla-b35-rerun-0x_u_grh`. The process exited successfully with no stderr; `tools/list` returned 16 tools. The live `file_select` schema used `FileSelectLocator` with nine `anyOf` alternatives and `additionalProperties: false` on each variant.
+- Follow-up run: repeated the same JSONL initialization and `tools/list` sequence against the freshly packaged executable with temporary state at `/var/folders/yt/j9qyd4k52m53js3dxv_xr4200000gq/T/navichrome-b35-rerun-0x_u_grh`. The process exited successfully with no stderr; `tools/list` returned 16 tools. The live `file_select` schema used `FileSelectLocator` with nine `anyOf` alternatives and `additionalProperties: false` on each variant.
 
 ## Scenarios
 

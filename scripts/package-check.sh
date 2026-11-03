@@ -2,7 +2,7 @@
 set -eu
 for schema in capabilities.json doctor-config.json; do
     printf 'package-check: comparing schema %s\n' "$schema"
-    if ! cmp -s "schemas/$schema" "crates/controlla-runtime/schemas/$schema"; then
+    if ! cmp -s "schemas/$schema" "crates/navichrome-runtime/schemas/$schema"; then
         printf 'schema copies differ: %s\n' "$schema" >&2
         exit 1
     fi
@@ -21,7 +21,7 @@ printf '%s\n' 'package-check: packing Cargo workspace crates'
 # builds/tests separately rather than resolving an unpublished crate from crates.io.
 cargo package --workspace --locked --allow-dirty --no-verify --offline
 printf '%s\n' 'package-check: checking staged npm package and excluded paths'
-if [ ! -f packages/chrome-controlla/dist/package.json ]; then
+if [ ! -f packages/navichrome/dist/package.json ]; then
     printf '%s\n' 'package launcher component missing (run scripts/package-build.sh)' >&2
     exit 1
 fi
@@ -32,12 +32,12 @@ if printf '%s\n' "$files" | grep -E '(^|/)(adapters|comptrol-core|comptrol-platf
 fi
 node_bin=$(command -v node)
 # Isolate consumer installs from the invoking user's global npm allow-scripts policy.
-temp=$(mktemp -d "${TMPDIR:-/tmp}/controlla package.XXXXXX")
+temp=$(mktemp -d "${TMPDIR:-/tmp}/navichrome package.XXXXXX")
 : > "$temp/empty.npmrc"
 npm_cmd() { NPM_CONFIG_USERCONFIG="$temp/empty.npmrc" npm_config_userconfig="$temp/empty.npmrc" NPM_CONFIG_ALLOW_SCRIPTS='' npm_config_allow_scripts='' npm "$@"; }
 printf '%s\n' 'package-check: creating npm archive'
 trap '"$node_bin" -e '\''require("node:fs").rmSync(process.argv[1],{recursive:true,force:true})'\'' "$temp"' EXIT
-package="$PWD/packages/chrome-controlla/dist"
+package="$PWD/packages/navichrome/dist"
 archive_name=$(npm_cmd pack --silent --pack-destination "$temp" "$package")
 archive="$temp/$archive_name"
 printf 'package-check: inspecting npm archive %s\n' "$archive_name"
@@ -49,8 +49,8 @@ expect_archive_entry() {
         exit 1
     fi
 }
-expect_archive_entry 'package/bin/controlla.cjs'
-expect_archive_entry 'package/bin/controlla-client.cjs'
+expect_archive_entry 'package/bin/navichrome.cjs'
+expect_archive_entry 'package/bin/navichrome-client.cjs'
 expect_archive_entry 'package/plugin/plugin.json'
 expect_archive_entry 'package/plugin/mcp.json'
 expect_archive_entry 'package/plugin/launch.cjs'
@@ -58,38 +58,38 @@ expect_archive_entry 'package/plugin/skills/browser-control/SKILL.md'
 expect_archive_entry 'package/LICENSE'
 expect_archive_entry 'package/NOTICE'
 if [ "$(node -p 'process.platform')" = win32 ]; then
-    expect_archive_entry 'package/bin/controlla-core.exe'
-    expect_archive_entry 'package/bin/controlla-v2-core.exe'
+    expect_archive_entry 'package/bin/navichrome-core.exe'
+    expect_archive_entry 'package/bin/navichrome-v2-core.exe'
 else
-    expect_archive_entry 'package/bin/controlla-core'
-    expect_archive_entry 'package/bin/controlla-v2-core'
+    expect_archive_entry 'package/bin/navichrome-core'
+    expect_archive_entry 'package/bin/navichrome-v2-core'
 fi
 printf '%s\n' 'package-check: validating packed target metadata and license'
 tar -xOf "$archive" package/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s);if(p.os?.length!==1||p.os[0]!==process.platform||p.cpu?.length!==1||p.cpu[0]!==process.arch){console.error(`package target mismatch: ${p.os}/${p.cpu} != ${process.platform}/${process.arch}`);process.exit(1)}if(p.license!=="Apache-2.0"){console.error(`unexpected license: ${p.license}`);process.exit(1)}if(!p.files?.includes("plugin/")){console.error("plugin directory is not included in package files");process.exit(1)}})'
 prefix="$temp/clean prefix"
 printf '%s\n' 'package-check: installing packed archive into clean prefix'
 npm_cmd install --prefix "$prefix" --ignore-scripts --no-audit --no-fund "$archive"
-installed="$prefix/node_modules/chrome-controlla/bin/controlla.cjs"
-installed_client="$prefix/node_modules/chrome-controlla/bin/controlla-client.cjs"
-plugin_launch="$prefix/node_modules/chrome-controlla/plugin/launch.cjs"
-"$node_bin" "$installed" --help | grep -F 'Usage: controlla' >/dev/null
-PATH='' "$node_bin" "$installed" --version | grep -F 'controlla 0.1.0' >/dev/null
+installed="$prefix/node_modules/navichrome/bin/navichrome.cjs"
+installed_client="$prefix/node_modules/navichrome/bin/navichrome-client.cjs"
+plugin_launch="$prefix/node_modules/navichrome/plugin/launch.cjs"
+"$node_bin" "$installed" --help | grep -F 'Usage: navichrome' >/dev/null
+PATH='' "$node_bin" "$installed" --version | grep -F 'navichrome 0.1.0' >/dev/null
 printf '%s\n' 'package-check: checking npm command shim'
 # npm exec selects and launches the platform-appropriate command shim (including
 # Windows .cmd under Git Bash) as an installed consumer would.
-npm_cmd exec --prefix "$prefix" -- controlla --version | grep -F 'controlla 0.1.0' >/dev/null
+npm_cmd exec --prefix "$prefix" -- navichrome --version | grep -F 'navichrome 0.1.0' >/dev/null
 printf '%s\n' 'package-check: checking packaged ChatGPT plugin MCP startup and compact v3 tool discovery'
 plugin_request="$temp/plugin-request.jsonl"
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' > "$plugin_request"
-server_binary="$prefix/node_modules/chrome-controlla/bin/controlla-v2-core"
+server_binary="$prefix/node_modules/navichrome/bin/navichrome-v2-core"
 if [ "$(node -p 'process.platform')" = win32 ]; then server_binary="$server_binary.exe"; fi
 printf '%s\n' 'package-check: checking packaged v3 server binary directly'
-direct_output=$(CONTROLLA_STATE_DIR="$temp/direct-state" "$node_bin" "$installed_client" --server "$server_binary" --server-arg mcp --timeout-ms 30000 < "$plugin_request")
+direct_output=$(NAVICHROME_STATE_DIR="$temp/direct-state" "$node_bin" "$installed_client" --server "$server_binary" --server-arg mcp --timeout-ms 30000 < "$plugin_request")
 for tool in browser snapshot act workflow extract verify; do
     printf '%s\n' "$direct_output" | grep -F "\"$tool\"" >/dev/null
 done
 printf '%s\n' 'package-check: checking packaged ChatGPT plugin proxy'
-plugin_output=$(CONTROLLA_STATE_DIR="$temp/plugin-state" "$node_bin" "$installed_client" --server "$node_bin" --server-arg "$plugin_launch" --timeout-ms 30000 < "$plugin_request")
+plugin_output=$(NAVICHROME_STATE_DIR="$temp/plugin-state" "$node_bin" "$installed_client" --server "$node_bin" --server-arg "$plugin_launch" --timeout-ms 30000 < "$plugin_request")
 for tool in browser snapshot act workflow extract verify; do
     printf '%s\n' "$plugin_output" | grep -F "\"$tool\"" >/dev/null
 done

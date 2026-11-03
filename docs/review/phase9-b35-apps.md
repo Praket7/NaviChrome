@@ -2,7 +2,7 @@
 
 ## Method and scope
 
-A fresh agent evaluated the five scenario names supplied for B35 against the current `docs/MASTER_GUIDE.md` (local preview `master-2026-10-06-v3`) and the rebuilt packaged local MCP server's `tools/list` output. The server was started from `packages/chrome-controlla/dist/bin/controlla-core mcp` with a newly created temporary `CONTROLLA_STATE_DIR`, using JSONL MCP initialize protocol `2025-11-25`, an `notifications/initialized` notification, then `tools/list`. The packaged server identified itself as `controlla-runtime` version `0.1.0`.
+A fresh agent evaluated the five scenario names supplied for B35 against the current `docs/MASTER_GUIDE.md` (local preview `master-2026-10-06-v3`) and the rebuilt packaged local MCP server's `tools/list` output. The server was started from `packages/navichrome/dist/bin/navichrome-core mcp` with a newly created temporary `NAVICHROME_STATE_DIR`, using JSONL MCP initialize protocol `2025-11-25`, an `notifications/initialized` notification, then `tools/list`. The packaged server identified itself as `navichrome-runtime` version `0.1.0`.
 
 No browser or design app was connected or inspected. No source files or other documentation were read for this evaluation. The exact original scenario prompts were not available; the scenario descriptions below restate only the names and requested task types provided to the evaluator. The scoring rule was: PASS when a novice should choose a supported route or clearly refuse/request a blocker without inventing capability; PARTIAL/FAIL otherwise.
 

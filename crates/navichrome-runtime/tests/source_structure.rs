@@ -1,0 +1,159 @@
+//! Source-structure ratchet.
+//!
+//! The execution core is still being decomposed. Until that work lands, these
+//! assertions stop the two production files from silently regrowing and stop a
+//! second implementation of the guard, recovery, or program contracts from
+//! appearing next to the canonical one. When a file is genuinely decomposed,
+//! lower its ceiling in the same change that moves the code out.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn read(relative: &str) -> String {
+    let path = root().join(relative);
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+fn line_count(relative: &str) -> usize {
+    read(relative).lines().count()
+}
+
+#[test]
+fn production_monoliths_do_not_regrow() {
+    // Recorded at 56970d9, raised for the executed recovery ladders in click
+    // and type dispatch, the Docs canvas verification path, the one-tab
+    // same-document reuse receipt, and the canvas relay-verification refusal
+    // (2026-10-30). Both files must shrink as subsystems move out; they may
+    // never grow past this point.
+    assert!(
+        line_count("crates/navichrome-runtime/src/mcp/v3_full.rs") <= 32_000,
+        "v3_full.rs regrew; move implementation into a subsystem module instead of adding lines"
+    );
+    // Lowered from 3,360 when the native cold-open lifecycle moved to
+    // lib/owned-open.js. Keep ratcheting down as more subsystems move out.
+    assert!(
+        line_count("extensions/navichrome/background.js") <= 3_350,
+        "background.js regrew; move the subsystem into extensions/navichrome/lib"
+    );
+    assert!(
+        line_count("crates/navichrome-runtime/src/task_program.rs") <= 900,
+        "the shared task program must stay a bounded representation, not a second runtime"
+    );
+    assert!(
+        line_count("crates/navichrome-runtime/src/execution_plan.rs") <= 1_400,
+        "the shared execution plan must stay an envelope, not a second executor"
+    );
+}
+
+#[test]
+fn one_module_owns_each_cross_cutting_contract() {
+    let owners = [
+        (
+            "crates/navichrome-runtime/src/guard_reason.rs",
+            "pub enum GuardReason",
+        ),
+        (
+            "crates/navichrome-runtime/src/action_recovery.rs",
+            "pub enum RecoveryClass",
+        ),
+        (
+            "crates/navichrome-runtime/src/task_program.rs",
+            "pub enum TaskStepKind",
+        ),
+        (
+            "crates/navichrome-runtime/src/browser_contract.rs",
+            "pub struct ExecutionPolicy",
+        ),
+        (
+            "crates/navichrome-runtime/src/execution_plan.rs",
+            "pub struct ExecutionPlan",
+        ),
+        (
+            "crates/navichrome-runtime/src/execution_plan.rs",
+            "pub struct OperationContract",
+        ),
+    ];
+    for (owner, declaration) in owners {
+        assert!(
+            read(owner).contains(declaration),
+            "{owner} must keep the canonical {declaration} declaration"
+        );
+    }
+    // A duplicate definition anywhere else is the failure this test exists for.
+    for duplicate in [
+        "crates/navichrome-runtime/src/mcp/v3_full.rs",
+        "crates/navichrome-runtime/src/mcp.rs",
+        "crates/navichrome-runtime/src/mcp/v2_full.rs",
+    ] {
+        let source = read(duplicate);
+        for declaration in [
+            "pub enum GuardReason",
+            "pub enum RecoveryClass",
+            "pub enum TaskStepKind",
+            "pub struct ExecutionPlan",
+            "pub struct OperationContract",
+        ] {
+            assert!(
+                !source.contains(declaration),
+                "{duplicate} redeclares {declaration}; import the canonical module instead"
+            );
+        }
+    }
+}
+
+#[test]
+fn extension_subsystems_stay_in_lib_modules() {
+    let background = read("extensions/navichrome/background.js");
+    let mut imports = background
+        .lines()
+        .filter_map(|line| line.split_once("from \"./lib/"))
+        .filter_map(|(_, tail)| tail.split_once('"'))
+        .map(|(module, _)| module.to_owned())
+        .collect::<Vec<_>>();
+    imports.sort_unstable();
+    imports.dedup();
+    assert!(
+        imports.len() >= 6,
+        "background.js must compose lib modules, found {imports:?}"
+    );
+    for module in &imports {
+        let relative = format!("extensions/navichrome/lib/{module}");
+        assert!(
+            root().join(&relative).exists(),
+            "background.js imports missing module {relative}"
+        );
+        assert!(
+            line_count(&relative) <= 900,
+            "{relative} grew past the subsystem budget; split it"
+        );
+    }
+    // The extension modules are the only owners of these policies.
+    assert!(
+        read("extensions/navichrome/lib/observation.js").contains("export function semanticDelta")
+    );
+    assert!(read("extensions/navichrome/lib/editor-adapters.js").contains("export function"));
+}
+
+#[test]
+fn normal_agent_instructions_stay_short() {
+    let skill_path = root().join("packages/navichrome/plugin/skills/browser-control/SKILL.md");
+    let bytes = fs::metadata(&skill_path).expect("skill file").len();
+    assert!(
+        bytes <= 4096,
+        "the normal skill must stay a fast-path contract, found {bytes} bytes"
+    );
+    let advanced = fs::metadata(skill_path.with_file_name("references/advanced.md"))
+        .expect("advanced reference");
+    assert!(
+        advanced.len() > bytes as u64,
+        "recovery and capability detail belongs in advanced.md"
+    );
+}
