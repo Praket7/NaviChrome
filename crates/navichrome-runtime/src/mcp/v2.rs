@@ -1477,6 +1477,7 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
             aggregate_frame_accessibility(frame_results, unread, frame_count, bounded, truncated);
         let complete = frame_accessibility["complete"] == true;
         snapshot["frame_accessibility"] = frame_accessibility;
+        annotate_child_frame_references(&mut snapshot);
         if !complete {
             snapshot["complete"] = json!(false);
             snapshot["global_complete"] = json!(false);
@@ -1758,6 +1759,84 @@ fn aggregate_frame_accessibility(
         "complete":complete,
         "evidence_scope":"bounded_accessibility_trees_with_source_frame_identity"
     })
+}
+
+fn needs_child_frame_reference(item: &Value) -> bool {
+    item["source_frame"]
+        .as_str()
+        .is_some_and(|frame| frame.matches("/iframe[").count() > 1)
+        && item.get("frame_reference").is_none()
+}
+
+fn child_frame_role_matches(semantic_role: &str, accessibility_role: &str) -> bool {
+    semantic_role == accessibility_role
+        || matches!(
+            (semantic_role, accessibility_role),
+            ("input", "textbox")
+                | ("textarea", "textbox")
+                | ("select", "combobox")
+                | ("searchbox", "searchbox")
+        )
+}
+
+/// Bind a semantic item from a nested same-origin frame to the child-frame
+/// accessibility node that carries the same frame URL, role, and accessible
+/// name. The frame-qualified reference is what the guarded child-frame
+/// mutation routes can consume; a bare @c reference cannot cross two frames.
+/// Only an unambiguous match is attached, so duplicate controls remain
+/// unbound instead of silently targeting the wrong node.
+fn annotate_child_frame_references(snapshot: &mut Value) {
+    let frames = snapshot
+        .pointer("/frame_accessibility/frames")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let candidates = frames
+        .iter()
+        .flat_map(|frame| {
+            frame
+                .get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    Some((
+                        item.get("source_frame_url")?.as_str()?,
+                        item.get("role")?.as_str()?,
+                        item.get("name")?.as_str()?,
+                        item.get("reference")?.as_str()?,
+                    ))
+                })
+        })
+        .collect::<Vec<_>>();
+    let Some(items) = snapshot.get_mut("items").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for item in items {
+        if item["source_frame"].as_str() == Some("main") || item.get("frame_reference").is_some() {
+            continue;
+        }
+        let Some(url) = item.get("source_frame_url").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(role) = item.get("role").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(name) = item.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let mut matched = candidates.iter().filter(|(candidate_url, candidate_role, candidate_name, _)| {
+            *candidate_url == url
+                && *candidate_name == name
+                && child_frame_role_matches(role, candidate_role)
+        });
+        let Some((_, _, _, reference)) = matched.next() else {
+            continue;
+        };
+        if matched.next().is_none() {
+            item["frame_reference"] = json!(reference);
+        }
+    }
 }
 
 fn record_observation_feedback(
@@ -2699,6 +2778,36 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
             "match_mode must be all, best, or exact and href_hint must be bounded",
         ));
     }
+    let needs_nested_frame_evidence = {
+        let semantic = app.semantic.lock().await;
+        semantic.get(&key).is_some_and(|state| {
+            state.items.values().any(needs_child_frame_reference)
+        })
+    };
+    if needs_nested_frame_evidence {
+        // A semantic item collected from a nested same-origin frame is retained
+        // as an @c reference. The AX frame pass supplies the frame/loader/node
+        // identity needed by the guarded child-frame mutation route. Pay this
+        // cost only when a nested target actually needs it.
+        snapshot_impl(
+            app,
+            &BrowserSnapshotArgs {
+                session_id: args.session_id.clone(),
+                chrome_tab_id: args.chrome_tab_id.clone(),
+                selector: None,
+                max_items: Some(200),
+                max_text_chars: Some(0),
+                max_bytes: Some(100_000),
+                max_bytes_reason: None,
+                href_hint: None,
+                frame_id: None,
+                include_frames: Some(true),
+                goal: None,
+                max_scan_nodes: Some(65_536),
+            },
+        )
+        .await?;
+    }
     let state = app.semantic.lock().await;
     let state = state
         .get(&key)
@@ -2738,7 +2847,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
     );
     let ambiguous = find_is_ambiguous(mode, scope_complete, &ranked);
     let limit = args.max_matches.or(args.limit).unwrap_or(10).clamp(1, 50);
-    let matches = ranked
+    let mut matches = ranked
         .into_iter()
         .take(if mode == "best" && !ambiguous {
             1
@@ -2746,6 +2855,21 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
             limit
         })
         .collect::<Vec<_>>();
+    for item in &mut matches {
+        if item["source_frame"].as_str() == Some("main") {
+            continue;
+        }
+        let Some(frame_reference) = item
+            .get("frame_reference")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        item["semantic_reference"] = item["reference"].clone();
+        item["reference"] = json!(frame_reference);
+        item["reference_scope"] = json!("child_frame");
+    }
     let count = matches.len();
     Ok(
         json!({"matches":matches,"count":count,"ambiguous":ambiguous,"scope_complete":scope_complete,"global_scope_complete":state.scope_complete,"scope":if root_scoped {"root_document_subtree"} else {"all_collected_frames"},"semantic_revision":state.snapshot_id}),

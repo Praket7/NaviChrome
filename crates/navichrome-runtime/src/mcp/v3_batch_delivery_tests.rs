@@ -21,7 +21,8 @@ use super::{
     lease_target_key, linked_date_frontier, mutation_skill_template,
     native_download_anchor_is_safe, native_download_lifecycle_receipt, next_visual_probe_limit,
     normalize_key_text, normalize_presentation_state, page_navigate_error,
-    page_tool_completion, page_tool_snapshot_fresh, page_tool_unavailable,
+    page_tool_completion, page_tool_interaction_stable, page_tool_snapshot_fresh,
+    page_tool_unavailable,
     parse_frame_reference, parse_map_pan,
     presentation_transition_matches, presentation_transition_stable,
     private_headless_task_is_supported, public_native_download_lifecycle,
@@ -4361,6 +4362,31 @@ fn page_tool_requires_an_unconsumed_matching_snapshot() {
     assert!(page_tool_snapshot_fresh(false, true));
     assert!(!page_tool_snapshot_fresh(true, true));
     assert!(!page_tool_snapshot_fresh(false, false));
+}
+
+#[test]
+fn page_tool_discovery_can_advance_semantic_revision_without_changing_interaction_state() {
+    let before = json!({
+        "semantic_revision": 1,
+        "focus": "[\"BUTTON\",\"save\",\"\",\"button\",\"Save\"]",
+        "selection": "[]",
+        "viewport": "[1280,720,0,0]"
+    });
+    let after_catalog_read = json!({
+        "semantic_revision": 2,
+        "focus": "[\"BUTTON\",\"save\",\"\",\"button\",\"Save\"]",
+        "selection": "[]",
+        "viewport": "[1280,720,0,0]"
+    });
+    assert!(page_tool_interaction_stable(&before, &after_catalog_read));
+    let changed_focus = json!({
+        "semantic_revision": 2,
+        "focus": "[\"INPUT\",\"name\",\"name\",\"\",\"Name\"]",
+        "selection": "[]",
+        "viewport": "[1280,720,0,0]"
+    });
+    assert!(!page_tool_interaction_stable(&before, &changed_focus));
+    assert!(!page_tool_interaction_stable(&before, &serde_json::Value::Null));
 }
 
 #[test]

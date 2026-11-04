@@ -605,9 +605,13 @@ const chrome = {
       if (method === "DOM.getBoxModel" && params?.backendNodeId === 998) return { model: { content: [50, 60, 250, 60, 250, 210, 50, 210] } };
       if (method === "DOM.getBoxModel" && params?.backendNodeId === 997) {
         nestedOwnerBoxReads += 1;
-        if (nonAffineNestedTransformFixture) return { model: { content: [20, 30, 120, 30, 130, 90, 20, 90] } };
+        // A same-process nested owner is queried through the root session and
+        // its box is already root-relative. An OOPIF parent session reports a
+        // parent-relative box instead.
+        const root = !target.sessionId, ox = root ? 70 : 20, oy = root ? 90 : 30;
+        if (nonAffineNestedTransformFixture) return { model: { content: [ox, oy, ox + 100, oy, ox + 110, oy + 60, ox, oy + 60] } };
         const shift = changingNestedTransformFixture && nestedOwnerBoxReads >= 2 ? 12 : 0;
-        return { model: { content: [20 + shift, 30, 120 + shift, 30, 120 + shift, 90, 20 + shift, 90] } };
+        return { model: { content: [ox + shift, oy, ox + 100 + shift, oy, ox + 100 + shift, oy + 60, ox + shift, oy + 60] } };
       }
       if (method === "DOM.getBoxModel" && target.sessionId === "fixture-oopif-session") return { model: { content: [10, 20, 30, 20, 30, 40, 10, 40] } };
       if (method === "DOM.getBoxModel" && params?.backendNodeId === 777) return { model: { content: [10, 20, 30, 20, 30, 40, 10, 40] } };
@@ -695,6 +699,7 @@ const extensionLibraryAssets = [
   "lib/navigation-url.js",
   "lib/frame-multitouch.js",
   "lib/owned-open.js",
+  "lib/fast-type.js",
   "lib/page-diagnostics.js",
 ];
 function stripModuleSyntax(source) {

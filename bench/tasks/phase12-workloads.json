@@ -1,0 +1,119 @@
+{
+  "schema": "phase12-workloads-v1",
+  "purpose": "Executable real-Chrome workloads with independent server-side acceptance. Each row is measured for success, commands, actions, wall time, and retries.",
+  "tasks": [
+    {
+      "id": "typing-1000-block",
+      "category": "typing",
+      "capability": "block_text_insertion",
+      "fixture": "typing",
+      "characters": 1000,
+      "typing_mode": "block"
+    },
+    {
+      "id": "typing-1000-fastkeys",
+      "category": "typing",
+      "capability": "fast_key_insertion",
+      "fixture": "typing",
+      "characters": 1000,
+      "typing_mode": "fast_keys",
+      "mode": "foreground"
+    },
+    {
+      "id": "dynamic-spa-rerender",
+      "category": "staleness",
+      "capability": "rerender_reacquire",
+      "fixture": "spa",
+      "expected": { "name": "After rerender", "notes": "spa" }
+    },
+    {
+      "id": "child-frame-1000",
+      "category": "dom",
+      "capability": "child_frame_insertion",
+      "fixture": "child",
+      "characters": 1000
+    },
+    {
+      "id": "background-form",
+      "category": "browser-mode",
+      "capability": "background_mutation",
+      "fixture": "background",
+      "expected": { "name": "Background User", "notes": "Persisted background form" }
+    },
+    {
+      "id": "headless-research-parity",
+      "category": "browser-mode",
+      "capability": "headless_research",
+      "fixture": "headless",
+      "selector": "#fact",
+      "expected_text": "headless-parity-fact"
+    },
+    {
+      "id": "live-user-interference",
+      "category": "safety",
+      "capability": "focus_interference_safety",
+      "fixture": "interference",
+      "mode": "foreground",
+      "value": "INTERFERENCE"
+    },
+    {
+      "id": "research-citations",
+      "category": "research",
+      "capability": "ten_page_citations",
+      "fixture": "research",
+      "pages": 10
+    },
+    {
+      "id": "long-form-no-submit",
+      "category": "forms",
+      "capability": "draft_without_submit",
+      "fixture": "longform",
+      "expected": {
+        "full_name": "Ada Lovelace",
+        "address": "12 Analytical Engine Way",
+        "email": "ada@example.test"
+      }
+    },
+    {
+      "id": "authenticated-persistence",
+      "category": "session",
+      "capability": "cookie_persistence",
+      "fixture": "auth"
+    },
+    {
+      "id": "shadow-dom",
+      "category": "dom",
+      "capability": "nested_shadow_roots",
+      "fixture": "shadow",
+      "value": "Shadow persisted"
+    },
+    {
+      "id": "nested-iframe",
+      "category": "dom",
+      "capability": "nested_frame_insertion",
+      "fixture": "nested",
+      "value": "Nested frame persisted"
+    },
+    {
+      "id": "webmcp-route",
+      "category": "native-tools",
+      "capability": "typed_page_tool_route",
+      "fixture": "webmcp",
+      "record_id": "record-42"
+    },
+    {
+      "id": "upload-download",
+      "category": "artifacts",
+      "capability": "download_then_upload_chain",
+      "fixture": "artifacts",
+      "expected_text": "phase12-artifact-v1"
+    },
+    {
+      "id": "warm-skill-replay",
+      "category": "cache",
+      "capability": "qualified_skill_replay",
+      "fixture": "warm-skill",
+      "expected_text": "citation-fact-01"
+    }
+  ]
+}

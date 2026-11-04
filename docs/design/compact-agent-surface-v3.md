@@ -27,7 +27,7 @@ Foreground, background-headed, and headless sessions share one semantic and veri
 
 ## Typing modes
 
-`Block` performs constant or chunked insertion for ordinary controls. `FastKeys` preserves ordered key event semantics with zero intentional per-character delay and periodic focus revalidation. `HumanKeys` adds bounded caller-selected delay or jitter. `Ime` preserves composition semantics. Strategy selection is explicit in receipts so a caller can distinguish speed optimizations from human-paced input.
+`Block` performs constant or chunked insertion for ordinary controls. `FastKeys` preserves ordered key event semantics for short text, rich editors, and controls that require trusted events; for long plain-text controls it uses one trusted `Input.insertText` with zero intentional delay. Both paths revalidate focus and read back the final value. `HumanKeys` adds bounded caller-selected delay or jitter. `Ime` preserves composition semantics. Strategy selection is explicit in receipts so a caller can distinguish speed optimizations from human-paced input.
 
 ## Multi-client behavior
 

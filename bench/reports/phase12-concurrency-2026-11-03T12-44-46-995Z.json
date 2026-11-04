@@ -1,0 +1,294 @@
+{
+  "version": 1,
+  "kind": "phase12_concurrency",
+  "generated_at_iso": "2026-11-03T12:44:52.912Z",
+  "environment": {
+    "platform": "darwin-arm64",
+    "binary_sha256": "961d1185aef223f32a3eee58a03b6dea22da9bb663b0c473297c4153c61b51c3",
+    "tabs": 8,
+    "processes": 2,
+    "fixture": "bench/fixtures/realistic/server.mjs"
+  },
+  "summary": {
+    "tabs": 8,
+    "accepted": 8,
+    "wrong_target_events": 0,
+    "peak_overlap": 8,
+    "serial_sum_ms": 13755,
+    "wall_ms": 2199,
+    "all_verified": true,
+    "all_clean": true
+  },
+  "multi_process": {
+    "processes": 2,
+    "accepted": 2,
+    "wrong_target_events": 0,
+    "peak_overlap": 2,
+    "all_verified": true,
+    "all_clean": true,
+    "rows": [
+      {
+        "index": 0,
+        "task_id": "phase12-concurrency-process-1-0",
+        "run_id": "run-66367334-6392-4622-9e8e-2d8f3f66d793",
+        "session_id": "session-1-1",
+        "tab_id": "1649792726",
+        "start_ms": 1793709891341,
+        "end_ms": 1793709892907,
+        "wall_ms": 1566,
+        "fill_status": "completed",
+        "fill_verified": true,
+        "save_status": "verified",
+        "save_reason_code": null,
+        "application_accepted": true,
+        "wrong_target": false,
+        "server_state": {
+          "persisted": true,
+          "form_name_sha256": "efa7a580d06c5baf1bae5103a19ee01ec1a6e694c53151f19cb304a4387c1f47",
+          "form_notes_sha256": "5fd5be40b791858f442dd928d6a95da04403b6be970a2ffc5ed5c50ba0ccc02e"
+        },
+        "expected_sha256": {
+          "name": "efa7a580d06c5baf1bae5103a19ee01ec1a6e694c53151f19cb304a4387c1f47",
+          "notes": "5fd5be40b791858f442dd928d6a95da04403b6be970a2ffc5ed5c50ba0ccc02e"
+        },
+        "calls": 3
+      },
+      {
+        "index": 1,
+        "task_id": "phase12-concurrency-process-2-1",
+        "run_id": "run-a6b86d5b-3073-4fe7-9fe0-89f3db834d75",
+        "session_id": "session-1-1",
+        "tab_id": "1649792723",
+        "start_ms": 1793709891247,
+        "end_ms": 1793709892794,
+        "wall_ms": 1547,
+        "fill_status": "completed",
+        "fill_verified": true,
+        "save_status": "verified",
+        "save_reason_code": null,
+        "application_accepted": true,
+        "wrong_target": false,
+        "server_state": {
+          "persisted": true,
+          "form_name_sha256": "076b41a09b5b50f32eb6484cfb616c7ae9433ffa6cb383e35426c454a8cd7df3",
+          "form_notes_sha256": "c6428fe7bf80212993bf6a861b5a5b98a8698a832b9176f80825d6a8117cee12"
+        },
+        "expected_sha256": {
+          "name": "076b41a09b5b50f32eb6484cfb616c7ae9433ffa6cb383e35426c454a8cd7df3",
+          "notes": "c6428fe7bf80212993bf6a861b5a5b98a8698a832b9176f80825d6a8117cee12"
+        },
+        "calls": 3
+      }
+    ]
+  },
+  "rows": [
+    {
+      "index": 0,
+      "task_id": "phase12-concurrency-intra-1-0",
+      "run_id": "run-afdaaff9-ce6b-4be0-9be7-08e066101c57",
+      "session_id": "session-7-1",
+      "tab_id": "1649792717",
+      "start_ms": 1793709888603,
+      "end_ms": 1793709890316,
+      "wall_ms": 1713,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "e360404a634f2513e699b36fa9271986080372c06f11ba9083da9bf4c9a7276d",
+        "form_notes_sha256": "b7b70b6f8fe3f9c1ce5a077d4c6eeca9211f40f5eb087b1098d56f5dfdbc9e7e"
+      },
+      "expected_sha256": {
+        "name": "e360404a634f2513e699b36fa9271986080372c06f11ba9083da9bf4c9a7276d",
+        "notes": "b7b70b6f8fe3f9c1ce5a077d4c6eeca9211f40f5eb087b1098d56f5dfdbc9e7e"
+      },
+      "calls": 3
+    },
+    {
+      "index": 1,
+      "task_id": "phase12-concurrency-intra-2-1",
+      "run_id": "run-617e0f3c-716c-4dba-a70d-16afe319c349",
+      "session_id": "session-6-1",
+      "tab_id": "1649792714",
+      "start_ms": 1793709888715,
+      "end_ms": 1793709890359,
+      "wall_ms": 1644,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "7c02776a55610d138d01f4b8eb2b768e96df341b964db0112f1c2e77d535ab40",
+        "form_notes_sha256": "fa4d490463ba2a44acda0a852bdb4009876c285bece4ac40ef2436e1be61a0e6"
+      },
+      "expected_sha256": {
+        "name": "7c02776a55610d138d01f4b8eb2b768e96df341b964db0112f1c2e77d535ab40",
+        "notes": "fa4d490463ba2a44acda0a852bdb4009876c285bece4ac40ef2436e1be61a0e6"
+      },
+      "calls": 3
+    },
+    {
+      "index": 2,
+      "task_id": "phase12-concurrency-intra-3-2",
+      "run_id": "run-ef272069-9209-45c3-96fe-d9d2ca881588",
+      "session_id": "session-5-1",
+      "tab_id": "1649792711",
+      "start_ms": 1793709888534,
+      "end_ms": 1793709890214,
+      "wall_ms": 1680,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "b4fa2563c1528d267f19e0ce60fb893a87ff478d52064b103622bf01605a63e6",
+        "form_notes_sha256": "b5792a71878c8a45a6477afe628b5ddb6931f6e165552e4a73e7ad857bcdcd99"
+      },
+      "expected_sha256": {
+        "name": "b4fa2563c1528d267f19e0ce60fb893a87ff478d52064b103622bf01605a63e6",
+        "notes": "b5792a71878c8a45a6477afe628b5ddb6931f6e165552e4a73e7ad857bcdcd99"
+      },
+      "calls": 3
+    },
+    {
+      "index": 3,
+      "task_id": "phase12-concurrency-intra-4-3",
+      "run_id": "run-a12c675c-6d46-46cc-a3f6-f37132b1041a",
+      "session_id": "session-1-1",
+      "tab_id": "1649792699",
+      "start_ms": 1793709888299,
+      "end_ms": 1793709890068,
+      "wall_ms": 1769,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "f65faf3a78a16d6b02ee534d75a169a425dfc72b0e7fc1231f65425d57d67f67",
+        "form_notes_sha256": "1f07fa5a8e5fe572fa966d837b9c711728cb909d9601a2b93ae65749cb13a51d"
+      },
+      "expected_sha256": {
+        "name": "f65faf3a78a16d6b02ee534d75a169a425dfc72b0e7fc1231f65425d57d67f67",
+        "notes": "1f07fa5a8e5fe572fa966d837b9c711728cb909d9601a2b93ae65749cb13a51d"
+      },
+      "calls": 3
+    },
+    {
+      "index": 4,
+      "task_id": "phase12-concurrency-intra-5-4",
+      "run_id": "run-65d88317-21ee-4b1e-a017-0e37ea2d660a",
+      "session_id": "session-8-1",
+      "tab_id": "1649792720",
+      "start_ms": 1793709888778,
+      "end_ms": 1793709890414,
+      "wall_ms": 1636,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "76027f6bd0993d309c699e8d896aceff33aea109d30e99bf43e5aa170a786fba",
+        "form_notes_sha256": "761ec84817ecdffdc78839c3c00340a6713da4c7b2575ca141ed6aa235f6731a"
+      },
+      "expected_sha256": {
+        "name": "76027f6bd0993d309c699e8d896aceff33aea109d30e99bf43e5aa170a786fba",
+        "notes": "761ec84817ecdffdc78839c3c00340a6713da4c7b2575ca141ed6aa235f6731a"
+      },
+      "calls": 3
+    },
+    {
+      "index": 5,
+      "task_id": "phase12-concurrency-intra-6-5",
+      "run_id": "run-fd4a083b-789d-4bd6-8ce8-18c74007f576",
+      "session_id": "session-3-1",
+      "tab_id": "1649792705",
+      "start_ms": 1793709888376,
+      "end_ms": 1793709890144,
+      "wall_ms": 1768,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "8d556266a43ca1efcbee4b3d7f6f00a50d2654cb27142544df7b1dac17564b23",
+        "form_notes_sha256": "31a6bb7ba9ed9d99582c1e0a5a8c5384d3fbb1f02d0512088aad6378b0c10333"
+      },
+      "expected_sha256": {
+        "name": "8d556266a43ca1efcbee4b3d7f6f00a50d2654cb27142544df7b1dac17564b23",
+        "notes": "31a6bb7ba9ed9d99582c1e0a5a8c5384d3fbb1f02d0512088aad6378b0c10333"
+      },
+      "calls": 3
+    },
+    {
+      "index": 6,
+      "task_id": "phase12-concurrency-intra-7-6",
+      "run_id": "run-9495187d-8176-4dd3-bcb7-6b6cf0308eae",
+      "session_id": "session-2-1",
+      "tab_id": "1649792702",
+      "start_ms": 1793709888215,
+      "end_ms": 1793709890006,
+      "wall_ms": 1791,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "89c3f05f5a10b1ee7ce17f5b9f8b1d661d3484a0a894bc76e92b425cc1c4ac6a",
+        "form_notes_sha256": "f819896ed23a713a0fa1c80799a3c11e54a2023b3d5f77247659a69b88665026"
+      },
+      "expected_sha256": {
+        "name": "89c3f05f5a10b1ee7ce17f5b9f8b1d661d3484a0a894bc76e92b425cc1c4ac6a",
+        "notes": "f819896ed23a713a0fa1c80799a3c11e54a2023b3d5f77247659a69b88665026"
+      },
+      "calls": 3
+    },
+    {
+      "index": 7,
+      "task_id": "phase12-concurrency-intra-8-7",
+      "run_id": "run-c834a96c-3abe-41df-812a-ba475fa48daf",
+      "session_id": "session-4-1",
+      "tab_id": "1649792708",
+      "start_ms": 1793709888428,
+      "end_ms": 1793709890182,
+      "wall_ms": 1754,
+      "fill_status": "completed",
+      "fill_verified": true,
+      "save_status": "verified",
+      "save_reason_code": null,
+      "application_accepted": true,
+      "wrong_target": false,
+      "server_state": {
+        "persisted": true,
+        "form_name_sha256": "13c457558708d8a5e50f3cc85a4583163d01100546bef2e482ada66e462219be",
+        "form_notes_sha256": "083fae4a890b0d874428c4cc5b89d22983aa399160744103c425fe946b1f706f"
+      },
+      "expected_sha256": {
+        "name": "13c457558708d8a5e50f3cc85a4583163d01100546bef2e482ada66e462219be",
+        "notes": "083fae4a890b0d874428c4cc5b89d22983aa399160744103c425fe946b1f706f"
+      },
+      "calls": 3
+    }
+  ]
+}

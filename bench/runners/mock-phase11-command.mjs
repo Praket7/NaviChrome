@@ -103,5 +103,4 @@ process.stdout.write(JSON.stringify({
     ...(process.env.PHASE11_MOCK_PARTIAL_COUNTERS === '1'
       ? { counters: { host_round_trips: 2, partial_counters: true, missing_counters: 'screenshot_bytes' } } : {}),
     ...(tracePromptBoundary && process.env.PHASE11_MOCK_FAIL_WITH_TRACE !== '1' ? { prompt_to_final_ms: 2 } : {}) } } : {})
-}));
-if (process.env.PHASE11_MOCK_FAIL_WITH_TRACE === '1') process.exitCode = 7;
+}), () => process.exit(process.env.PHASE11_MOCK_FAIL_WITH_TRACE === '1' ? 7 : 0));

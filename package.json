@@ -24,6 +24,7 @@
     "prepare:release-candidate": "node scripts/prepare-release-candidate.mjs",
     "bench:phase11:configured": "node scripts/run-phase11-suite.mjs",
     "bench:phase12:live": "node bench/runners/phase12-live-apps.mjs",
+    "bench:phase12:workloads": "node bench/runners/phase12-workloads.mjs",
     "bench:phase12:concurrency": "node bench/runners/phase12-concurrency.mjs --tabs=8 --processes=2",
     "bench:phase12:competitor-report": "node bench/runners/phase12-competitor-report.mjs",
     "check:phase12": "node --test bench/runners/phase12-installed-apps.test.mjs bench/runners/phase12-competitor-report.test.mjs && node bench/runners/phase12-installed-apps.mjs --evidence bench/reports/phase12-installed-evidence-2026-10-31.json",

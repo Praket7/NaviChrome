@@ -1361,6 +1361,10 @@ mod tests {
                 include_bytes!("../../../extensions/navichrome/lib/owned-open.js"),
             ),
             (
+                "lib/fast-type.js",
+                include_bytes!("../../../extensions/navichrome/lib/fast-type.js"),
+            ),
+            (
                 "lib/page-diagnostics.js",
                 include_bytes!("../../../extensions/navichrome/lib/page-diagnostics.js"),
             ),

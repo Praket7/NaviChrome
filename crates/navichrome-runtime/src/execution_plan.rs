@@ -424,7 +424,7 @@ impl ExecutionPlan {
     /// in the module that owns it instead of the MCP facade.
     pub fn for_task_program(program: &TaskProgram) -> Result<(TaskProgram, Self), String> {
         let (scheduled, schedule) = schedule_task_program(program);
-        let plan = Self::from_task_program(
+        let mut plan = Self::from_task_program(
             &scheduled,
             PlanSource::TaskProgram,
             ExecutionCapabilities {
@@ -434,6 +434,27 @@ impl ExecutionPlan {
             PlanRoutingPolicy::QualifiedFirst,
         )?
         .with_schedule(schedule);
+        // A legacy extension may still take the ordered-key fast path. Scale
+        // the workflow deadline with the requested key volume so a long task
+        // is not cut off at the fixed 30 s plan budget after the keys landed.
+        let fast_key_chars = scheduled
+            .steps
+            .iter()
+            .filter(|step| {
+                step.kind == crate::task_program::TaskStepKind::Type
+                    && step.typing_mode.as_deref() == Some("fast_keys")
+            })
+            .filter_map(|step| step.value.as_deref())
+            .map(|value| value.chars().count())
+            .sum::<usize>();
+        if fast_key_chars > 0 {
+            plan.contract.budget.wall_deadline_ms = plan.contract.budget.wall_deadline_ms.max(
+                (fast_key_chars as u64)
+                    .saturating_mul(35)
+                    .saturating_add(15_000)
+                    .min(900_000),
+            );
+        }
         Ok((scheduled, plan))
     }
 

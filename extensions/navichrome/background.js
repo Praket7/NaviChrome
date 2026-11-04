@@ -3,6 +3,7 @@ import { boundedUploadUrl, createPageDiagnostics } from "./lib/page-diagnostics.
 import { FrameTreeRegistry } from "./lib/frame-tree.js";
 import { DebuggerSessionManager } from "./lib/debugger-sessions.js";
 import { typeTextTransaction } from "./lib/input.js";
+import { fastTypeProgram } from "./lib/fast-type.js";
 import { selectFileInputCandidate } from "./lib/file-input-selection.js";
 import { PointerEngine } from "./lib/pointer.js";
 import { semanticDelta, pruneSemanticItems } from "./lib/observation.js";
@@ -63,7 +64,7 @@ const MAX_DOWNLOAD_OBSERVERS_PER_TAB = 4;
 const MAX_DOWNLOAD_OBSERVERS = 64;
 function uploadInputPolicyFunction() { return "function(names){const e=this;if(!e||e.nodeName!=='INPUT'||e.type!=='file')return {ok:false,reason:'target_not_file_input'};const accept=(e.getAttribute('accept')||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);const mime=n=>({txt:'text/plain',csv:'text/csv',json:'application/json',pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp3:'audio/mpeg',mp4:'video/mp4',html:'text/html',xml:'application/xml'})[String(n).split('.').pop().toLowerCase()];if(names.length>1&&!e.multiple)return {ok:false,reason:'multiple_files_not_allowed'};for(const name of names){const lower=String(name).toLowerCase(),ext='.'+lower.split('.').pop(),type=mime(name);if(accept.length&&!accept.some(a=>a.startsWith('.')?lower.endsWith(a):a.endsWith('/*')?!!type&&type.startsWith(a.slice(0,-1)):a.includes('/')?a===type:false))return {ok:false,reason:'accept_filter_mismatch',filename:name};}return {ok:true,accept,multiple:!!e.multiple}}"; }
 const DOWNLOAD_OBSERVER_TTL_MS = 60000;
-const NAVICHROME_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js",    "lib/frame-multitouch.js", "lib/owned-open.js", "lib/page-diagnostics.js"];
+const NAVICHROME_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js",    "lib/frame-multitouch.js", "lib/owned-open.js", "lib/fast-type.js", "lib/page-diagnostics.js"];
 const NAVICHROME_EXTENSION_BUILD_ID_PROMISE = (async () => {
   const runtimeFallback = `navichrome-chrome-extension:${chrome.runtime.getManifest().version}:runtime`;
   const compute = (async () => {
@@ -647,7 +648,7 @@ async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) 
   if (chain.some(frame => !frame?.id || !frame?.loaderId)) throw new Error("Frame or loader identity is unavailable in the ancestry.");
   const initialSessions = chain.slice(0, -1).map(frame => frameTreeRegistry.sessionForFrame(tabId, frame.id) || null);
   const owners = [];
-  let viewport = childViewport;
+  let viewport = childViewport, rootSpace = false;
   if (!(viewport?.width > 0) || !(viewport?.height > 0)) {
     const measured = await sendCdpCommand({ tabId, sessionId: frameTreeRegistry.sessionForFrame(tabId, frameId) }, "Runtime.callFunctionOn", { objectId, functionDeclaration: "function(){return {width:this.ownerDocument.defaultView.innerWidth,height:this.ownerDocument.defaultView.innerHeight}}", returnByValue: true });
     viewport = measured.result?.value;
@@ -664,11 +665,26 @@ async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) 
     if (!Number.isSafeInteger(ownerId) || ownerId <= 0) throw new Error("Frame owner identity is unavailable in its parent session.");
     const box = await sendCdpCommand(parentRoute, "DOM.getBoxModel", { backendNodeId: ownerId });
     const q = box.model?.content;
-    if (!Array.isArray(q) || q.length !== 8 || !q.every(Number.isFinite) || !(viewport?.width > 0) || !(viewport?.height > 0)) throw new Error("Frame owner geometry is unavailable.");
+    if (!Array.isArray(q) || q.length !== 8 || !q.every(Number.isFinite)) throw new Error("Frame owner geometry is unavailable.");
     if (Math.abs(q[0] + q[4] - q[2] - q[6]) > 1 || Math.abs(q[1] + q[5] - q[3] - q[7]) > 1) throw new Error("Perspective or non-affine frame transforms are unsupported.");
+    if (rootSpace) {
+      // getBoxModel on the root session already reports root-viewport pixels.
+      // A same-process nested frame must not be offset a second time.
+      if (x < q[0] - 1 || x > q[2] + 1 || y < q[1] - 1 || y > q[5] + 1) throw new Error("The mapped frame point is outside an ancestor frame.");
+      owners.push({ child: childFrame.id, childLoader: childFrame.loaderId, parent: parentFrame.id, parentLoader: parentFrame.loaderId, parentSession: parentSession || null, ownerId, quad: q, space: "root" });
+      continue;
+    }
+    if (!(viewport?.width > 0) || !(viewport?.height > 0)) throw new Error("Child frame viewport is unavailable.");
     const u = x / viewport.width, v = y / viewport.height;
     x = q[0] + u * (q[2] - q[0]) + v * (q[6] - q[0]);
     y = q[1] + u * (q[3] - q[1]) + v * (q[7] - q[1]);
+    if (!parentSession) {
+      // The owner was queried through the root session. Its box is already in
+      // root-viewport coordinates, so this first composition is final.
+      rootSpace = true;
+      owners.push({ child: childFrame.id, childLoader: childFrame.loaderId, parent: parentFrame.id, parentLoader: parentFrame.loaderId, parentSession: null, ownerId, quad: q, space: "root" });
+      continue;
+    }
     const resolved = await sendCdpCommand(parentRoute, "DOM.resolveNode", { backendNodeId: ownerId });
     if (!resolved.object?.objectId) throw new Error("Frame owner could not be resolved in its parent session.");
     try {
@@ -681,10 +697,30 @@ async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) 
       const size = await sendCdpCommand(parentRoute, "Runtime.callFunctionOn", { objectId: resolved.object.objectId, functionDeclaration: "function(){return {width:this.ownerDocument.defaultView.innerWidth,height:this.ownerDocument.defaultView.innerHeight}}", returnByValue: true });
       const parentViewport = size.result?.value;
       if (!(parentViewport?.width > 0) || !(parentViewport?.height > 0)) throw new Error("Parent frame viewport is unavailable.");
-      owners.push({ child: childFrame.id, childLoader: childFrame.loaderId, parent: parentFrame.id, parentLoader: parentFrame.loaderId, parentSession: parentSession || null, ownerId, quad: q });
+      owners.push({ child: childFrame.id, childLoader: childFrame.loaderId, parent: parentFrame.id, parentLoader: parentFrame.loaderId, parentSession: parentSession || null, ownerId, quad: q, space: "parent" });
       viewport = parentViewport;
     } finally {
       await sendCdpCommand(parentRoute, "Runtime.releaseObject", { objectId: resolved.object.objectId }).catch(() => {});
+    }
+  }
+  if (rootSpace) {
+    // Validate the final root point against the top-level frame owner. This is
+    // the only hit test that can catch clipping by an ancestor frame.
+    const top = chain[1];
+    const owner = await sendCdpCommand(root, "DOM.getFrameOwner", { frameId: top.id });
+    const ownerId = owner?.backendNodeId;
+    if (!Number.isSafeInteger(ownerId) || ownerId <= 0) throw new Error("Top-level frame owner identity is unavailable.");
+    const resolved = await sendCdpCommand(root, "DOM.resolveNode", { backendNodeId: ownerId });
+    if (!resolved.object?.objectId) throw new Error("Top-level frame owner could not be resolved.");
+    try {
+      const hit = await sendCdpCommand(root, "Runtime.callFunctionOn", {
+        objectId: resolved.object.objectId,
+        functionDeclaration: "function(x,y){const s=getComputedStyle(this);return this.isConnected&&s.display!=='none'&&s.visibility==='visible'&&s.pointerEvents!=='none'&&document.elementFromPoint(x,y)===this}",
+        arguments: [{ value: x }, { value: y }], returnByValue: true,
+      });
+      if (hit?.result?.value !== true) throw new Error("The mapped frame point is obscured by an ancestor or outside the root viewport.");
+    } finally {
+      await sendCdpCommand(root, "Runtime.releaseObject", { objectId: resolved.object.objectId }).catch(() => {});
     }
   }
   const latestTree = await sendCdpCommand(root, "Page.getFrameTree", {});
@@ -875,54 +911,6 @@ function traceSharedCommand(phase, request, tabId, startedAt, details = {}) {
   try { console.debug("[NaviChrome] shared command", { phase, commandId, targetId: tabId, method: request.method, elapsedMs: Math.max(0, Date.now() - startedAt), ...details }); } catch {}
 }
 const FAST_TYPE_GUARD = "function(index,expected,prepare,normalize,requireFocus){const e=this.nodes[index];if(!e||!e.isConnected)return {ok:false,reason:'target_replaced'};const tagOf=n=>n&&typeof n.tagName==='string'?n.tagName.toUpperCase():'',tagName=tagOf(e),rich=!!e&&e.nodeType===1&&typeof e.getAttribute==='function'&&tagName!=='INPUT'&&tagName!=='TEXTAREA'&&(e.isContentEditable===true||e.getAttribute('role')==='textbox'),plain=tagName==='TEXTAREA'||tagName==='INPUT'&&['text','search','email','url','tel'].includes(e.type),trustedBoundary=e.closest('[data-requires-trusted]');if(!rich&&!plain||e.matches(':disabled,[aria-disabled=\"true\"]')||e.readOnly||e.getAttribute('aria-readonly')==='true'||e.getAttribute('contenteditable')?.toLowerCase()==='false'||e.closest('[data-masked]')||trustedBoundary&&trustedBoundary!==e)return {ok:false,reason:'blocked'};const value=()=>{const raw=rich?(e.innerText??e.textContent??'').replace(/\\r\\n/g,'\\n').replace(/\\u00a0/g,' '):e.value;return rich?(/^\\s*$/.test(raw)?'':raw==='\\n'?'':normalize?raw.replace(/\\n{2,}/g,b=> '\\n'.repeat(Math.ceil(b.length/2))):raw):raw};if(value()!==(rich&&/^\\s*$/.test(expected)?'':expected))return {ok:false,reason:'stale_value',value:value()};if(prepare){e.focus();if(rich){const s=e.ownerDocument.getSelection(),r=e.ownerDocument.createRange();r.selectNodeContents(e);r.collapse(false);s.removeAllRanges();s.addRange(r)}else e.setSelectionRange(e.value.length,e.value.length)}const s=e.ownerDocument.getSelection(),focused=e.ownerDocument.activeElement===e,atEnd=rich?s?.isCollapsed&&s.anchorNode&&e.contains(s.anchorNode)&&(()=>{const r=e.ownerDocument.createRange();r.selectNodeContents(e);r.setStart(s.anchorNode,s.anchorOffset);return r.toString()===''})():e.selectionStart===e.selectionEnd&&e.selectionEnd===e.value.length;if(requireFocus&&(!focused||!atEnd))return {ok:false,reason:'focus_or_selection_changed',value:value(),focused,atEnd};return {ok:true,value:value(),rich}}";
-async function fastTypeProgram(tabId, params, isAuthorized) {
-  const { object_id: objectId, index, expected, text, normalize_paragraphs: normalizeParagraphs } = params || {};
-  if (typeof objectId !== "string" || objectId.length < 1 || objectId.length > 1024 || !Number.isSafeInteger(index) || index < 0 || typeof expected !== "string" || expected.length > 16384 || typeof text !== "string" || text.length < 1 || text.length > 16384 || !/^[\x00-\x7f]*$/.test(text) || typeof normalizeParagraphs !== "boolean") throw new Error("fast_type requires a bounded retained editor, ASCII text, and newline policy.");
-  if (text.replace(/\r\n/g, "\n").includes("\r")) throw new Error("fast_type text must use normalized newlines.");
-  const deadline = performance.now() + Math.min(60000, Math.max(1000, Number.isSafeInteger(params.deadline_ms) ? params.deadline_ms : 30000));
-  let progress = expected, completedChars = 0, keyEvents = 0, guardChecks = 0;
-  const guard = async (value, prepare = false) => {
-    if (!isAuthorized(tabId) || performance.now() >= deadline) return { ok: false, reason: "deadline_or_session_changed" };
-    guardChecks++;
-    try {
-      const response = await sendCdpCommand({ tabId }, "Runtime.callFunctionOn", { objectId, functionDeclaration: FAST_TYPE_GUARD, arguments: [{ value: index }, { value }, { value: prepare }, { value: normalizeParagraphs }, { value: true }], returnByValue: true });
-      return response?.result?.value || { ok: false, reason: "guard_response_missing" };
-    } catch { return { ok: false, reason: "guard_read_failed" }; }
-  };
-  const before = await guard(progress, true);
-  if (before.ok !== true) return { status: "not_dispatched", completed_chars: 0, key_events: 0, cdp_commands: guardChecks, readback: before.value, reason: before.reason || "editor_guard_rejected" };
-  for (const character of text) {
-    if (!isAuthorized(tabId) || performance.now() >= deadline) return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "typing_deadline_or_session_change" };
-    if (completedChars > 0) {
-      const beforeNextKey = await guard(progress);
-      if (beforeNextKey.ok !== true) return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "focus_or_value_changed_before_next_keydown", guard: beforeNextKey };
-    }
-    const enter = character === "\n", key = enter ? "Enter" : character;
-    const keyDown = enter ? { type: "keyDown", key, code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36, text: "\r", unmodifiedText: "\r" } : { type: "keyDown", key };
-    keyEvents++;
-    try { await sendCdpCommand({ tabId }, "Input.dispatchKeyEvent", keyDown); }
-    catch (error) { return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "key_down_delivery_unknown", error: safeNativeError(String(error)) }; }
-    if (enter) progress += character;
-    const afterDown = await guard(progress);
-    if (afterDown.ok !== true) return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "focus_or_value_changed_after_keydown", guard: afterDown };
-    if (!enter) {
-      keyEvents++;
-      try { await sendCdpCommand({ tabId }, "Input.dispatchKeyEvent", { type: "char", key, text: character, unmodifiedText: character }); }
-      catch (error) { return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "character_delivery_unknown", error: safeNativeError(String(error)) }; }
-      progress += character;
-    }
-    const afterInput = enter ? afterDown : await guard(progress);
-    if (afterInput.ok !== true) return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "focus_or_value_changed_after_character", guard: afterInput };
-    keyEvents++;
-    try { await sendCdpCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyUp", key, ...(enter ? { code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 } : {}) }); }
-    catch (error) { return { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "key_up_delivery_unknown", error: safeNativeError(String(error)) }; }
-    completedChars++;
-  }
-  const final = await guard(progress);
-  return final.ok === true
-    ? { status: "verified", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress }
-    : { status: "unknown", completed_chars: completedChars, key_events: keyEvents, cdp_commands: keyEvents + guardChecks, readback: progress, reason: "final_editor_guard_failed", guard: final };
-}
 async function humanTypeCharacter(tabId, params, isAuthorized) {
   const { object_id: objectId, index, expected, character, normalize_paragraphs: normalizeParagraphs } = params || {};
   const scalar = typeof character === "string" && [...character].length === 1 ? character.codePointAt(0) : -1;
@@ -1651,7 +1639,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       respond({ type: "result", id: request.id, result: { tabs: created } }); return;
     }
     if (request.method === "NaviChrome.fastType") {
-      const result = await fastTypeProgram(tabId, request.params, isAuthorized);
+      const result = await fastTypeProgram({ tabId, params: request.params, isAuthorized, sendCdpCommand, safeNativeError, guardDeclaration: FAST_TYPE_GUARD });
       traceSharedCommand("settled", request, tabId, startedAt, { outcome: result.status, completedChars: result.completed_chars, keyEvents: result.key_events, cdpCommands: result.cdp_commands });
       respond({ type: "result", id: request.id, result }); return;
     }

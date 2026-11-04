@@ -7,6 +7,11 @@ import { loadPhase11Config } from './phase11-runner.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mock = resolve(here, 'mock-phase11-command.mjs');
+// The production task set has 32 workloads. These tests exercise the suite
+// contract (baseline coverage, pairing, retention), not the workload volume;
+// running all 32 tasks against seven mock baselines makes the test process
+// spend minutes spawning children and can exceed the test runner's timeout.
+const testConfig = resolve(here, '../tasks/phase11-test.json');
 const node = process.execPath;
 const environment = {
   candidate_source_sha: 'a'.repeat(40), dirty_tree_patch_sha256: 'b'.repeat(64),
@@ -21,8 +26,8 @@ const reset = [node, mock, 'reset'];
 const verifier = [node, mock, 'verify'];
 
 test('full suite covers every declared structured baseline and excludes vision track', async () => {
-  const baselines = await structuredBaselineIds();
-  const config = await loadPhase11Config();
+  const baselines = await structuredBaselineIds('controlla', testConfig);
+  const config = await loadPhase11Config(testConfig);
   assert.deepEqual(baselines.sort(), ['agent-browser','browser-use','chrome-devtools-mcp','controlla-1','controlla-2-pre-stage2','playwright-mcp','stagehand'].sort());
   const commands = { controlla: adapter('controlla', 80, 1) };
   for (const [index, id] of baselines.entries()) commands[id] = adapter(id, 100 + index, 3);
@@ -30,7 +35,7 @@ test('full suite covers every declared structured baseline and excludes vision t
   const report = await runFullSuite({
     fixtureBaseUrl: 'https://fixtures.example.test/', commands, resetCommand: reset, verifierCommand: verifier,
     environment, modes: ['warm_qualified_route'], executionModes: ['headless'], concurrencyLevels: [1], deadlineMs: 5000,
-    repetitions: 1, retainRows: false,
+    repetitions: 1, retainRows: false, configPath: testConfig,
     onComparison: async evidence => { comparisonEvidence.push(evidence); return `bench/reports/${evidence.baseline_adapter}.json`; },
   });
   assert.equal(report.schema_version, 3);
@@ -54,7 +59,7 @@ test('historical Controlla 1 can be paired against the frozen pre-Stage-2 Contro
       [baseline]: adapter(baseline, 100, 3),
     }, resetCommand: reset, verifierCommand: verifier, environment,
     modes: ['warm_qualified_route'], executionModes: ['headless'], concurrencyLevels: [1], deadlineMs: 5000,
-    repetitions: 1,
+    repetitions: 1, configPath: testConfig,
   });
   assert.equal(report.candidate_adapter, 'controlla-1');
   assert.deepEqual(report.comparisons.map(item => item.baseline_adapter), [baseline]);

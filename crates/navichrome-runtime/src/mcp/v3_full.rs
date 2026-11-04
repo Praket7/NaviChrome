@@ -2344,7 +2344,9 @@ impl AppV3 {
             active_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             workflow_lease_owners: Arc::new(Mutex::new(std::collections::BTreeSet::new())),
             workflow_operations: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
-            headless_chrome: std::env::var_os("COMPTROL_CHROME_EXECUTABLE")
+            headless_chrome: std::env::var_os("NAVICHROME_CHROME_EXECUTABLE")
+                .or_else(|| std::env::var_os("NAVICHROME_CHROME"))
+                .or_else(|| std::env::var_os("COMPTROL_CHROME_EXECUTABLE"))
                 .map(std::path::PathBuf::from),
         }
     }
@@ -3240,7 +3242,7 @@ impl AppV3 {
     ) -> Result<(String, String), rmcp::ErrorData> {
         let executable = self.headless_chrome.clone().ok_or_else(|| {
             invalid(
-                "headless mode requires COMPTROL_CHROME_EXECUTABLE to name the Chrome executable",
+                "headless mode requires NAVICHROME_CHROME_EXECUTABLE (or legacy COMPTROL_CHROME_EXECUTABLE) to name the Chrome executable",
             )
         })?;
         if url.is_empty() || url.len() > 2048 || url.chars().any(char::is_control) {
@@ -5298,6 +5300,81 @@ fn parse_frame_reference<'a>(
     Ok((parts[0], parts[1], node))
 }
 
+fn frame_transaction_receipt(response: Value) -> Value {
+    response
+        .pointer("/result/value")
+        .or_else(|| response.get("result"))
+        .cloned()
+        .unwrap_or(response)
+}
+
+async fn click_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
+    let reference = args
+        .reference
+        .as_deref()
+        .ok_or_else(|| invalid("frame click requires a fresh frame reference"))?;
+    let (frame_id, loader_id, backend_node_id) = parse_frame_reference(reference, "click")?;
+    let outcome = args
+        .outcome
+        .clone()
+        .ok_or_else(|| invalid("frame click requires a bounded outcome"))?;
+    let shared = app
+        .core
+        .legacy
+        .shared_sessions
+        .lock()
+        .await
+        .get(&args.session_id)
+        .cloned()
+        .ok_or_else(|| invalid("unknown shared session"))?;
+    let shared = shared.lock().await;
+    if shared.handle.principal != app.core.legacy.principal.as_ref() {
+        return Err(invalid("session is not owned by this server principal"));
+    }
+    let connection = shared
+        .connection
+        .as_ref()
+        .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
+    let response = connection
+        .command(
+            shared.registry()?,
+            &shared.handle,
+            &args.chrome_tab_id,
+            "NaviChrome.frameClick",
+            json!({
+                "frame_id":frame_id,
+                "loader_id":loader_id,
+                "backend_node_id":backend_node_id,
+                "outcome":serde_json::to_value(outcome).map_err(|error| invalid(error.to_string()))?,
+                "input_mode":"mouse",
+                "timeout_ms":args.timeout_ms.unwrap_or(5000).clamp(250,10000)
+            }),
+        )
+        .await;
+    match response {
+        Ok(response) => {
+            let value = frame_transaction_receipt(response);
+            let status = if value["verified"] == true {
+                "verified"
+            } else if value["dispatch_may_have_occurred"] == false {
+                "not_dispatched"
+            } else {
+                "unknown"
+            };
+            Ok(
+                json!({"status":status,"action":"click","reference":reference,"source_frame_id":frame_id,
+                "dispatch_acknowledged":value["dispatch_acknowledged"],"dispatch_may_have_occurred":value["dispatch_may_have_occurred"],
+                "verified":value["verified"] == true,"reason_code":value["reason_code"],"reason":value["reason"],"dispatch":value}),
+            )
+        }
+        Err(error) => Ok(
+            json!({"status":"unknown","action":"click","reference":reference,"source_frame_id":frame_id,
+            "dispatch_acknowledged":null,"dispatch_may_have_occurred":true,"verified":false,
+            "reason_code":"frame_click_delivery_unknown","reason":format!("frame click delivery is uncertain; inspect the child frame before retrying: {error}")}),
+        ),
+    }
+}
+
 async fn fill_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorData> {
     let reference = args
         .reference
@@ -5360,7 +5437,7 @@ async fn fill_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, rm
             "expected_value":expected,"value":value,"timeout_ms":args.timeout_ms.unwrap_or(5000).clamp(250,10000)})).await;
     match result {
         Ok(response) => {
-            let evidence = super::super::shared_value(&response).map_err(invalid)?;
+            let evidence = frame_transaction_receipt(response);
             let status = if evidence["verified"] == true {
                 "verified"
             } else if evidence["dispatch_may_have_occurred"] == false {
@@ -5478,7 +5555,7 @@ async fn type_frame_reference(
     .await;
     match result {
         Ok(Ok(response)) => {
-            let receipt = super::super::shared_value(&response).map_err(invalid)?;
+            let receipt = frame_transaction_receipt(response);
             let mut compact = compact_transaction_receipt(&receipt, mode);
             if let Some(object) = compact.as_object_mut() {
                 object.insert(
@@ -5580,7 +5657,7 @@ async fn swipe_frame_reference(app: &AppV3, args: &V3ActArgs) -> Result<Value, r
     })).await;
     match response {
         Ok(response) => {
-            let evidence = super::super::shared_value(&response).map_err(invalid)?;
+            let evidence = frame_transaction_receipt(response);
             let status = evidence["status"].as_str().unwrap_or("unknown");
             Ok(
                 json!({"status":status,"action":"swipe","reference":reference,"source_frame_id":parts[0],"coordinate_space":"child_frame_css_viewport",
@@ -5668,7 +5745,7 @@ async fn multi_touch_frame_reference(
     })).await;
     match response {
         Ok(response) => {
-            let evidence = super::super::shared_value(&response).map_err(invalid)?;
+            let evidence = frame_transaction_receipt(response);
             let status = evidence["status"].as_str().unwrap_or("unknown");
             Ok(
                 json!({"status":status,"action":"multi_touch","gesture":"two_finger_pinch","reference":reference,"source_frame_id":parts[0],
@@ -7669,6 +7746,14 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         "step",
         "kind",
         "action",
+        // Qualified route identity is receipt proof, not diagnostics. Keep it
+        // so response compaction cannot turn a replayed read into an
+        // unattributed extraction.
+        "route",
+        "skill_id",
+        "skill_version",
+        "internal_model_calls",
+        "skill_replay_rejected",
         "typing_mode",
         "bulk_insert",
         "completed_chars",
@@ -7758,6 +7843,13 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         "snippet",
         "text",
         "value",
+        // A typed page-tool result is the requested output, not diagnostics.
+        "result",
+        "tools",
+        "available",
+        "cache_hit",
+        "capability_route",
+        "capability_reused",
         "resumed_from_checkpoint",
         // "Why was this refused" is the one fact a caller cannot recover from
         // the page, so it survives every budget fallback.
@@ -7781,7 +7873,13 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
     for (key, field) in compacted.as_object().into_iter().flatten() {
         if KEEP.contains(&key.as_str()) {
             let evidence = compact_v3_evidence_field(key, field);
-            let field_budget = if key == "files" { 560 } else { 384 };
+            let field_budget = match key.as_str() {
+                "files" => 560,
+                // Discovery and invocation output was already validated against
+                // MAX_PAGE_TOOL_OUTPUT_BYTES before the receipt was built.
+                "result" | "tools" => crate::v3_runtime::MAX_PAGE_TOOL_OUTPUT_BYTES,
+                _ => 384,
+            };
             if v3_workflow_response_size(&evidence) <= field_budget {
                 projected.insert(key.clone(), evidence);
             } else {
@@ -7883,6 +7981,14 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
         "text",
         "value",
         "resumed_from_checkpoint",
+        // Route identity must survive even the 640-byte fallback rebuild: a
+        // replayed qualified read is only independently checkable when the
+        // receipt says which skill produced it.
+        "route",
+        "skill_id",
+        "skill_version",
+        "internal_model_calls",
+        "skill_replay_rejected",
         "target_state",
         // Recovery evidence is the receipt's explanation of what the runtime
         // did before refusing, so compaction must never drop it.
@@ -7966,6 +8072,11 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
             "text",
             "value",
             "resumed_from_checkpoint",
+            "route",
+            "skill_id",
+            "skill_version",
+            "internal_model_calls",
+            "skill_replay_rejected",
         ];
         let mut fallback_retain = vec![
             "status",
@@ -8032,6 +8143,11 @@ fn compact_v3_workflow_step(value: Value, intermediate_snapshot: bool, mutation:
             "text",
             "value",
             "resumed_from_checkpoint",
+            "route",
+            "skill_id",
+            "skill_version",
+            "internal_model_calls",
+            "skill_replay_rejected",
         ];
         if kind == "upload" {
             fallback_keys.extend([
@@ -8406,6 +8522,11 @@ fn compact_v3_step_for_response_budget(value: Value) -> Value {
             "text",
             "value",
             "items",
+            "route",
+            "skill_id",
+            "skill_version",
+            "internal_model_calls",
+            "skill_replay_rejected",
             "next_action",
         ],
         "choose" => &[
@@ -8461,6 +8582,11 @@ fn compact_v3_step_for_response_budget(value: Value) -> Value {
             "document_text",
             "verified",
             "dispatch_acknowledged",
+            "route",
+            "skill_id",
+            "skill_version",
+            "internal_model_calls",
+            "skill_replay_rejected",
             "reason_code",
             "application_accepted",
             "persisted",
@@ -8666,6 +8792,12 @@ fn compact_v3_source_identity_value(value: &Value) -> Value {
 }
 
 fn compact_v3_evidence_field(key: &str, value: &Value) -> Value {
+    if key == "result" || key == "tools" {
+        // Typed page-tool output was already validated against
+        // MAX_PAGE_TOOL_OUTPUT_BYTES at dispatch. Preserve it exactly instead
+        // of replacing the requested result with an opaque digest.
+        return value.clone();
+    }
     if key == "recovery" {
         // Recovery evidence is small, but keep the projection explicit so a
         // later field cannot push it over the generic 384-byte hash limit.
@@ -9122,6 +9254,7 @@ fn bound_v3_workflow_response(
                         | "route_kind"
                         | "verification"
                         | "reason"
+                        | "skill_fallback_reason"
                         | "actual_cost"
                         | "model_budget"
                 )
@@ -9962,6 +10095,7 @@ fn task_receipt(kind: &str, url: &str, reference: Option<&str>, value: &Value) -
         "dispatch_may_have_occurred":value["dispatch_may_have_occurred"],
         "resumed_from_checkpoint":resumed_from_checkpoint,
         "route":value["route"],"skill_id":value["skill_id"],"skill_version":value["skill_version"],
+        "skill_replay_rejected":value["skill_replay_rejected"],
         "internal_model_calls":value["internal_model_calls"],
         "root_document_matches":value["root_document_matches"],"account_marker_matches":value["account_marker_matches"],
         "artifact_handle": if kind == "download" { value["artifact_handle"].clone() } else { Value::Null },
@@ -15579,6 +15713,46 @@ async fn execute_page_copy(
     }
 }
 
+/// A workflow that explicitly asks for fast keys still has to carry the whole
+/// key transaction inside its outer wall bound. The interactive default is
+/// 30 s, which expires just after a 1000-character ordered-key transaction has
+/// landed, leaving the caller with an unknown outcome instead of readback.
+/// Scale only the fast-key volume; every other workflow keeps the default.
+fn workflow_wall_limit(args: &V3WorkflowArgs) -> Duration {
+    fn fast_chars(step: &V3WorkflowStep) -> usize {
+        match step {
+            V3WorkflowStep::Type {
+                value,
+                typing_mode,
+                ..
+            } if typing_mode.as_deref() == Some("fast_keys") => value.chars().count(),
+            _ => 0,
+        }
+    }
+    let mut count = 0_usize;
+    if let Some(program) = args.program.as_ref() {
+        for op in program {
+            if let V3WorkflowOp::Step { step } = op {
+                count = count.saturating_add(fast_chars(step));
+            }
+        }
+    }
+    for step in &args.steps {
+        count = count.saturating_add(fast_chars(step));
+    }
+    let base = crate::v3::CommandBudget::interactive_default().max_wall_ms;
+    Duration::from_millis(if count == 0 {
+        base
+    } else {
+        base.max(
+            (count as u64)
+                .saturating_mul(35)
+                .saturating_add(15_000)
+                .min(900_000),
+        )
+    })
+}
+
 fn direct_action_budget(args: &V3ActArgs) -> crate::v3::CommandBudget {
     let mut budget = crate::v3::CommandBudget::interactive_default();
     let frame_target = args.action == "type"
@@ -15600,6 +15774,23 @@ fn direct_action_budget(args: &V3ActArgs) -> crate::v3::CommandBudget {
         let pacing =
             crate::v3::human_typing_timeout_ms(count, args.delay_ms.unwrap_or(280).min(600));
         budget.max_wall_ms = args.timeout_ms.unwrap_or(pacing).clamp(1_000, 900_000);
+        budget.max_browser_commands = budget.max_browser_commands.max((count * 4 + 32) as u32);
+        budget.max_cdp_commands = budget.max_cdp_commands.max((count * 12 + 64) as u32);
+    } else if args.action == "type"
+        && args.typing_mode.as_deref() == Some("fast_keys")
+    {
+        // Fast keys deliberately dispatch one key event per character. The
+        // interactive default budget (256 browser commands) is exhausted by a
+        // 1000-character task long before the page is reached, so scale the
+        // transport budget with the requested text while keeping zero delay.
+        let count = args
+            .value
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .count()
+            .min(16_384);
+        budget.max_wall_ms = args.timeout_ms.unwrap_or(120_000).clamp(1_000, 900_000);
         budget.max_browser_commands = budget.max_browser_commands.max((count * 4 + 32) as u32);
         budget.max_cdp_commands = budget.max_cdp_commands.max((count * 12 + 64) as u32);
     } else if args.action == "type" && frame_target {
@@ -16016,10 +16207,20 @@ async fn rich_block_type(
         .is_some_and(|value| value["ok"] == true);
     let identity_same = matches!(after,Ok(ref current) if current==&identity);
     let verified = guard_ok && identity_same;
-    drop(shared);
     if verified {
+        // The insertion changed text, not the document identity. Keep the
+        // workflow's retained references usable for the next step instead of
+        // forcing a fresh snapshot round trip between typing and clicking
+        // Save. A replaced document fails identity_same above, so this never
+        // re-arms references from a different page.
+        if let Some(current) = shared.snapshots.get_mut(&args.chrome_tab_id)
+            && current.token == snapshot.token
+        {
+            current.consumed = false;
+        }
         super::super::authorize_internal_workflow_snapshot(&snapshot.token);
     }
+    drop(shared);
     Ok(if verified {
         // Report the rungs that repaired this transaction, not just the result:
         // a resolved ladder is why the readback could pass at all.
@@ -16448,10 +16649,19 @@ async fn key_type(
             "stale or consumed reference; take one fresh browser_snapshot",
         ));
     }
-    let default_timeout = if policy.mode == crate::v3::TypingMode::HumanKeys {
-        crate::v3::human_typing_timeout_ms(text.chars().count(), policy.delay_ms)
-    } else {
-        30_000
+    let default_timeout = match policy.mode {
+        crate::v3::TypingMode::HumanKeys => {
+            crate::v3::human_typing_timeout_ms(text.chars().count(), policy.delay_ms)
+        }
+        // The extension owns the per-character fast-key transaction. Its
+        // request budget must cover the whole text, not the fixed 30 s that
+        // was enough for one short input but cuts a 1000-character task off
+        // exactly at the boundary.
+        crate::v3::TypingMode::FastKeys => (text.chars().count() as u64)
+            .saturating_mul(35)
+            .saturating_add(15_000)
+            .clamp(30_000, 900_000),
+        _ => 30_000,
     };
     let timeout = Duration::from_millis(
         args.timeout_ms
@@ -17286,6 +17496,15 @@ fn page_tool_snapshot_fresh(consumed: bool, identity_matches: bool) -> bool {
     !consumed && identity_matches
 }
 
+fn page_tool_interaction_stable(before: &Value, after: &Value) -> bool {
+    if !before.is_object() || !after.is_object() {
+        return false;
+    }
+    ["focus", "selection", "viewport"]
+        .iter()
+        .all(|field| before.get(*field) == after.get(*field))
+}
+
 fn should_discover_page_tool(action: &str, cached_candidate: bool) -> bool {
     action == "page_tools" || !cached_candidate
 }
@@ -17623,13 +17842,15 @@ async fn call_page_tool(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::Er
         .map_err(invalid)?;
         if !page_tool_snapshot_fresh(
             snapshot.consumed,
-            super::super::shared_epoch_matches(
-                &snapshot,
-                &args.chrome_tab_id,
-                &before,
-                &interaction,
-                crate::v3::EpochUse::PointerMutation,
-            ),
+            // Reading a WebMCP catalog can advance the page's own semantic
+            // revision. The snapshot is still valid when the document and
+            // human interaction state are unchanged; the invocation below
+            // revalidates the live catalog and schema before dispatch.
+            before == snapshot.identity
+                && page_tool_interaction_stable(
+                    &snapshot.interaction_epoch,
+                    &interaction,
+                ),
         ) {
             return Err(invalid(if snapshot.consumed {
                 "snapshot was already consumed; take a fresh browser_snapshot"
@@ -17816,15 +18037,17 @@ async fn call_page_tool(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::Er
         .map_err(invalid)?;
         (identity, interaction)
     };
+    // Discovery itself runs a page script. WebMCP implementations may advance
+    // their own semantic tool revision when the catalog is read, so reusing the
+    // snapshot's semantic revision here would reject every first invocation.
+    // Keep the safety-critical document, focus, selection, and viewport checks.
     if !page_tool_snapshot_fresh(
         snapshot.consumed,
-        super::super::shared_epoch_matches(
-            &snapshot,
-            &args.chrome_tab_id,
-            &dispatch_identity,
-            &dispatch_interaction,
-            crate::v3::EpochUse::PointerMutation,
-        ),
+        dispatch_identity == before
+            && page_tool_interaction_stable(
+                &snapshot.interaction_epoch,
+                &dispatch_interaction,
+            ),
     ) {
         return Ok(page_tool_unavailable(
             "document changed after tool discovery; take a fresh snapshot",
@@ -17996,10 +18219,47 @@ impl AppV3 {
                     task,
                     crate::v3_tasks::TaskPrimitive::Download { .. }
                         | crate::v3_tasks::TaskPrimitive::DownloadUpload { .. }
+                        | crate::v3_tasks::TaskPrimitive::Upload { .. }
                 )
             })
         {
             budget.max_wall_ms = 60_000;
+            // A shared-session transfer needs snapshot, guarded download,
+            // file-chooser, selection, readback, and two evidence checks. The
+            // interactive 256-command envelope is too small for that bounded
+            // sequence even though the task itself has only two logical steps.
+            budget.max_browser_commands = budget.max_browser_commands.max(1024);
+            budget.max_cdp_commands = budget.max_cdp_commands.max(4096);
+        }
+        if args.action == "task" {
+            // The browser wrapper is the outermost deadline. A task program
+            // that explicitly requests long fast-key text must widen this
+            // bound too; the inner workflow deadline cannot help once the
+            // wrapper has already returned an unknown outcome.
+            let fast_key_chars = args
+                .task_program
+                .as_ref()
+                .map(|program| {
+                    program
+                        .steps
+                        .iter()
+                        .filter(|step| {
+                            step.kind == crate::task_program::TaskStepKind::Type
+                                && step.typing_mode.as_deref() == Some("fast_keys")
+                        })
+                        .filter_map(|step| step.value.as_deref())
+                        .map(|value| value.chars().count())
+                        .sum::<usize>()
+                })
+                .unwrap_or(0);
+            if fast_key_chars > 0 {
+                budget.max_wall_ms = budget.max_wall_ms.max(
+                    (fast_key_chars as u64)
+                        .saturating_mul(35)
+                        .saturating_add(15_000)
+                        .min(900_000),
+                );
+            }
         }
         let wall_limit = Duration::from_millis(budget.max_wall_ms);
         let browser_started = std::time::Instant::now();
@@ -18008,7 +18268,7 @@ impl AppV3 {
         let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
         let response_max_bytes = args.max_bytes;
         let response_max_bytes_reason = args.max_bytes_reason.clone();
-        let result = measured_receipt(navichrome_browser::scheduler::telemetry::with_browser_command_budget(
+        let result = measured_receipt_with_budget(budget, navichrome_browser::scheduler::telemetry::with_browser_command_budget(
             budget.max_browser_commands as u64,
             budget.max_cdp_commands as u64,
             wall_limit,
@@ -18111,8 +18371,10 @@ impl AppV3 {
         tab_id: &str,
         url: &str,
         selector: &str,
+        rejection: &mut Option<String>,
     ) -> Result<Option<Value>, rmcp::ErrorData> {
         let Some(site_scope) = site_scope_from_url(url) else {
+            *rejection = Some("no_http_site_scope".into());
             return Ok(None);
         };
         let intent = task.intent_fingerprint();
@@ -18122,11 +18384,13 @@ impl AppV3 {
             .has_qualified_intent(&intent, &site_scope, now)
             .map_err(|error| invalid(error.to_string()))?
         {
+            *rejection = Some("no_qualified_skill_for_intent_and_site".into());
             return Ok(None);
         }
         let (observed_scope, signature) =
             super::full::current_skill_context_core(&self.core, session_id, tab_id).await?;
         if observed_scope != site_scope {
+            *rejection = Some(format!("live_scope_mismatch:{observed_scope}"));
             return Ok(None);
         }
         let registered = {
@@ -18141,28 +18405,41 @@ impl AppV3 {
         {
             Some(crate::capability_registry::CapabilityImplementation::QualifiedSkill {
                 skill_id,
-            }) => self
-                .skills
-                .replay(skill_id, &site_scope, &signature, now)
-                .ok(),
+            }) => match self.skills.replay(skill_id, &site_scope, &signature, now) {
+                Ok(replay) => Some(replay),
+                Err(error) => {
+                    *rejection = Some(format!("qualified_skill_replay_rejected:{error}"));
+                    None
+                }
+            },
             Some(
                 crate::capability_registry::CapabilityImplementation::WebMcp { .. }
                 | crate::capability_registry::CapabilityImplementation::SiteProfile { .. },
-            ) => None,
+            ) => {
+                *rejection = Some("registry_resolved_another_implementation".into());
+                None
+            }
             None => self
                 .skills
                 .replay_matching(&intent, &site_scope, &signature, now)
                 .map_err(|error| invalid(error.to_string()))?,
         };
         let Some(replay) = replay else {
+            if rejection.is_none() {
+                *rejection = Some("no_replayable_qualified_skill".into());
+            }
             return Ok(None);
         };
         let definition: crate::browser_workflow::BrowserWorkflowDefinition =
             match serde_json::from_value(replay.workflow.clone()) {
                 Ok(workflow) => workflow,
-                Err(_) => return Ok(None),
+                Err(_) => {
+                    *rejection = Some("skill_workflow_decode_failed".into());
+                    return Ok(None);
+                }
             };
         let Some(steps) = read_only_research_skill_steps(definition, url, selector) else {
+            *rejection = Some("skill_workflow_failed_read_only_preconditions".into());
             return Ok(None);
         };
         let mut extraction = None;
@@ -21468,6 +21745,8 @@ impl AppV3 {
             .map_err(invalid)?;
         let response_max_bytes = args.max_bytes;
         let response_max_bytes_reason = args.max_bytes_reason.clone();
+        let typed_page_tool_route =
+            matches!(args.action.as_str(), "page_tool" | "page_tools");
         // Give owner-less direct MCP calls distinct lock ownership. Workflow
         // and task calls inject their shared owner for the full transaction.
         if args.client_id.is_none() {
@@ -21495,10 +21774,28 @@ impl AppV3 {
         let Json(mut value) = result?;
         normalize_receipt_outcomes(&mut value);
         value["page_content_is_untrusted"] = json!(true);
+        // A typed page-tool call exists to return its result. The default 2 KiB
+        // receipt budget is sized for UI receipts, so without an explicit
+        // caller budget size this response to the already-bounded typed output.
+        let (response_max_bytes, response_budget_reason) = if typed_page_tool_route
+            && response_max_bytes.is_none()
+        {
+            let result_bytes = serde_json::to_vec(value.get("result").unwrap_or(&Value::Null))
+                .map_or(0, |bytes| bytes.len());
+            (
+                Some((result_bytes + 4096).clamp(
+                    DEFAULT_V3_WORKFLOW_RECEIPT_BYTES,
+                    MAX_V3_WORKFLOW_RECEIPT_BYTES,
+                )),
+                Some("typed page-tool result is the requested output".to_owned()),
+            )
+        } else {
+            (response_max_bytes, response_max_bytes_reason)
+        };
         value = bound_v3_workflow_response(
             value,
             response_max_bytes,
-            response_max_bytes_reason.as_deref(),
+            response_budget_reason.as_deref(),
         );
         let failure_budget = value
             .pointer("/response_budget/max_bytes")
@@ -22217,6 +22514,14 @@ impl AppV3 {
                         };
                         return guarded_coordinate_click(self, &args, x, y).await;
                     }
+                    if args.action == "click"
+                        && args
+                            .reference
+                            .as_deref()
+                            .is_some_and(|reference| reference.starts_with("@f:"))
+                    {
+                        return click_frame_reference(self, &args).await;
+                    }
                     if background_mutation && matches!(args.action.as_str(), "click" | "double_click" | "context_click") {
                         let reference = args.reference.as_deref().ok_or_else(|| invalid("click requires reference"))?;
                         let item = self.core.semantic.lock().await
@@ -22348,6 +22653,28 @@ impl AppV3 {
                         return type_frame_reference(self, &args, policy).await;
                     }
                     let required = requires_key_events(self, &args).await;
+                    // A long plain-text control does not need one CDP round
+                    // trip per character. Use one trusted insertion, the same
+                    // shortcut the extension takes for its fast-key program,
+                    // while keeping ordered keys for short text, rich editors,
+                    // and pages that explicitly require trusted key events.
+                    if !background_mutation
+                        && !required
+                        && args.typing_mode.as_deref() == Some("fast_keys")
+                        && args.value.as_deref().unwrap_or_default().chars().count() >= 256
+                    {
+                        let reference = args.reference.as_deref().ok_or_else(|| invalid("type requires reference"))?;
+                        if !rich_editor_reference(self, &args, reference).await
+                            && !editor_value_unreadable(self, &args, reference).await
+                        {
+                            let expected = args.expected_value.clone().unwrap_or_default();
+                            let text = args.value.as_deref().unwrap_or_default();
+                            let mut receipt = rich_block_type(self, &args, reference, &expected, text, "fast_keys").await?;
+                            receipt["fast_path"] = json!("single_insert_text");
+                            receipt["input_method"] = json!("insertText");
+                            return Ok(receipt);
+                        }
+                    }
                     if background_mutation && !required && args.typing_mode.as_deref().unwrap_or("block") == "block" {
                         let reference = args.reference.as_deref().ok_or_else(|| invalid("type requires reference"))?;
                         let expected = args.expected_value.clone().unwrap_or_default();
@@ -22630,8 +22957,7 @@ impl AppV3 {
             }
             operations.insert(key.clone(), operation.clone());
         }
-        let wall_limit =
-            Duration::from_millis(crate::v3::CommandBudget::interactive_default().max_wall_ms);
+        let wall_limit = workflow_wall_limit(&args);
         let diagnostic_session_id = args.session_id.clone();
         let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
         let result = measured_receipt(navichrome_browser::scheduler::telemetry::with_browser_command_budget(
@@ -24162,7 +24488,10 @@ impl AppV3 {
                                 state
                                     .page_ordered_items()
                                     .into_iter()
-                                    .find(|item| item["reference"] == reference)
+                                    .find(|item| {
+                                        item["reference"] == reference
+                                            || item["frame_reference"] == reference
+                                    })
                             })
                             .cloned(),
                         state.and_then(|state| state.document.clone()),
@@ -25859,8 +26188,14 @@ impl AppV3 {
             &args.task,
             crate::v3_tasks::TaskPrimitive::Download { .. }
                 | crate::v3_tasks::TaskPrimitive::DownloadUpload { .. }
+                | crate::v3_tasks::TaskPrimitive::Upload { .. }
         ) {
             budget.max_wall_ms = 60_000;
+            // Keep the inner task budget aligned with the browser wrapper;
+            // shared file chooser plus readback and evidence checks exceed the
+            // interactive 256-command envelope.
+            budget.max_browser_commands = budget.max_browser_commands.max(1024);
+            budget.max_cdp_commands = budget.max_cdp_commands.max(4096);
         }
         let wall_limit = Duration::from_millis(budget.max_wall_ms);
         let session_id = args.session_id.clone();
@@ -25907,7 +26242,7 @@ impl AppV3 {
         };
         let sequence = NEXT_WORKFLOW_OWNER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let task_owner = format!("task:{session_id}:{tab_id}:{}:{sequence}", now_ms());
-        let result = measured_receipt(navichrome_browser::scheduler::telemetry::with_browser_command_budget(
+        let result = measured_receipt_with_budget(budget, navichrome_browser::scheduler::telemetry::with_browser_command_budget(
             budget.max_browser_commands as u64,
             budget.max_cdp_commands as u64,
             wall_limit,
@@ -26340,6 +26675,29 @@ impl AppV3 {
                     0,
                 );
                 route_receipt["execution_plan"] = plan.receipt();
+            } else if matches!(
+                execution_route.selected,
+                crate::capability_router::ExecutionTier::QualifiedSkill
+                    | crate::capability_router::ExecutionTier::WebMcpOrSiteTool
+                    | crate::capability_router::ExecutionTier::SpeculativeRead
+            ) {
+                // The pre-route advertised a qualified read path, but no target
+                // proved it on the live page. Report the route that actually
+                // ran instead of leaving the prediction in the receipt.
+                route_receipt["tier"] = json!(crate::capability_router::ExecutionTier::SemanticProgram);
+                route_receipt["reason"] = json!(
+                    "qualified read candidate failed live preconditions; used bounded semantic extraction"
+                );
+                route_receipt["predicted_model_calls"] = json!(0);
+                if let Some(reason) = result["skill_fallback_reason"].as_str() {
+                    route_receipt["skill_fallback_reason"] = json!(reason);
+                }
+                plan = plan.with_selected_tier(
+                    crate::capability_router::ExecutionTier::SemanticProgram,
+                    "qualified read candidate failed live preconditions; used bounded semantic extraction",
+                    0,
+                );
+                route_receipt["execution_plan"] = plan.receipt();
             }
             attach_execution_actuals(&mut route_receipt, route_started, &result);
             result["execution_route"] = route_receipt;
@@ -26724,11 +27082,12 @@ impl AppV3 {
                             }
                         }
                     } else { None };
+                    let mut skill_rejection = None;
                     let skill_result = if !visual_route_selected && let crate::v3_tasks::TaskPrimitive::Research { urls, .. } = &args.task
                         && webmcp_result.is_none()
                         && urls.len() == 1 && urls[0] == url
                     {
-                        match self.maybe_replay_research_skill(&args.task, &args.session_id, &active_tab_id, &url, &selector).await {
+                        match self.maybe_replay_research_skill(&args.task, &args.session_id, &active_tab_id, &url, &selector, &mut skill_rejection).await {
                             Ok(result) => result,
                             Err(error) => {
                                 route_receipt["skill_fallback_reason"] = json!(format!("qualified skill lookup failed; used direct extraction: {error}"));
@@ -26736,6 +27095,11 @@ impl AppV3 {
                             }
                         }
                     } else { None };
+                    if skill_result.is_none()
+                        && let Some(reason) = skill_rejection
+                    {
+                        route_receipt["skill_fallback_reason"] = json!(reason);
+                    }
                     if let Some(value) = skill_result.as_ref()
                         && value["route"] == "qualified_skill"
                         && let (Some(site_scope), Some(signature), Some(skill_id)) = (
@@ -27502,7 +27866,8 @@ impl AppV3 {
                         return (false, receipts);
                     }
                 };
-                let extraction = match self.maybe_replay_research_skill(&task, session_id, &tab_id, &url, &selector).await {
+                let mut skill_rejection = None;
+                let extraction = match self.maybe_replay_research_skill(&task, session_id, &tab_id, &url, &selector, &mut skill_rejection).await {
                     Ok(Some(value)) => value,
                     Ok(None) => self.core.browser_extract(Parameters(BrowserExtractArgs {
                         session_id: session_id.to_owned(), chrome_tab_id: tab_id.clone(), selector: selector.clone(),
@@ -27519,7 +27884,10 @@ impl AppV3 {
                 };
                 let identity_after = self.readiness_document(session_id, &tab_id).await;
                 let extraction = reject_research_extract(extraction, &loader_before, &url, &identity_after);
-                let extraction_receipt = task_receipt("extract", &url, None, &extraction);
+                let mut extraction_receipt = task_receipt("extract", &url, None, &extraction);
+                if let Some(reason) = skill_rejection.as_ref() {
+                    extraction_receipt["skill_replay_rejected"] = json!(reason);
+                }
                 let complete = extraction_receipt["verified"] == true;
                 if complete
                     && let Some(resume) = resume.as_ref()
@@ -27550,7 +27918,15 @@ impl AppV3 {
             .iter()
             .filter(|receipt| receipt["kind"] == "extract" && receipt["verified"] == true)
             .count();
-        json!({"status":if all_verified {"completed"} else {"incomplete"},"steps":receipts.len(),"receipts":receipts,"execution":"parallel_read_research","max_parallel_tabs":8,"resumed_targets":resumed_targets.load(std::sync::atomic::Ordering::Relaxed),"checkpointed_targets":checkpointed_targets,"elapsed_ms":started.elapsed().as_millis() as u64})
+        let skill_replays = receipts
+            .iter()
+            .filter(|receipt| receipt["route"] == "qualified_skill")
+            .count();
+        let skill_fallback_reason = receipts
+            .iter()
+            .find_map(|receipt| receipt["skill_replay_rejected"].as_str())
+            .map(str::to_owned);
+        json!({"status":if all_verified {"completed"} else {"incomplete"},"steps":receipts.len(),"receipts":receipts,"execution":"parallel_read_research","max_parallel_tabs":8,"resumed_targets":resumed_targets.load(std::sync::atomic::Ordering::Relaxed),"checkpointed_targets":checkpointed_targets,"skill_replays":skill_replays,"skill_fallback_reason":skill_fallback_reason,"elapsed_ms":started.elapsed().as_millis() as u64})
     }
 
     #[tool(
