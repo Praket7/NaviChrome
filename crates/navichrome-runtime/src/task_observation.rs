@@ -33,7 +33,7 @@ impl TaskObservationFilter {
             },
             TaskPrimitive::FormDraft { .. } => Self::roles(
                 &[
-                    "textbox", "combobox", "checkbox", "radio", "switch", "button",
+                    "input", "textbox", "combobox", "checkbox", "radio", "switch", "button",
                 ],
                 None,
                 "form_draft_controls",
@@ -44,6 +44,7 @@ impl TaskObservationFilter {
                 for step in steps {
                     match step {
                         MutationStep::Fill { .. } => {
+                            roles.insert("input");
                             roles.insert("textbox");
                             roles.insert("combobox");
                         }
@@ -164,6 +165,7 @@ mod tests {
         };
         let filter = TaskObservationFilter::for_task(&task);
         assert_eq!(filter.query.as_deref(), Some("Saved"));
+        assert!(filter.required_roles.iter().any(|role| role == "input"));
         assert!(filter.required_roles.iter().any(|role| role == "textbox"));
         assert!(filter.required_roles.iter().any(|role| role == "button"));
         assert!(!filter.receipt().to_string().contains("person@example.test"));
@@ -184,6 +186,7 @@ mod tests {
         let first = TaskObservationFilter::for_task(&form);
         let second = TaskObservationFilter::for_task(&form);
         assert_eq!(first, second);
+        assert!(first.required_roles.contains(&"input".into()));
         assert!(first.required_roles.contains(&"textbox".into()));
         assert!(first.required_roles.len() <= MAX_TASK_FILTER_ROLES);
 

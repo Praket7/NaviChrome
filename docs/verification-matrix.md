@@ -1,5 +1,20 @@
 # Verification matrix
 
+### 2026-11-04 frame verification and five-task live continuation
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Frame-scoped text verification | pass | Regression reproduced the `-32602` budget-reason refusal before the one-field fix; the child-frame fixture passed after it. Full `cargo test --workspace --locked`, formatting, and `git diff --check` passed. |
+| Screenshot request contract | pass | The extension harness waits for its actual async screenshot result instead of sleeping 25 ms; the focused test and full workspace suite pass. |
+| Installed extension and Hotload | pass | `scripts/reinstall-local.sh` built and installed the release runtime, then requested reload for the named extension. Hotload was refreshed and reported `navichrome` ready, generation 4, six tools, and no last error. |
+| Six-client launch contracts | pass | Packaged MCP startup and current tool-schema fingerprints verified for all six configured client adapters. Contract checks establish launch/schema compatibility, not live behavioral qualification. |
+| Google Form and ESPN | prior live evidence retained | The Form was already submitted and the Bills story was already verified in the handoff; this continuation sent neither mutation again. |
+| Gmail attachment follow-up | pass, previously verified | The personal recipient's Sent copy showed one attachment. No duplicate send was issued during this continuation. |
+| Google Slides text edit | pass | NaviChrome typed into the blank slide canvas; fresh visual evidence showed `NaviChrome live demo text edit`, and a fresh accessibility snapshot reported `Document status: Saved to Drive`. |
+| Classroom announcement with upload | artifact verified; live tool receipt `unknown` | Immediate readback showed the exact staged filename in the draft; the post click verified a new announcement control, and a fresh class snapshot showed the body and attachment link in the personal `testing` class. A stale error-phrase matcher caused the unknown receipt; its regression and the full runtime suite now pass after the fix. No duplicate upload was issued, so the new receipt path is not live-qualified. |
+| Classroom attachment download | pass | NaviChrome clicked Download in the verified personal Drive viewer. `/Users/pcg/Downloads/navichrome-live-demo-20261104.txt` appeared after the initial check; its 78-byte size and SHA-256 exactly match the staged upload. |
+| Speed / superiority | not measured | This run did not record a comparable latency distribution or confidence interval. |
+
 ### 2026-11-02 click guard: named words, not screenshots
 
 | Check | Result | Evidence and boundary |

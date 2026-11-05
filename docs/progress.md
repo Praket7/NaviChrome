@@ -1,5 +1,60 @@
 # Build progress
 
+## Frame verification and live demo continuation — 2026-11-04
+
+The frame-scoped `TextPresent` verifier requested a 1 MiB internal snapshot but
+left `max_bytes_reason` empty. Snapshot validation rejected that request with
+`-32602`, so workflows could stop before file selection. `verify_impl_unmeasured`
+now supplies the reason `frame-scoped text verification`. The hidden upload
+fixture now includes a child frame and asserts that its text can be verified.
+The regression failed before the fix and passed afterward; the full
+`cargo test --workspace --locked`, `cargo fmt --all -- --check`, and
+`git diff --check` pass.
+
+The workspace run also exposed a screenshot harness check that relied on a
+fixed 25 ms sleep. It now waits for the actual asynchronous result; the focused
+contract test and a complete workspace run pass with that change.
+
+The Classroom upload classifier also used an obsolete file-picker error
+phrase, so it returned `unknown` before applying independent app acceptance
+evidence. It now matches the extension's current error. The focused regression
+failed before the fix and passed afterward; the complete runtime suite passes
+with the change. The live upload was not repeated, to avoid a duplicate post;
+its original tool receipt remains `unknown` despite the app readback and
+matching downloaded file.
+
+The schema changes also made the six-client launch-contract fingerprints stale.
+Updated the shared V3 and ChatGPT Desktop wrapper pins; the packaged client
+contract smoke now verifies all six tool lists. This checks launch/schema
+compatibility, not behavioral qualification of those clients.
+
+`scripts/reinstall-local.sh agefmpphbpkiklipjpgbffjjhkmlhifd` rebuilt the
+release binary, installed `/Users/pcg/.navichrome/bin/navichrome`, and requested
+the unpacked extension reload. I then refreshed the `navichrome` Hotload child;
+it reports ready with six tools at generation 4 and no last error.
+
+Live results use only the personal testing account and the NaviChrome route:
+
+- The Google Form and ESPN results remain verified from the prior live handoff;
+  neither was resubmitted or rewritten here.
+- Gmail's generic follow-up was already sent with one attachment and verified
+  in Sent; it was not resent.
+- The Slides deck now contains `NaviChrome live demo text edit`. A fresh canvas
+  image showed the title on the slide, and a fresh snapshot reported `Saved to
+  Drive`. The tab was brought forward once at the user's request.
+- In Classroom's `testing` class, NaviChrome staged the 78-byte text file
+  (`d03f8965b72c7dd1bc71f9cd9c10d43e7caefe2a35ef3f8d30fc159fc0216d13`). The
+  upload workflow conservatively returned `unknown` because file-input
+  retention was not proven. An immediate fresh snapshot showed the exact file
+  attached to the draft; the one Post click was verified, and a fresh class
+  snapshot showed the new announcement body and attachment link. The Drive
+  Download button was clicked through NaviChrome; a later check found
+  `/Users/pcg/Downloads/navichrome-live-demo-20261104.txt`, 78 bytes, with the
+  same SHA-256 as the staged file. The first check ran before Chrome finished
+  writing the download.
+
+No comparative speed run was performed, so no fastest/best claim is made.
+
 ## Canvas proof is clipboard-free — 2026-11-03
 
 The canvas document verifier now uses only the editor's page-owned `copy` event
@@ -601,7 +656,7 @@ Chrome showed the loaded Controlla 3 unpacked extension ID as `meodjjcdnjfbcdfin
 
 ## 2026-10-14 — configured-MCP capability audit and three-stage plan
 
-Live calls used the reloaded six-tool MCP. Owned background window creation, trusted mouse/touch, fill, headless image capture and headless download worked in bounded samples. Shared screenshots, shared uploads, typed action validation, root workflow completeness and upload acceptance exposed public-route gaps. Three implementation plans are saved under docs/superpowers/plans/2026-10-14-controlla-stage-{1,2,3}-*.md. Sanitized receipts and an independent local fixture are retained under bench/reports/2026-10-14-capability-audit.json and bench/fixtures/capability-audit-20261014/. This audit did not change production code or publish a build.
+Live calls used the reloaded six-tool MCP. Owned background window creation, trusted mouse/touch, fill, headless image capture and headless download worked in bounded samples. Shared screenshots, shared uploads, typed action validation, root workflow completeness and upload acceptance exposed public-route gaps. Three 2026-10-14 implementation plans were removed in the 2026-11-04 stale-plan cleanup. Sanitized receipts and an independent local fixture are retained under bench/reports/2026-10-14-capability-audit.json and bench/fixtures/capability-audit-20261014/. This audit did not change production code or publish a build.
 
 ## Stage 1 reliability continuation — 2026-10-15
 
@@ -611,7 +666,7 @@ Extended the lifecycle in this pass: background open can target a caller-selecte
 
 Local evidence before the final cancellation/activation follow-up: the full V3 suite passed (182 passed, 6 Chrome-dependent ignored); runtime library passed (195 passed, 1 ignored); extension background harness passed, including multi-chunk screenshot forwarding, transfer abort, capture/navigation race, owned-tab closure, selected-window open, and owned-tab move. This follow-up adds V3 workflow cancellation through the existing six-tool surface: callers reuse a session-scoped operation ID, later steps are fenced, and an in-flight step is reported as potentially dispatched. The extension can explicitly activate only a tab with a completed Controlla open receipt, and verifies unchanged document, active tab, and focused window; the harness checks user-tab refusal and idempotent reuse. Public browser descriptions, schema tests, and agent instructions cover both additions.
 
-Final local verification on 2026-10-15 passed: `cargo test --workspace`, the isolated `v3_hidden_file_upload_waits_for_delayed_application_acceptance` headless localhost fixture (exact registered bytes/hash plus ordinary output and React-style `role=status` acceptance; persistence left null), warning-denied workspace Clippy, release package build and clean-prefix package install/upgrade/rollback/uninstall checks, extension background harness, client smoke contracts (12), Agent UX checks (13), V3 and app gates, Markdown links (71 files), provenance digests, dependency checks, formatting, and `git diff --check`. A fresh whole-plan Luna Medium audit concluded **ALL CODE/WIRING COMPLETE LOCALLY**. No live site, configured extension reload, or Codex MCP restart was run. Those exact installed-runtime and live target/focus/interference gates remain for manual qualification; see [verification-matrix.md](verification-matrix.md), [blockers.md](blockers.md), and the item-level [Stage 1 plan](superpowers/plans/2026-10-14-controlla-stage-1-reliable-contracts.md).
+Final local verification on 2026-10-15 passed: `cargo test --workspace`, the isolated `v3_hidden_file_upload_waits_for_delayed_application_acceptance` headless localhost fixture (exact registered bytes/hash plus ordinary output and React-style `role=status` acceptance; persistence left null), warning-denied workspace Clippy, release package build and clean-prefix package install/upgrade/rollback/uninstall checks, extension background harness, client smoke contracts (12), Agent UX checks (13), V3 and app gates, Markdown links (71 files), provenance digests, dependency checks, formatting, and `git diff --check`. A fresh whole-plan Luna Medium audit concluded **ALL CODE/WIRING COMPLETE LOCALLY**. No live site, configured extension reload, or Codex MCP restart was run. Those exact installed-runtime and live target/focus/interference gates remain for manual qualification; see [verification-matrix.md](verification-matrix.md) and [blockers.md](blockers.md).
 
 ### Screenshot acceptance review correction — 2026-10-15
 

@@ -212,7 +212,7 @@ fn fit_extraction(
 }
 
 fn validate_selector(s: &str) -> Result<(), BrowserError> {
-    if s.is_empty() || s.len() > 512 || s.chars().any(char::is_control) {
+    if s.is_empty() || s.len() > 512 || s.starts_with('@') || s.chars().any(char::is_control) {
         return Err(BrowserError::InvalidResponse("invalid CSS selector".into()));
     }
     Ok(())
@@ -327,9 +327,33 @@ fn extraction_page_script(config: &str) -> String {
 
 fn observation_page_script(config: &str) -> String {
     format!(
-        r#"(()=>{{const q={config},check=(s,field)=>{{try{{document.querySelector(s);return null}}catch(_){{return {{selector_error:{{field,reason:'invalid_selector'}}}}}}}},checks=[['selector',q.selector],...Object.entries(q.fields)];for(const [f,s] of checks){{const error=check(s,f);if(error)return error}}const walker=document.createTreeWalker(document,NodeFilter.SHOW_ELEMENT),items=[],missing=new Set(),fieldEntries=Object.entries(q.fields),sizes=[],encoder=new TextEncoder();let bytes=0,clipped=0,limited=false,scanned=0,count=0;while(scanned<q.maxScanNodes&&count<=q.limit){{const e=walker.nextNode();if(!e)break;scanned++;if(!e.matches(q.selector))continue;count++;if(count>q.limit){{limited=true;break}}const o={{}};for(const [k,s] of fieldEntries){{const n=e.matches(s)?e:e.querySelector(s);if(!n){{o[k]=null;missing.add(k);continue}}const t=(n.innerText||n.value||n.getAttribute('aria-label')||'').trim();if(t.length>q.chars)clipped++;o[k]=t.slice(0,q.chars)}}const size=encoder.encode(JSON.stringify(o)).length+1;if(bytes+size>q.bytes-512){{limited=true;break}}items.push(o);sizes.push(size);bytes+=size}}if(scanned>=q.maxScanNodes)limited=true;if(count===0&&!limited)return {{selector_error:{{field:'selector',reason:'no_match'}}}};const result={{title:document.title,items,count,missing:[...missing],clipped,limited}};const itemSizes=sizes,baseBytes=encoder.encode(JSON.stringify({{...result,items:[]}})).length;let totalBytes=baseBytes+itemSizes.reduce((sum,size)=>sum+size,0)+Math.max(0,itemSizes.length-1);while(totalBytes>q.bytes&&result.items.length){{result.items.pop();const removedSize=itemSizes.pop();totalBytes-=removedSize+(result.items.length?1:0);result.limited=true}}if(totalBytes>q.bytes)return {{budgetError:true}};return result}})()"#,
+        r#"(()=>{{const q={config},check=(s,field)=>{{try{{document.querySelector(s);return null}}catch(_){{return {{selector_error:{{field,reason:'invalid_selector'}}}}}}}},checks=[['selector',q.selector],...Object.entries(q.fields).filter(([,s])=>s.charCodeAt(0)!==64)];for(const [f,s] of checks){{const error=check(s,f);if(error)return error}}const walker=document.createTreeWalker(document,NodeFilter.SHOW_ELEMENT),items=[],missing=new Set(),fieldEntries=Object.entries(q.fields),sizes=[],encoder=new TextEncoder();let bytes=0,clipped=0,limited=false,scanned=0,count=0;while(scanned<q.maxScanNodes&&count<=q.limit){{const e=walker.nextNode();if(!e)break;scanned++;if(!e.matches(q.selector))continue;count++;if(count>q.limit){{limited=true;break}}const o={{}};for(const [k,s] of fieldEntries){{const a=s.charCodeAt(0)===64?s.slice(1):null;const n=a?e:(e.matches(s)?e:e.querySelector(s));if(!n){{o[k]=null;missing.add(k);continue}}const raw=a?(a==='text'?(n.innerText||n.textContent||''):a==='value'?(n.value??''):(n.getAttribute(a)??'')):(n.innerText||n.value||n.getAttribute('aria-label')||'');const t=String(raw).trim();if(t.length>q.chars)clipped++;o[k]=t.slice(0,q.chars)}}const size=encoder.encode(JSON.stringify(o)).length+1;if(bytes+size>q.bytes-512){{limited=true;break}}items.push(o);sizes.push(size);bytes+=size}}if(scanned>=q.maxScanNodes)limited=true;if(count===0&&!limited)return {{selector_error:{{field:'selector',reason:'no_match'}}}};const result={{title:document.title,items,count,missing:[...missing],clipped,limited}};const itemSizes=sizes,baseBytes=encoder.encode(JSON.stringify({{...result,items:[]}})).length;let totalBytes=baseBytes+itemSizes.reduce((sum,size)=>sum+size,0)+Math.max(0,itemSizes.length-1);while(totalBytes>q.bytes&&result.items.length){{result.items.pop();const removedSize=itemSizes.pop();totalBytes-=removedSize+(result.items.length?1:0);result.limited=true}}if(totalBytes>q.bytes)return {{budgetError:true}};return result}})()"#,
         config = config
     )
+}
+
+/// Field maps take either a CSS sub-selector or a bare attribute accessor.
+/// `href`, `text`, `value`, `aria-label`, and friends read that property from
+/// the matched element itself, which is what link and headline extraction
+/// needs; anything else stays a selector for a descendant.
+fn observation_field_selector(value: &str) -> (String, bool) {
+    let value = value.trim();
+    let attribute = match value {
+        "text" | "innerText" | "innertext" | "textContent" | "text_content" => Some("@text"),
+        "href" => Some("@href"),
+        "src" => Some("@src"),
+        "value" => Some("@value"),
+        "aria-label" | "aria_label" | "label" => Some("@aria-label"),
+        "name" => Some("@name"),
+        "id" => Some("@id"),
+        "title" => Some("@title"),
+        "alt" => Some("@alt"),
+        _ => None,
+    };
+    match attribute {
+        Some(attribute) => (attribute.to_owned(), true),
+        None => (value.to_owned(), false),
+    }
 }
 
 /// Run the existing bounded observation contract over a provider-supplied
@@ -352,13 +376,18 @@ pub fn observation_command(spec: &ObserveSpec) -> Result<Value, BrowserError> {
             "observation limits must be 1..=500 items and positive text/byte budgets".into(),
         ));
     }
+    let mut fields = std::collections::BTreeMap::new();
     for (name, selector) in &spec.fields {
         validate_field_name(name)?;
-        validate_selector(selector)?;
+        let (selector, attribute) = observation_field_selector(selector);
+        if !attribute {
+            validate_selector(&selector)?;
+        }
+        fields.insert(name.clone(), selector);
     }
     // A one-item result may live late in the DOM. Bound search independently of output size.
     let max_scan_nodes = 65_536;
-    let expression = json!({"selector":spec.selector,"fields":spec.fields,"limit":spec.max_items,"maxScanNodes":max_scan_nodes,"chars":spec.max_text_chars,"bytes":spec.max_bytes}).to_string();
+    let expression = json!({"selector":spec.selector,"fields":fields,"limit":spec.max_items,"maxScanNodes":max_scan_nodes,"chars":spec.max_text_chars,"bytes":spec.max_bytes}).to_string();
     let script = observation_page_script(&expression);
     Ok(json!({"expression":script,"returnByValue":true,"awaitPromise":false}))
 }
@@ -1105,6 +1134,21 @@ mod tests {
             matches!(parse_observation("tab", 1, &observe_spec(".row"), &response),
             Err(BrowserError::InvalidResponse(message)) if message == "selector_error:title:invalid_selector")
         );
+    }
+
+    #[test]
+    fn observation_maps_known_fields_and_rejects_raw_attribute_syntax() {
+        let mut spec = observe_spec("a");
+        spec.fields.insert("href".into(), "href".into());
+        let command = observation_command(&spec).unwrap();
+        let expression = command["expression"].as_str().unwrap();
+        assert!(expression.contains("\"href\":\"@href\""));
+
+        spec.fields.insert("href".into(), "@href".into());
+        assert!(matches!(
+            observation_command(&spec),
+            Err(BrowserError::InvalidResponse(message)) if message == "invalid CSS selector"
+        ));
     }
 
     fn extraction_spec() -> ExtractionSpec {

@@ -2424,13 +2424,13 @@ fn shared_trigger_upload_finishes_before_the_thirty_second_task_deadline() {
 
 #[test]
 fn identity_marker_accepts_the_extension_reply_shape_and_cdp_test_envelope() {
-    assert!(identity_marker_matches(&json!({"matches":true,"match_count":1})).unwrap());
-    assert!(!identity_marker_matches(&json!({"matches":false,"match_count":0})).unwrap());
+    assert!(identity_marker_matches(&json!({"matches":true,"match_count":1})).unwrap().matched);
+    assert!(!identity_marker_matches(&json!({"matches":false,"match_count":0})).unwrap().matched);
     assert!(
         identity_marker_matches(&json!({"result":{"value":{"matches":true,"match_count":1}}}))
-            .unwrap()
+            .unwrap().matched
     );
-    assert!(!identity_marker_matches(&json!({"matches":true,"match_count":2})).unwrap());
+    assert!(!identity_marker_matches(&json!({"matches":true,"match_count":2})).unwrap().matched);
     assert!(identity_marker_matches(&json!({"unrelated":true})).is_err());
 }
 
@@ -3161,7 +3161,7 @@ fn upload_acceptance_requires_a_newly_satisfied_predicate() {
 
 #[test]
 fn consumed_picker_input_is_reported_as_accepted_only_after_app_confirmation() {
-    let consumed = json!({"status":"unknown","dispatch_acknowledged":true,"reason":"Error: File input did not retain one selected file for readback."});
+    let consumed = json!({"status":"unknown","dispatch_acknowledged":true,"reason":"Error: File input did not retain the complete selected file set for readback."});
     assert!(upload_picker_consumed_input(&consumed));
     assert!(!upload_picker_consumed_input(
         &json!({"status":"unknown","dispatch_acknowledged":true,"reason":"frame changed during upload"})
@@ -5715,7 +5715,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     }
     let failed_find=super::find_impl(&app.core,&super::BrowserFindArgs{
         session_id:session_id.clone(),chrome_tab_id:target_id.clone(),query:"no control has this label".into(),
-        role:None,limit:Some(10),max_matches:None,match_mode:Some("all".into()),within_reference:None,href_hint:None,
+        role:None,limit:Some(10),max_matches:None,match_mode:Some("all".into()),within_reference:None,href_hint:None,selector:None,
     }).await.unwrap();
     assert_eq!(failed_find["count"],0,"{failed_find}");
     let filled = client.call_tool(call("act", json!({"session_id":session_id,"chrome_tab_id":target_id,"action":"fill","reference":reference,"expected_value":"before","value":"after"}))).await.unwrap().structured_content.unwrap();
@@ -5724,7 +5724,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     assert_eq!(filled["delta"]["verified"], true, "the compact affected-control delta is the postcondition: {filled}");
     assert_eq!(filled["reacquisition"]["status"], "rebound", "same-document rerender should use one bounded fresh semantic read before retrying the known-not-dispatched fill: {filled}");
     let workflow = client.call_tool(call("workflow", json!({
-        "session_id":session_id,"chrome_tab_id":target_id,
+        "session_id":session_id,"chrome_tab_id":target_id,"max_bytes":8192,"max_bytes_reason":"assert every workflow receipt",
         "steps":[
             {"kind":"snapshot"},
             {"kind":"find","query":"Name","role":"input","save_as":"name"},
@@ -5807,7 +5807,8 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     }).await.unwrap();
     let save_name_ref = save_snapshot["items"].as_array().unwrap().iter().find(|item|item["name"]=="Name").unwrap()["reference"].as_str().unwrap().to_owned();
     let save_button_ref = save_snapshot["items"].as_array().unwrap().iter().find(|item|item["name"]=="Save").unwrap()["reference"].as_str().unwrap().to_owned();
-    let resumable_save = json!({"action":"task","session_id":session_id,"chrome_tab_id":target_id,"resume_key":"save-once","task":{
+    let resumable_save = json!({"action":"task","session_id":session_id,"chrome_tab_id":target_id,"resume_key":format!("save-once-{target_id}"),
+        "max_bytes":8192,"max_bytes_reason":"assert both resumable task receipts","task":{
         "kind":"form_draft","fields":[{"reference":save_name_ref,"expected_value":"tasked","value":"tasked"}],
         "save_without_submit":true,"save_control":{"reference":save_button_ref,"confirmation_selector":"#saved","confirmation_text":"Saved"}
     }});
@@ -5987,7 +5988,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     let partial_best = super::super::find_impl(&app.core, &super::super::BrowserFindArgs {
         session_id:session_id.clone(), chrome_tab_id:target_id.clone(), query:"Open requested panel".into(),
         role:Some("button".into()), limit:Some(5), max_matches:None,
-        match_mode:Some("best".into()), within_reference:None, href_hint:None,
+        match_mode:Some("best".into()), within_reference:None, href_hint:None, selector:None,
     }).await.unwrap();
     assert_eq!(partial_best["ambiguous"], true, "incomplete targeted scan cannot certify unique best: {partial_best}");
     assert_eq!(partial_best["scope_complete"], false);
@@ -6174,6 +6175,21 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     }
     local_server.abort();
     assert!(ready,"committed navigation did not finish loading after the fixture released it");
+    {
+        let live = app.core.legacy.shared_sessions.lock().await.get(&session_id).unwrap().clone();
+        let live = live.lock().await;
+        live.connection.as_ref().unwrap().command(live.registry().unwrap(), &live.handle, &target_id, "Runtime.evaluate", json!({
+            "expression":"document.body.insertAdjacentHTML('beforeend','<section id=\"find-scope\"><button aria-label=\"Choose\">Choose</button></section><button aria-label=\"Choose\">Choose</button>');true",
+            "returnByValue":true
+        })).await.unwrap();
+    }
+    let scoped_find=super::find_impl(&app.core,&super::BrowserFindArgs{
+        session_id:session_id.clone(),chrome_tab_id:target_id.clone(),query:"Choose".into(),
+        role:Some("button".into()),limit:Some(10),max_matches:None,match_mode:Some("exact".into()),
+        within_reference:None,href_hint:None,selector:Some("#find-scope".into()),
+    }).await.unwrap();
+    assert_eq!(scoped_find["count"],1,"selector-scoped find must exclude an identical control outside its subtree: {scoped_find}");
+    assert_eq!(scoped_find["scope"],"selector_subtree","report the scope actually searched: {scoped_find}");
     let profile = {
         let sessions = app.core.legacy.shared_sessions.lock().await;
         let session = sessions.get(&session_id).unwrap().lock().await;
@@ -6210,7 +6226,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
 #[test]
 // A private Chrome process talks only to a localhost receipt fixture. This
 // covers the public headless route, not the installed extension or a vendor.
-fn v3_hidden_file_upload_waits_for_delayed_application_acceptance() {
+fn v3_hidden_file_upload_and_child_frame_text_verification_work() {
     std::thread::Builder::new()
         .name("navichrome-v3-hidden-upload-test".into())
         .stack_size(16 * 1024 * 1024)
@@ -6219,14 +6235,14 @@ fn v3_hidden_file_upload_waits_for_delayed_application_acceptance() {
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(v3_hidden_file_upload_waits_for_delayed_application_acceptance_inner());
+                .block_on(v3_hidden_file_upload_and_child_frame_text_verification_work_inner());
         })
         .unwrap()
         .join()
         .unwrap();
 }
 
-async fn v3_hidden_file_upload_waits_for_delayed_application_acceptance_inner() {
+async fn v3_hidden_file_upload_and_child_frame_text_verification_work_inner() {
     use rmcp::{ServiceExt, model::CallToolRequestParams};
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -6236,7 +6252,8 @@ async fn v3_hidden_file_upload_waits_for_delayed_application_acceptance_inner() 
     const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/s2-05-roundtrip.bin");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let fixture_url = format!("http://{}/", listener.local_addr().unwrap());
-    let html = r#"<!doctype html><span id="account">fixture-account</span><a href="/download" download="acceptance-fixture.bin">Download fixture</a><input id="file" type="file" accept=".bin" style="display:none"><div aria-label="Drop fixture files" id="file-drop">Drop files</div><output id="status-output">Waiting</output><output id="input-state">retained</output><div id="react-status" role="status">Waiting</div><script>document.querySelector('#file').addEventListener('change',async()=>{const input=document.querySelector('#file');const file=input.files[0];const pending=fetch('/upload',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});input.value='';document.querySelector('#input-state').textContent=input.files.length===0?'cleared':'still-selected';const response=await pending;const evidence=await response.json();const state=evidence.accepted?'Accepted':'Rejected';document.querySelector('#status-output').textContent=state;document.querySelector('#react-status').textContent=state});const drop=document.querySelector('#file-drop');drop.addEventListener('dragover',e=>e.preventDefault());drop.addEventListener('drop',async e=>{e.preventDefault();const files=[...e.dataTransfer.files];window.fileDropObserved=await Promise.all(files.map(async f=>{const bytes=new Uint8Array(await f.arrayBuffer());const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');return {name:f.name,size:f.size,type:f.type,hash,bytes:[...bytes]}}));document.querySelector('#status-output').textContent='Dropped Saved'})</script>"#;
+    let html = r#"<!doctype html><iframe src="/frame" title="Frame verifier fixture"></iframe><span id="account">fixture-account</span><a href="/download" download="acceptance-fixture.bin">Download fixture</a><input id="file" type="file" accept=".bin" style="display:none"><div aria-label="Drop fixture files" id="file-drop">Drop files</div><output id="status-output">Waiting</output><output id="input-state">retained</output><div id="react-status" role="status">Waiting</div><script>document.querySelector('#file').addEventListener('change',async()=>{const input=document.querySelector('#file');const file=input.files[0];const pending=fetch('/upload',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});input.value='';document.querySelector('#input-state').textContent=input.files.length===0?'cleared':'still-selected';const response=await pending;const evidence=await response.json();const state=evidence.accepted?'Accepted':'Rejected';document.querySelector('#status-output').textContent=state;document.querySelector('#react-status').textContent=state});const drop=document.querySelector('#file-drop');drop.addEventListener('dragover',e=>e.preventDefault());drop.addEventListener('drop',async e=>{e.preventDefault();const files=[...e.dataTransfer.files];window.fileDropObserved=await Promise.all(files.map(async f=>{const bytes=new Uint8Array(await f.arrayBuffer());const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');return {name:f.name,size:f.size,type:f.type,hash,bytes:[...bytes]}}));document.querySelector('#status-output').textContent='Dropped Saved'})</script>"#;
+    let frame_html = "<!doctype html><main>Frame verifier evidence</main>";
     let (evidence_tx, evidence_rx) = tokio::sync::oneshot::channel();
     let upload_fixture = tokio::spawn(async move {
         loop {
@@ -6281,6 +6298,15 @@ async fn v3_hidden_file_upload_waits_for_delayed_application_acceptance_inner() 
                 );
                 socket.write_all(headers.as_bytes()).await.unwrap();
                 socket.write_all(FIXTURE).await.unwrap();
+                continue;
+            }
+            if request.starts_with(b"GET /frame ") {
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    frame_html.len()
+                );
+                socket.write_all(headers.as_bytes()).await.unwrap();
+                socket.write_all(frame_html.as_bytes()).await.unwrap();
                 continue;
             }
             if is_upload {
@@ -6340,6 +6366,45 @@ async fn v3_hidden_file_upload_waits_for_delayed_application_acceptance_inner() 
         .unwrap();
     let session = launch["session_id"].as_str().unwrap().to_owned();
     let tab = launch["target_ids"][0].as_str().unwrap().to_owned();
+    let frame_snapshot = client
+        .call_tool(call(
+            "snapshot",
+            json!({"session_id":session,"chrome_tab_id":tab,"include_frames":true}),
+        ))
+        .await
+        .unwrap()
+        .structured_content
+        .unwrap();
+    let frame_handles = frame_snapshot["frame_handles"].as_array().unwrap();
+    let root_frame_id = frame_handles
+        .iter()
+        .find(|frame| frame["parent_id"].is_null())
+        .unwrap()["frame_id"]
+        .as_str()
+        .unwrap();
+    let child_frame = frame_handles
+        .iter()
+        .find(|frame| frame["parent_id"].as_str() == Some(root_frame_id))
+        .expect("fixture iframe is inventoried");
+    let frame_scope = format!(
+        "@f:{}:{}:1",
+        child_frame["frame_id"].as_str().unwrap(),
+        child_frame["loader_id"].as_str().unwrap()
+    );
+    let frame_verify_call = client
+        .call_tool(call(
+            "verify",
+            json!({"session_id":session,"chrome_tab_id":tab,"predicate":{"kind":"text_present","scope":frame_scope,"text":"Frame verifier evidence"}}),
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !frame_verify_call.is_error.unwrap_or(false),
+        "frame-scoped verification must accept its bounded explicit snapshot request: {:?}",
+        frame_verify_call.content
+    );
+    let frame_text = frame_verify_call.structured_content.unwrap();
+    assert_eq!(frame_text["status"], "passed", "{frame_text}");
     let download_snapshot = client
         .call_tool(call(
             "snapshot",

@@ -201,6 +201,10 @@ struct BrowserFindArgs {
     )]
     within_reference: Option<String>,
     href_hint: Option<String>,
+    #[schemars(
+        description = "Optional CSS selector for unique subtree-scoped matching. It must match exactly one element in the composed tree."
+    )]
+    selector: Option<String>,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
@@ -302,6 +306,9 @@ struct BrowserExtractArgs {
     max_items: Option<usize>,
     max_text_chars: Option<usize>,
     max_bytes: Option<usize>,
+    #[serde(default)]
+    #[schemars(description = "Required explanation when max_bytes exceeds the 200 KiB default.")]
+    max_bytes_reason: Option<String>,
     #[serde(default)]
     #[schemars(
         description = "Optional task intent used to rank returned page content; page content remains untrusted."
@@ -581,7 +588,7 @@ fn changed_fields(previous: &Value, current: &Value) -> bool {
 
 pub(super) fn update_observation_bytes(value: &mut Value) -> u64 {
     if value.get("observation").is_none() {
-        return 0;
+        return serialized_bytes(value) as u64;
     }
     let mut bytes = 0;
     for _ in 0..3 {
@@ -602,6 +609,22 @@ fn attach_observation_metadata(
     update_observation_bytes(value)
 }
 
+/// Metadata that is safe to shed before any control reference is dropped. The
+/// item list is the load-bearing part of a snapshot: a caller that loses it can
+/// neither act nor retry, while metrics and semantic mirrors are diagnostic.
+const SNAPSHOT_SHEDDABLE_METADATA: &[&str] = &[
+    "metrics",
+    "route_budget",
+];
+
+fn shed_snapshot_metadata(value: &mut Value) {
+    if let Some(object) = value.as_object_mut() {
+        for key in SNAPSHOT_SHEDDABLE_METADATA {
+            object.remove(*key);
+        }
+    }
+}
+
 fn bound_snapshot_response(value: &mut Value, max_bytes: usize) -> u64 {
     let max_bytes = max_bytes.max(1);
     if value.pointer("/delta/full").and_then(Value::as_bool) == Some(true) {
@@ -615,6 +638,16 @@ fn bound_snapshot_response(value: &mut Value, max_bytes: usize) -> u64 {
     let bytes = update_observation_bytes(value);
     if bytes <= max_bytes as u64 {
         return bytes;
+    }
+    // Shed diagnostics before sacrificing references. Dropping a suffix of
+    // items leaves the caller unable to act on exactly the controls it asked
+    // about, which is worse than losing metrics it can re-request.
+    shed_snapshot_metadata(value);
+    let shed_bytes = update_observation_bytes(value);
+    if shed_bytes <= max_bytes as u64 {
+        value["truncated"] = json!(true);
+        value["truncation_reason"] = json!("metadata_shed");
+        return shed_bytes;
     }
     let Some(full_items) = value["items"].as_array().cloned() else {
         return snapshot_byte_budget_fallback(value, max_bytes);
@@ -1502,7 +1535,7 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         .unwrap_or_default();
     let intent_query = args.goal.as_ref().and_then(|goal| goal.query.as_deref());
     let candidate_count = items.len();
-    let items = crate::relevance::filter_items_for_task(
+    let response_items = crate::relevance::filter_items_for_task(
         &items,
         intent_query,
         required_roles,
@@ -1510,11 +1543,21 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
     );
     snapshot["observation_pruning"] = json!({
         "candidate_count": candidate_count,
-        "returned_count": items.len(),
+        "returned_count": response_items.len(),
         "required_roles": required_roles,
         "policy": "required_roles_feedback_and_focus_first_then_query_rank",
         "recall": "bounded; omitted_count is exact for this collection but richer scopes may hold more controls"
     });
+    // Relevance pruning decides what the caller sees, not what exists on the
+    // page. Keeping only the pruned slice in semantic state made every dropped
+    // control permanently unfindable on dense pages (Gmail compose fields,
+    // Classroom stream actions): the snapshot reported them pruned and `find`
+    // then had nothing left to match. State keeps the full candidate set; only
+    // the returned payload is trimmed.
+    let response_refs = response_items
+        .iter()
+        .filter_map(|item| item["reference"].as_str().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
     let item_keys = crate::semantic_state::stable_item_keys(
         &items,
         snapshot["snapshot_id"].as_str().unwrap_or_default(),
@@ -1597,9 +1640,11 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
             state.document.as_ref().expect("snapshot document was set"),
         );
         state.identities.insert(short.clone(), identity);
+        if response_refs.contains(&legacy_ref) {
+            public_items.push(item.clone());
+        }
         state.short_to_legacy.insert(short.clone(), legacy_ref);
-        state.items.insert(short, item.clone());
-        public_items.push(item);
+        state.items.insert(short, item);
     }
     let mut upsert = Vec::new();
     for (reference, item) in &state.items {
@@ -2717,8 +2762,13 @@ fn find_scope_is_complete(
     root_complete: bool,
     within_root: bool,
     exact_root_matches_only: bool,
+    subtree_complete: bool,
 ) -> bool {
-    global_complete || root_complete && (within_root || exact_root_matches_only)
+    // A selector-scoped refresh enumerates only that subtree, so the subtree -
+    // not the whole document - is the completeness domain for this query.
+    // Cross-origin frames elsewhere on the page (Gmail, Docs) must not
+    // invalidate a unique target inside an exhaustive selector scope.
+    global_complete || root_complete && (within_root || exact_root_matches_only) || subtree_complete
 }
 
 fn exact_root_scope_only(
@@ -2766,6 +2816,34 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
             },
         )
         .await?;
+    }
+    let mut selector_subtree_complete = false;
+    if let Some(selector) = args.selector.as_deref() {
+        if selector.trim().is_empty() || selector.len() > 512 {
+            return Err(invalid("selector must contain 1..512 characters"));
+        }
+        // The snapshot collector rejects selectors that do not identify one
+        // composed-tree root, so this refresh keeps matching and completeness
+        // inside the requested subtree.
+        let scoped = snapshot_impl(
+            app,
+            &BrowserSnapshotArgs {
+                session_id: args.session_id.clone(),
+                chrome_tab_id: args.chrome_tab_id.clone(),
+                selector: Some(selector.to_owned()),
+                max_items: Some(200),
+                max_text_chars: Some(0),
+                max_bytes: Some(100_000),
+                max_bytes_reason: Some("scoped find refresh".into()),
+                href_hint: None,
+                frame_id: None,
+                include_frames: None,
+                goal: None,
+                max_scan_nodes: Some(65_536),
+            },
+        )
+        .await?;
+        selector_subtree_complete = scoped["scope_complete"] == true;
     }
     let mode = args.match_mode.as_deref().unwrap_or("all");
     if !matches!(mode, "all" | "best" | "exact")
@@ -2844,6 +2922,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
         state.root_scope_complete,
         within_root,
         exact_root_matches_only,
+        selector_subtree_complete,
     );
     let ambiguous = find_is_ambiguous(mode, scope_complete, &ranked);
     let limit = args.max_matches.or(args.limit).unwrap_or(10).clamp(1, 50);
@@ -2872,7 +2951,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
     }
     let count = matches.len();
     Ok(
-        json!({"matches":matches,"count":count,"ambiguous":ambiguous,"scope_complete":scope_complete,"global_scope_complete":state.scope_complete,"scope":if root_scoped {"root_document_subtree"} else {"all_collected_frames"},"semantic_revision":state.snapshot_id}),
+        json!({"matches":matches,"count":count,"ambiguous":ambiguous,"scope_complete":scope_complete,"global_scope_complete":state.scope_complete,"selector_scope_complete":selector_subtree_complete,"scope":if selector_subtree_complete {"selector_subtree"} else if root_scoped {"root_document_subtree"} else {"all_collected_frames"},"semantic_revision":state.snapshot_id}),
     )
 }
 
@@ -3089,7 +3168,7 @@ async fn verify_impl_unmeasured(
                 max_items: Some(200),
                 max_text_chars: Some(0),
                 max_bytes: Some(1_000_000),
-                max_bytes_reason: None,
+                max_bytes_reason: Some("frame-scoped text verification".into()),
                 href_hint: None,
                 frame_id: Some(frame_id.clone()),
                 include_frames: None,
@@ -3842,6 +3921,13 @@ impl AppV2 {
         Parameters(args): Parameters<BrowserExtractArgs>,
     ) -> Result<Json<Value>, rmcp::ErrorData> {
         let relevance_goal = args.goal.clone();
+        let budget_bytes = select_response_budget(
+            args.max_bytes,
+            args.max_bytes_reason.as_deref(),
+            200_000,
+        )
+        .0
+        .clamp(4096, 1_000_000);
         let result = self
             .legacy
             .shared_observe(Parameters(SharedObserveArgs {
@@ -3852,7 +3938,7 @@ impl AppV2 {
                     fields: args.fields,
                     max_items: args.max_items.unwrap_or(100).clamp(1, 500),
                     max_text_chars: args.max_text_chars.unwrap_or(10_000).clamp(1, 10_000),
-                    max_bytes: args.max_bytes.unwrap_or(200_000).clamp(4096, 1_000_000),
+                    max_bytes: budget_bytes,
                     cursor: None,
                 },
             }))
@@ -3993,6 +4079,7 @@ impl AppV2 {
                             match_mode: Some("exact".into()),
                             within_reference: None,
                             href_hint: None,
+                            selector: None,
                         },
                     )
                     .await?;
@@ -4529,9 +4616,9 @@ mod tests {
         assert!(!snapshot_root_scope_complete(
             &json!({"scope_complete":false,"truncation_reason":"scanned_nodes_exceeded"})
         ));
-        assert!(!find_scope_is_complete(false, true, false, false));
-        assert!(find_scope_is_complete(false, true, true, false));
-        assert!(find_scope_is_complete(false, true, false, true));
+        assert!(!find_scope_is_complete(false, true, false, false, false));
+        assert!(find_scope_is_complete(false, true, true, false, false));
+        assert!(find_scope_is_complete(false, true, false, true, false));
         let root_match = json!({"source_frame":"main"});
         let frame_match = json!({"source_frame":"frame:7"});
         assert!(exact_root_scope_only(

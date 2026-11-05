@@ -1619,6 +1619,7 @@ async fn execute_workflow(app: &AppFull, args: FullWorkflowArgs) -> Result<Value
                         match_mode: None,
                         within_reference: None,
                         href_hint: None,
+                        selector: None,
                     },
                 )
                 .await?;

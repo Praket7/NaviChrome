@@ -1196,7 +1196,7 @@ async function waitFor(predicate, description) {
     native.hostMessage({ type: "command", id, target_id: "41", method: "Page.captureScreenshot", params: {
       format: "png", fromSurface: true, captureBeyondViewport, clip
     } });
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await waitFor(() => native.sent.some(reply => reply.type === "result" && reply.id === id), `${description} screenshot result`);
     assert.equal(debuggerCalls.filter(call => call.method === "Page.captureScreenshot").at(-1)?.params.clip.scale, clip.scale,
       `${description} remains inside the shared screenshot contract`);
     assert.ok(native.sent.some(reply => reply.type === "result" && reply.id === id), `${description} returns a result`);

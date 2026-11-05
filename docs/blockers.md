@@ -1,5 +1,25 @@
 # Blockers and external dependencies
 
+## Classroom upload receipt boundary — 2026-11-04
+
+The announcement, attachment, and download are verified in the personal
+`testing` class. NaviChrome clicked Download in the verified Drive viewer. A
+later filesystem check found
+`/Users/pcg/Downloads/navichrome-live-demo-20261104.txt` at 78 bytes with the
+same SHA-256 as the staged upload. The initial filesystem check happened before
+Chrome finished writing the file; do not treat an immediate missing-file check
+as proof that the download failed.
+
+The frame-scoped verifier fix resolves the earlier `-32602` reason-validation
+failure. The upload helper also matched stale error wording while the extension
+emits `File input did not retain the complete selected file set for readback.`
+The shared matcher now uses the current wording. Its regression failed before
+the fix and passed after it; `cargo test -p navichrome-runtime` passes. The live
+workflow was not repeated to avoid creating a duplicate announcement, so that
+run's tool receipt remains `unknown` even though the posted attachment and its
+download were independently read back and hash-verified. A post-fix live upload
+receipt is not established by that earlier run.
+
 ## Canvas verification boundary after clipboard removal — 2026-11-03
 
 `document_copy_event` is now the only canvas proof path. A page that cannot

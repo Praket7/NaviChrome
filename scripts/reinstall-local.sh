@@ -26,8 +26,12 @@ if [ ! -d "$(dirname "$HOST_BIN")" ]; then
   echo "Native host directory $(dirname "$HOST_BIN") does not exist; pass NAVICHROME_NATIVE_HOST_BIN." >&2
   exit 1
 fi
-cp "$ROOT/target/release/navichrome" "$HOST_BIN"
-echo "Installed native host: $HOST_BIN"
+if [ "$ROOT/target/release/navichrome" -ef "$HOST_BIN" ]; then
+  echo "Native host already installed: $HOST_BIN"
+else
+  cp "$ROOT/target/release/navichrome" "$HOST_BIN"
+  echo "Installed native host: $HOST_BIN"
+fi
 
 if [ -z "$EXTENSION_ID" ]; then
   echo "Now reload the extension in chrome://extensions, or rerun with its id to reload it from disk."
@@ -36,7 +40,7 @@ fi
 
 PAGE="chrome-extension://$EXTENSION_ID/dev-reload.html"
 if command -v open >/dev/null 2>&1; then
-  open -a "Google Chrome" "$PAGE"
+  open -g -a "Google Chrome" "$PAGE"
 elif command -v xdg-open >/dev/null 2>&1; then
   xdg-open "$PAGE"
 else

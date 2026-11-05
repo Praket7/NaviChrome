@@ -439,14 +439,15 @@ fn shape_incremental_snapshot(snapshot: &mut Value, baseline_match: bool) -> boo
 mod route_telemetry_tests {
     use super::execution_core::finalize_visual_requirement;
     use super::{
-        AppV3, BrowserClickOutcome, BrowserPredicate, V3ReadyWhen, V3WorkflowStep,
+        AppV3, BrowserClickOutcome, BrowserPredicate, V3ReadyWhen, V3WorkflowArgs,
+        V3WorkflowDagNode, V3WorkflowOp, V3WorkflowStep,
         attach_execution_actuals, attach_observation_boundary, attach_operation_costs,
         background_window_focus_invariant, browser_tool_result, contains_returned_page_evidence,
         foreground_open_invariant, navigation_ready_event_matches, observe_site_warmth,
         open_workflow_route_receipt, page_tool_route_receipt, readiness_wait_expression,
         selected_automation_window_invariant, shape_incremental_snapshot,
         snapshot_baseline_matches_current, task_cost_context, task_parallel_research_allowed,
-        task_route_signals, task_trace_steps, typing_policy,
+        task_route_signals, task_trace_steps, typing_policy, workflow_command_budget,
         upload_acceptance_baseline_allows_dispatch, verify_visual_region_change,
     };
     use serde_json::json;
@@ -1363,6 +1364,80 @@ mod route_telemetry_tests {
                 "{status} is not proof that the expected attachment was absent"
             );
         }
+    }
+
+    #[test]
+    fn workflow_file_transfers_get_the_task_upload_command_budget() {
+        let upload = || V3WorkflowStep::Upload {
+            artifact_handle: None,
+            artifact_handles: None,
+            trigger_reference: "@c1".into(),
+            account_marker: ("#account".into(), "user@example.test".into()),
+            acceptance: None,
+            persisted: None,
+        };
+        let args = |steps, program, dag| V3WorkflowArgs {
+            session_id: "session".into(),
+            chrome_tab_id: "tab".into(),
+            operation_id: None,
+            cancel: false,
+            steps,
+            program,
+            client_id: None,
+            dag,
+            max_bytes: None,
+            retain_text_evidence: false,
+            max_bytes_reason: None,
+        };
+        let budget = workflow_command_budget(&args(vec![upload()], None, None));
+        assert_eq!(budget.max_browser_commands, 1_024);
+        assert_eq!(budget.max_cdp_commands, 20_000);
+        assert_eq!(budget.max_wall_ms, 60_000);
+
+        let nested = args(
+            vec![],
+            Some(vec![V3WorkflowOp::TryFallback {
+                primary: vec![V3WorkflowOp::Step { step: upload() }],
+                fallback: vec![],
+            }]),
+            None,
+        );
+        assert_eq!(workflow_command_budget(&nested), budget);
+
+        let ordinary = args(
+            vec![V3WorkflowStep::Snapshot {
+                href_hint: None,
+                max_items: None,
+                max_text_chars: None,
+                goal: None,
+                max_scan_nodes: None,
+            }],
+            None,
+            None,
+        );
+        let ordinary_budget = workflow_command_budget(&ordinary);
+        assert_eq!(ordinary_budget.max_browser_commands, 256);
+        assert_eq!(ordinary_budget.max_cdp_commands, 20_000);
+        assert_eq!(ordinary_budget.max_wall_ms, 30_000);
+
+        let dag = args(
+            vec![],
+            None,
+            Some(vec![V3WorkflowDagNode {
+                id: "upload".into(),
+                target_id: "tab".into(),
+                deps: vec![],
+                steps: vec![V3WorkflowStep::UploadDrop {
+                    artifact_handles: vec!["artifact".into()],
+                    drop_reference: None,
+                    drop_selector: Some("#drop".into()),
+                    account_marker: ("#account".into(), "user@example.test".into()),
+                    acceptance: serde_json::json!({"kind":"attachment","filename":"test.txt"}),
+                    persisted: None,
+                }],
+            }]),
+        );
+        assert_eq!(workflow_command_budget(&dag), budget);
     }
 
     #[tokio::test]
@@ -4559,6 +4634,9 @@ enum V3WorkflowStep {
         max_matches: Option<usize>,
         within_reference: Option<String>,
         href_hint: Option<String>,
+        /// Optional CSS selector that scopes matching to that subtree.
+        #[serde(default)]
+        selector: Option<String>,
         save_as: String,
     },
     FindAll {
@@ -6619,6 +6697,7 @@ async fn semantic_widget_pointer<A: WidgetTargetArgs>(
                 match_mode: Some("exact".into()),
                 within_reference: None,
                 href_hint: None,
+                selector: None,
             },
         )
         .await?;
@@ -9588,6 +9667,7 @@ fn task_program_ops(
                         max_matches: None,
                         within_reference: None,
                         href_hint: None,
+                        selector: None,
                         save_as,
                     }));
                 }
@@ -10928,7 +11008,7 @@ async fn shared_file_select_trigger(
             .map_err(|error| invalid(format!("invalid account marker: {error}")))?;
         (files, before, guarded_shared)
     };
-    if !shared_upload_account_marker_matches(
+    let marker_check = shared_upload_account_marker_matches(
         app,
         session_id,
         tab_id,
@@ -10936,10 +11016,10 @@ async fn shared_file_select_trigger(
         &account_marker.1,
     )
     .await
-    .map_err(invalid)?
-    {
+    .map_err(invalid)?;
+    if !marker_check.matched {
         return Ok(
-            json!({"status":"not_dispatched","reason_code":"account_marker_mismatch","reason":"account marker did not match before file selection"}),
+            json!({"status":"not_dispatched","reason_code":"account_marker_mismatch","reason":"account marker did not match before file selection","marker_observed":marker_check.diagnostic()}),
         );
     }
     let acceptance_previously_passed = if let Some(predicate) = &acceptance_predicate {
@@ -11021,7 +11101,7 @@ async fn shared_file_select_trigger(
             &account_marker.1,
         )
         .await
-        .is_ok_and(|matches| matches);
+        .is_ok_and(|check| check.matched);
         if !document_matches || !marker_matches {
             return Ok(
                 json!({"status":"unknown","reason_code":"file_selection_unverified","chrome_selected_file":readback_matches,"root_document_matches":document_matches,"account_marker_matches":marker_matches,"dispatch_acknowledged":true,"reason":"frame file readback, document identity, or account marker did not match"}),
@@ -11317,7 +11397,7 @@ async fn shared_file_select_trigger(
         &account_marker.1,
     )
     .await
-    .is_ok_and(|matches| matches);
+    .is_ok_and(|check| check.matched);
     // Google Forms and other framework apps move the chosen file into their own
     // upload queue and clear the hidden input before the readback. In that case
     // the application's own acceptance evidence is the verification: the file
@@ -11416,7 +11496,7 @@ async fn shared_account_marker_matches(
     tab_id: &str,
     selector: &str,
     expected: &str,
-) -> Result<bool, String> {
+) -> Result<AccountMarkerCheck, String> {
     let value = connection
         .command(
             registry,
@@ -11435,7 +11515,7 @@ async fn shared_upload_account_marker_matches(
     tab_id: &str,
     selector: &str,
     expected: &str,
-) -> Result<bool, String> {
+) -> Result<AccountMarkerCheck, String> {
     let selector = shared_upload_account_marker_selector(selector)?;
     let live = app
         .core
@@ -11473,7 +11553,23 @@ fn shared_upload_account_marker_selector(selector: &str) -> Result<&str, String>
     }
 }
 
-fn identity_marker_matches(response: &Value) -> Result<bool, String> {
+/// Result of one identity-marker probe. A mismatch is only actionable when the
+/// caller can see what the page actually matched, so the observed name and the
+/// match count travel with the boolean.
+#[derive(Clone, serde::Serialize)]
+struct AccountMarkerCheck {
+    matched: bool,
+    match_count: u64,
+    observed: String,
+}
+
+impl AccountMarkerCheck {
+    fn diagnostic(&self) -> Value {
+        json!({"match_count": self.match_count, "observed": self.observed})
+    }
+}
+
+fn identity_marker_matches(response: &Value) -> Result<AccountMarkerCheck, String> {
     let value = if response.get("matches").is_some() {
         response
     } else if response.get("exceptionDetails").is_some() {
@@ -11489,7 +11585,12 @@ fn identity_marker_matches(response: &Value) -> Result<bool, String> {
     let count = value["match_count"]
         .as_u64()
         .ok_or_else(|| "identity marker check returned no match count".to_owned())?;
-    Ok(matches && count == 1)
+    let observed = value["observed"].as_str().unwrap_or_default().to_owned();
+    Ok(AccountMarkerCheck {
+        matched: matches && count == 1,
+        match_count: count,
+        observed,
+    })
 }
 
 async fn wait_for_chooser_or_cleanup<T, E, C>(
@@ -11746,7 +11847,7 @@ async fn headless_file_select(
                 .map_err(invalid)?;
         navichrome_browser::identity_marker_command(&account_marker.0, &account_marker.1)
             .map_err(|error| invalid(error.to_string()))?;
-        if !shared_account_marker_matches(
+        let marker_check = shared_account_marker_matches(
             connection,
             registry,
             &live.handle,
@@ -11755,10 +11856,10 @@ async fn headless_file_select(
             &account_marker.1,
         )
         .await
-        .map_err(invalid)?
-        {
+        .map_err(invalid)?;
+        if !marker_check.matched {
             return Ok(
-                json!({"status":"not_dispatched","reason_code":"account_marker_mismatch","dispatch_acknowledged":false}),
+                json!({"status":"not_dispatched","reason_code":"account_marker_mismatch","dispatch_acknowledged":false,"marker_observed":marker_check.diagnostic()}),
             );
         }
         if let Err(error) = connection
@@ -11801,7 +11902,7 @@ async fn headless_file_select(
         )
         .await;
         let identity_ok = matches!(after,Ok(ref identity) if identity==&before);
-        let account_ok = matches!(marker_after, Ok(true));
+        let account_ok = matches!(marker_after, Ok(ref check) if check.matched);
         if !identity_ok || !account_ok {
             return Ok(
                 json!({"status":"unknown","reason_code":"identity_changed_after_selection","dispatch_acknowledged":true,"chrome_selected_file":selected,"account_marker_checked":true}),
@@ -15753,6 +15854,44 @@ fn workflow_wall_limit(args: &V3WorkflowArgs) -> Duration {
     })
 }
 
+fn workflow_command_budget(args: &V3WorkflowArgs) -> crate::v3::CommandBudget {
+    fn step_uploads_file(step: &V3WorkflowStep) -> bool {
+        matches!(step, V3WorkflowStep::Upload { .. } | V3WorkflowStep::UploadDrop { .. })
+    }
+    fn ops_upload_file(ops: &[V3WorkflowOp]) -> bool {
+        ops.iter().any(|op| match op {
+            V3WorkflowOp::Step { step } => step_uploads_file(step),
+            V3WorkflowOp::If {
+                then_branch,
+                else_branch,
+                ..
+            } => ops_upload_file(then_branch) || ops_upload_file(else_branch),
+            V3WorkflowOp::Foreach { body, .. } => ops_upload_file(body),
+            V3WorkflowOp::TryFallback { primary, fallback } => {
+                ops_upload_file(primary) || ops_upload_file(fallback)
+            }
+            V3WorkflowOp::ParallelRead { ops } => ops_upload_file(ops),
+        })
+    }
+
+    let mut budget = crate::v3::CommandBudget::interactive_default();
+    budget.max_wall_ms = workflow_wall_limit(args).as_millis() as u64;
+    let uploads_file = args.steps.iter().any(step_uploads_file)
+        || args.program.as_deref().is_some_and(ops_upload_file)
+        || args.dag.as_deref().is_some_and(|nodes| {
+            nodes
+                .iter()
+                .any(|node| node.steps.iter().any(step_uploads_file))
+        });
+    if uploads_file {
+        // Guarded file selection and app-owned readback exceed the interactive envelope.
+        budget.max_wall_ms = budget.max_wall_ms.max(60_000);
+        budget.max_browser_commands = budget.max_browser_commands.max(1_024);
+        budget.max_cdp_commands = budget.max_cdp_commands.max(4_096);
+    }
+    budget
+}
+
 fn direct_action_budget(args: &V3ActArgs) -> crate::v3::CommandBudget {
     let mut budget = crate::v3::CommandBudget::interactive_default();
     let frame_target = args.action == "type"
@@ -17692,6 +17831,22 @@ fn browser_tool_result(mut value: Value) -> rmcp::model::CallToolResult {
     let returned_observations = u64::from(contains_returned_page_evidence(&value));
     attach_observation_boundary(&mut value, returned_observations);
     let mut result = rmcp::model::CallToolResult::structured(value);
+    // rmcp mirrors the whole structured payload into a text block. On large
+    // receipts that doubles the token cost of every call, so keep the mirror
+    // only while it is small enough to be cheap.
+    let mirrored_bytes = result
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            rmcp::model::ContentBlock::Text(text) => Some(text.text.len()),
+            _ => None,
+        })
+        .sum::<usize>();
+    if mirrored_bytes > 8_000 {
+        result
+            .content
+            .retain(|block| !matches!(block, rmcp::model::ContentBlock::Text(_)));
+    }
     for (data, media_type) in images {
         result
             .content
@@ -18467,7 +18622,8 @@ impl AppV3 {
                                 max_text_chars: Some(2_000),
                                 max_bytes: Some(max_bytes.clamp(4096, 20_000)),
                                 goal: research_goal(task, url),
-                            }))
+                max_bytes_reason: None,
+            }))
                             .await
                             .map(|Json(value)| value),
                     );
@@ -18726,7 +18882,7 @@ impl AppV3 {
         )
         .await
         .map_err(invalid)?;
-        if !matches {
+        if !matches.matched {
             return Ok(None);
         }
         self.skills
@@ -19756,7 +19912,7 @@ impl AppV3 {
                 )
                 .await
                 .map_err(invalid)?;
-                if !marker_matches {
+                if !marker_matches.matched {
                     let _ = self.skills.replay_with_identity(
                         skill_id,
                         &site_scope,
@@ -21943,6 +22099,7 @@ impl AppV3 {
                     match_mode: Some("exact".into()),
                     within_reference: None,
                     href_hint: None,
+                    selector: None,
                 },
             )
             .await?;
@@ -22957,12 +23114,13 @@ impl AppV3 {
             }
             operations.insert(key.clone(), operation.clone());
         }
-        let wall_limit = workflow_wall_limit(&args);
+        let budget = workflow_command_budget(&args);
+        let wall_limit = Duration::from_millis(budget.max_wall_ms);
         let diagnostic_session_id = args.session_id.clone();
         let diagnostic_chrome_tab_id = args.chrome_tab_id.clone();
-        let result = measured_receipt(navichrome_browser::scheduler::telemetry::with_browser_command_budget(
-            crate::v3::CommandBudget::interactive_default().max_browser_commands as u64,
-            crate::v3::CommandBudget::interactive_default().max_cdp_commands as u64,
+        let result = measured_receipt_with_budget(budget, navichrome_browser::scheduler::telemetry::with_browser_command_budget(
+            budget.max_browser_commands as u64,
+            budget.max_cdp_commands as u64,
             wall_limit,
             navichrome_browser::cancellation::with_workflow_cancellation(operation, super::super::with_internal_workflow_state(async {
                 match tokio::time::timeout(wall_limit, Box::pin(self.workflow_inner(args))).await {
@@ -23595,6 +23753,7 @@ impl AppV3 {
                                 match_mode: Some("exact".into()),
                                 within_reference: None,
                                 href_hint: None,
+                                selector: None,
                             },
                         )
                         .await?;
@@ -23667,6 +23826,7 @@ impl AppV3 {
                         match_mode: Some("exact".into()),
                         within_reference: Some(reference.clone()),
                         href_hint: None,
+                        selector: None,
                     };
                     let start_found = find_impl(&self.core, &find_endpoint("start date")).await?;
                     let start_ref = workflow_find_reference(&start_found)?;
@@ -23849,6 +24009,7 @@ impl AppV3 {
                             match_mode: Some("exact".into()),
                             within_reference: None,
                             href_hint: None,
+                            selector: None,
                         },
                     )
                     .await?;
@@ -23984,6 +24145,7 @@ impl AppV3 {
                             match_mode: Some("exact".into()),
                             within_reference: None,
                             href_hint: None,
+                            selector: None,
                         },
                     )
                     .await?;
@@ -24055,6 +24217,7 @@ impl AppV3 {
                 max_matches,
                 within_reference,
                 href_hint,
+                selector,
                 save_as,
             } => {
                 let find_args = BrowserFindArgs {
@@ -24067,10 +24230,15 @@ impl AppV3 {
                     match_mode: match_mode.or_else(|| Some("exact".into())),
                     within_reference,
                     href_hint,
+                    selector,
                 };
                 let grounding_started = std::time::Instant::now();
                 let mut found = find_impl(&self.core, &find_args).await?;
                 if navichrome_runtime::semantic_state::workflow_find_needs_refresh(&found) {
+                    // Refresh the whole document. Scoping this snapshot to the
+                    // caller's selector replaced the full index with whatever
+                    // that selector happened to match first, which is how a
+                    // find that had already resolved became unfindable.
                     let refreshed = snapshot_impl(
                         &self.core,
                         &BrowserSnapshotArgs {
@@ -25088,7 +25256,8 @@ impl AppV3 {
                         max_text_chars: Some(6000),
                         max_bytes: Some(100_000),
                         goal: goal.filter(|value| !value.trim().is_empty()),
-                    }))
+                max_bytes_reason: None,
+            }))
                     .await?
                     .0
             }
@@ -26931,6 +27100,7 @@ impl AppV3 {
                                             &account_marker.1,
                                         )
                                         .await
+                                        .map(|check| check.matched)
                                         .unwrap_or(false);
                                         extra_postconditions_passed &= marker_matches;
                                         let persisted_passed = if let Some(persisted) = persisted {
@@ -27171,7 +27341,8 @@ impl AppV3 {
                             fields: std::collections::BTreeMap::from([("text".into(), ":scope".into())]),
                             max_items: Some(100), max_text_chars: Some(2_000), max_bytes: Some(20_000),
                             goal: research_goal(&args.task, &url),
-                        })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":format!("extraction failed after navigation; inspect page state: {error}")}))
+                max_bytes_reason: None,
+            })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":format!("extraction failed after navigation; inspect page state: {error}")}))
                     };
                     if let Some(probe) = targeted_visual_evidence {
                         value["targeted_visual_evidence"] = probe;
@@ -27203,7 +27374,8 @@ impl AppV3 {
                                 value=self.core.browser_extract(Parameters(BrowserExtractArgs{
                                     session_id:args.session_id.clone(),chrome_tab_id:active_tab_id.clone(),selector:selector.clone(),
                                     fields:std::collections::BTreeMap::from([("text".into(),":scope".into())]),max_items:Some(100),max_text_chars:Some(2_000),max_bytes:Some(20_000),goal:research_goal(&args.task, &fallback),
-                                })).await.map(|Json(value)|value).unwrap_or_else(|error|json!({"status":"unknown","reason":format!("warm-start extraction failed: {error}")}));
+                max_bytes_reason: None,
+            })).await.map(|Json(value)|value).unwrap_or_else(|error|json!({"status":"unknown","reason":format!("warm-start extraction failed: {error}")}));
                                 value["speculative_read"] = json!({"status":"rejected_warm_start","reason":reason,"candidate_url":candidate_url,"fallback_url":fallback,"fallback_navigation":navigation});
                                 route_receipt["speculative_fallback_reason"]=json!(reason);
                             }
@@ -27251,7 +27423,8 @@ impl AppV3 {
                             fields: std::collections::BTreeMap::from([("text".into(), ":scope".into())]),
                             max_items: Some(100), max_text_chars: Some(2_000), max_bytes: Some(20_000),
                             goal: research_goal(&args.task, &url),
-                        })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":format!("safe semantic fallback failed: {error}")}));
+                max_bytes_reason: None,
+            })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":format!("safe semantic fallback failed: {error}")}));
                         route_receipt["page_action_memory"] = json!({"cache_status":"healed","used_as_hint":true,"fell_back":true,"reason":reason,"invalidated":true});
                         selector = ordinary_selector;
                     }
@@ -27874,13 +28047,15 @@ impl AppV3 {
                         fields: std::collections::BTreeMap::from([("text".into(), ":scope".into())]),
                         max_items: Some(100), max_text_chars: Some(2_000), max_bytes: Some(20_000),
                         goal: research_goal(&task, &url),
-                    })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":"bounded extraction failed","detail":error.to_string()})),
+                max_bytes_reason: None,
+            })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":"bounded extraction failed","detail":error.to_string()})),
                     Err(_) => self.core.browser_extract(Parameters(BrowserExtractArgs {
                         session_id: session_id.to_owned(), chrome_tab_id: tab_id.clone(), selector: selector.clone(),
                         fields: std::collections::BTreeMap::from([("text".into(), ":scope".into())]),
                         max_items: Some(100), max_text_chars: Some(2_000), max_bytes: Some(20_000),
                         goal: research_goal(&task, &url),
-                    })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":"bounded extraction failed","detail":error.to_string()})),
+                max_bytes_reason: None,
+            })).await.map(|Json(value)| value).unwrap_or_else(|error| json!({"status":"unknown","reason":"bounded extraction failed","detail":error.to_string()})),
                 };
                 let identity_after = self.readiness_document(session_id, &tab_id).await;
                 let extraction = reject_research_extract(extraction, &loader_before, &url, &identity_after);

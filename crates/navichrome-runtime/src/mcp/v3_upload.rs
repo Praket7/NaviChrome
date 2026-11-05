@@ -61,7 +61,7 @@ pub(super) fn upload_picker_consumed_input(selection: &Value) -> bool {
     selection["status"] == "unknown"
         && selection["dispatch_acknowledged"] == true
         && selection["reason"].as_str().is_some_and(|reason| {
-            reason.contains("File input did not retain one selected file for readback")
+            reason.contains("File input did not retain the complete selected file set for readback")
         })
 }
 
