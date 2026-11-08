@@ -32,6 +32,7 @@ use super::{
     semantic_drag_destination, semantic_item_center, shared_download_filename,
     shared_download_mime, shared_extension_value, shared_file_input_baseline,
     should_discover_page_tool, task_receipt, typing_policy, unresolved_linked_date_count,
+    task_tabs_for_cleanup,
     upload_acceptance_transition, upload_evidence_complete, upload_file_set_matches,
     upload_input_selection_confirmed, upload_picker_consumed_input,
     upload_selection_reason_code, upload_trigger_may_have_dispatched,
@@ -70,6 +71,19 @@ fn read_only_task_binding_matches_one_tab_and_reports_duplicates() {
     assert!(none.is_empty());
     let no_hints = matching_task_tabs(&tabs, &[], &[]);
     assert!(no_hints.is_empty(), "a task with no hint never binds an arbitrary tab");
+}
+
+#[test]
+fn task_cleanup_closes_unused_and_intermediate_tabs_but_retains_the_result() {
+    let owned = std::collections::BTreeMap::from([
+        ("51".to_owned(), super::TaskOwnedTab { used: false, retain_for_result: false }),
+        ("52".to_owned(), super::TaskOwnedTab { used: true, retain_for_result: true }),
+        ("53".to_owned(), super::TaskOwnedTab { used: true, retain_for_result: false }),
+    ]);
+    assert_eq!(task_tabs_for_cleanup(&owned), ["51", "53"]);
+    assert!(super::task_result_is_verified(&json!({"status":"completed","receipts":[{"verified":true}]})));
+    assert!(!super::task_result_is_verified(&json!({"status":"completed_unverified","receipts":[{"verified":false}]})));
+    assert!(!super::task_result_is_verified(&json!({"status":"completed","receipts":[]})));
 }
 
 #[test]
@@ -166,22 +180,27 @@ fn native_download_bytes_require_a_completed_identity_bound_bounded_file() {
     let report_path = std::env::temp_dir().join("report.csv");
     let report_path = report_path.to_string_lossy().into_owned();
     let completed = json!({"status":"completed","download_id":19,"file_path":report_path,
-        "bytes_received":42,"total_bytes":42,"url_identity":{"matches_expected":true,"url_sha256":"abc"}});
+        "filename":"report.csv","bytes_received":42,"total_bytes":42,
+        "url_identity":{"matches_expected":true,"url_sha256":"abc"}});
     assert_eq!(
-        validate_native_download_completion(&completed).unwrap(),
+        validate_native_download_completion(&completed, None).unwrap(),
         (report_path.as_str(), 19)
     );
-    assert!(validate_native_download_completion(&json!({"status":"started"})).is_err());
+    assert!(validate_native_download_completion(&json!({"status":"started"}), None).is_err());
+    assert!(validate_native_download_completion(&completed, Some("different.csv")).is_err());
+    let mut mismatched_path = completed.clone();
+    mismatched_path["file_path"] = json!(std::env::temp_dir().join("other.csv").to_string_lossy().as_ref());
+    assert!(validate_native_download_completion(&mismatched_path, Some("report.csv")).is_err());
     let mut mismatched_url = completed.clone();
     mismatched_url["url_identity"]["matches_expected"] = json!(false);
-    assert!(validate_native_download_completion(&mismatched_url).is_err());
+    assert!(validate_native_download_completion(&mismatched_url, None).is_err());
     let mut mismatched_size = completed.clone();
     mismatched_size["total_bytes"] = json!(41);
-    assert!(validate_native_download_completion(&mismatched_size).is_err());
+    assert!(validate_native_download_completion(&mismatched_size, None).is_err());
     let mut oversized = completed.clone();
     oversized["bytes_received"] = json!(10 * 1024 * 1024 + 1);
     oversized["total_bytes"] = oversized["bytes_received"].clone();
-    assert!(validate_native_download_completion(&oversized).is_err());
+    assert!(validate_native_download_completion(&oversized, None).is_err());
     let public = public_native_download_lifecycle(&completed);
     assert!(public["file_path"].is_null());
     assert!(public["download_id"].is_null());
@@ -4417,7 +4436,7 @@ fn session_aliases_share_the_same_selected_chrome_tab_lease() {
 }
 
 #[test]
-fn typing_policy_uses_required_events_and_composition_by_default_but_honors_explicit_mode() {
+fn typing_policy_uses_required_events_and_explicit_composition_but_keeps_unicode_plain_text_fast() {
     use crate::v3::TypingMode;
     assert_eq!(
         typing_policy(None, None, "hello", true).unwrap().mode,
@@ -4429,6 +4448,14 @@ fn typing_policy_uses_required_events_and_composition_by_default_but_honors_expl
     );
     assert_eq!(
         typing_policy(None, None, "你好", false).unwrap().mode,
+        TypingMode::Block
+    );
+    assert_eq!(
+        typing_policy(None, None, "I’m", false).unwrap().mode,
+        TypingMode::Block
+    );
+    assert_eq!(
+        typing_policy(Some("ime"), None, "你好", false).unwrap().mode,
         TypingMode::Ime
     );
     assert_eq!(

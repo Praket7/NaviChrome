@@ -2241,6 +2241,7 @@ struct AppV3 {
             >,
         >,
     >,
+    task_owned_tabs: Arc<Mutex<std::collections::BTreeMap<String, std::collections::BTreeMap<String, TaskOwnedTab>>>>,
     headless_chrome: Option<std::path::PathBuf>,
 }
 
@@ -2420,6 +2421,7 @@ impl AppV3 {
             active_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             workflow_lease_owners: Arc::new(Mutex::new(std::collections::BTreeSet::new())),
             workflow_operations: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
+            task_owned_tabs: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             headless_chrome: std::env::var_os("NAVICHROME_CHROME_EXECUTABLE")
                 .or_else(|| std::env::var_os("NAVICHROME_CHROME"))
                 .or_else(|| std::env::var_os("COMPTROL_CHROME_EXECUTABLE"))
@@ -13796,14 +13798,28 @@ fn public_native_download_lifecycle(lifecycle: &Value) -> Value {
     public
 }
 
-fn validate_native_download_completion(lifecycle: &Value) -> Result<(&str, u64), &'static str> {
+fn validate_native_download_completion<'a>(
+    lifecycle: &'a Value,
+    expected_filename: Option<&str>,
+) -> Result<(&'a str, u64), &'static str> {
     if lifecycle["status"] != "completed" || lifecycle["url_identity"]["matches_expected"] != true {
-        return Err("Chrome did not confirm completion for the expected download URL");
+        return Err("Chrome did not confirm completion for the expected download");
+    }
+    if expected_filename.is_some_and(|name| lifecycle["filename"] != name) {
+        return Err("Chrome completed a download with a different filename");
     }
     let path = lifecycle["file_path"]
         .as_str()
         .filter(|path| std::path::Path::new(path).is_absolute())
         .ok_or("Chrome did not provide an absolute completed-download path")?;
+    if expected_filename.is_some_and(|name| {
+        std::path::Path::new(path)
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            != Some(name)
+    }) {
+        return Err("Completed download path does not have the expected filename");
+    }
     let download_id = lifecycle["download_id"]
         .as_u64()
         .filter(|id| *id > 0)
@@ -13820,13 +13836,34 @@ fn validate_native_download_completion(lifecycle: &Value) -> Result<(&str, u64),
     Ok((path, download_id))
 }
 
-/// Observe one identity-bound Chrome download and acquire its completed file
-/// through the runtime's bounded no-follow reader before staging it in-session.
+#[derive(Clone, Copy, Default)]
+struct TaskOwnedTab {
+    used: bool,
+    retain_for_result: bool,
+}
+
+fn task_tabs_for_cleanup(
+    tabs: &std::collections::BTreeMap<String, TaskOwnedTab>,
+) -> Vec<String> {
+    tabs.iter()
+        .filter(|(_, state)| !state.retain_for_result)
+        .map(|(tab_id, _)| tab_id.clone())
+        .collect()
+}
+
+fn task_result_is_verified(value: &Value) -> bool {
+    matches!(value["status"].as_str(), Some("completed" | "verified" | "passed"))
+        && value["receipts"]
+            .as_array()
+            .is_some_and(|receipts| !receipts.is_empty() && receipts.iter().all(|item| item["verified"] == true))
+}
+
 async fn shared_browser_download_lifecycle(
     app: &AppV3,
     session_id: &str,
     tab_id: &str,
     short_ref: &str,
+    expected_filename: Option<&str>,
     client_id: Option<&str>,
     destination_path: Option<&str>,
 ) -> Result<Value, rmcp::ErrorData> {
@@ -13937,16 +13974,14 @@ async fn shared_browser_download_lifecycle(
         }
         (snapshot, index, before)
     };
-    // Require a real same-context download anchor. Cross-origin download
-    // attributes can be ignored by Chrome and become navigations, so fail
-    // closed; blob URLs are accepted only with an explicit download attribute.
-    const CLASSIFY: &str = r#"function(index){const e=this.nodes[index];if(!(e instanceof HTMLAnchorElement)||!e.isConnected)return {ok:false,reason:'not_a_fresh_anchor'};const u=new URL(e.href,location.href),t=(e.getAttribute('target')||'').trim().toLowerCase(),d=e.hasAttribute('download'),b=u.protocol==='blob:';if(!d||t&&t!=='_self'||(!b&&u.origin!==location.origin)||u.username||u.password||!['http:','https:','blob:'].includes(u.protocol))return {ok:false,reason:'anchor_may_navigate'};const r=e.getBoundingClientRect();return {ok:true,href:e.href,target:t,download:true,blob:b,x:r.left+r.width/2,y:r.top+r.height/2}}"#;
+    // Anchors need a same-origin download URL; JS-only buttons need a caller-bound filename.
+    const CLASSIFY: &str = r#"function(index,expectedFilename){const e=this.nodes[index];if(!e||!e.isConnected)return {ok:false,reason:'not_a_fresh_download_control'};const r=e.getBoundingClientRect();if(e instanceof HTMLAnchorElement){const u=new URL(e.href,location.href),t=(e.getAttribute('target')||'').trim().toLowerCase(),d=e.hasAttribute('download'),b=u.protocol==='blob:';if(!d||t&&t!=='_self'||(!b&&u.origin!==location.origin)||u.username||u.password||!['http:','https:','blob:'].includes(u.protocol))return {ok:false,reason:'anchor_may_navigate'};return {ok:true,kind:'anchor',href:e.href,target:t,download:true,blob:b,x:r.left+r.width/2,y:r.top+r.height/2}}const role=e.getAttribute('role'),label=(e.getAttribute('aria-label')||e.innerText||e.title||'').trim();if(expectedFilename&&(e instanceof HTMLButtonElement||role==='button')&&label.toLowerCase().includes('download')&&e.getAttribute('aria-disabled')!=='true')return {ok:true,kind:'button',label,expected_filename:expectedFilename,x:r.left+r.width/2,y:r.top+r.height/2};return {ok:false,reason:'expected_a_download_anchor_or_filename_bound_download_button'}}"#;
     let classification = async {
         let live = live.lock().await;
         let registry = live.registry()?;
         let connection = live.connection.as_ref().ok_or_else(|| invalid("shared extension transport detached"))?;
         let response = connection.command(registry, &live.handle, tab_id, "Runtime.callFunctionOn", json!({
-            "objectId":snapshot.object_id,"functionDeclaration":CLASSIFY,"arguments":[{"value":index}],"returnByValue":true
+            "objectId":snapshot.object_id,"functionDeclaration":CLASSIFY,"arguments":[{"value":index},{"value":expected_filename}],"returnByValue":true
         })).await.map_err(invalid)?;
         super::super::shared_value(&response).map_err(invalid)
     }.await?;
@@ -13956,31 +13991,33 @@ async fn shared_browser_download_lifecycle(
             "dispatch_may_have_occurred":false,"reason":classification["reason"]}),
         );
     }
-    let expected_url = classification["href"]
-        .as_str()
-        .ok_or_else(|| invalid("download anchor omitted href"))?
-        .to_owned();
-    if !native_download_anchor_is_safe(
-        &expected_url,
-        &before.2,
-        classification["target"].as_str().unwrap_or_default(),
-        classification["download"] == true,
-    ) {
+    let is_js_trigger = classification["kind"] == "button";
+    let expected_url = classification["href"].as_str().map(str::to_owned);
+    let safe_anchor = expected_url.as_deref().is_some_and(|url| {
+        native_download_anchor_is_safe(
+            url,
+            &before.2,
+            classification["target"].as_str().unwrap_or_default(),
+            classification["download"] == true,
+        )
+    });
+    if is_js_trigger && expected_filename.is_none() || !is_js_trigger && !safe_anchor {
         return Ok(
-            json!({"status":"not_dispatched","reason_code":"native_download_anchor_unsafe",
-            "dispatch_may_have_occurred":false,"reason":"Native lifecycle route requires a same-origin HTTP(S) or blob anchor with an explicit download attribute and no navigational target."}),
+            json!({"status":"not_dispatched","reason_code":"native_download_target_unsafe",
+            "dispatch_may_have_occurred":false,"reason":"Native lifecycle route requires a same-origin download anchor or a filename-bound control named Download."}),
         );
     }
     // Run the shared public click guard before arming so a blocked control does
     // not allocate an observer. Revalidation after arm closes the race window.
     let guard =
         crate::guard_reason::click_guard_script(super::super::SHARED_CLICK_UNSAFE_PREDICATE);
+    let guard_kind = if is_js_trigger { "click" } else { "download" };
     let actionable = async {
         let live = live.lock().await;
         let registry = live.registry()?;
         let connection = live.connection.as_ref().ok_or_else(|| invalid("shared extension transport detached"))?;
         let response = connection.command(registry, &live.handle, tab_id, "Runtime.callFunctionOn", json!({
-            "objectId":snapshot.object_id,"functionDeclaration":guard,"arguments":[{"value":index},{"value":{"kind":"download"}}],"returnByValue":true
+            "objectId":snapshot.object_id,"functionDeclaration":guard,"arguments":[{"value":index},{"value":{"kind":guard_kind}}],"returnByValue":true
         })).await.map_err(invalid)?;
         super::super::shared_value(&response).map_err(invalid)
     }.await?;
@@ -13999,7 +14036,7 @@ async fn shared_browser_download_lifecycle(
             &snapshot.object_id,
             index,
             &guard,
-            &[json!({"kind":"download"})],
+            &[json!({"kind":guard_kind})],
             tokio::time::Instant::now() + Duration::from_secs(30),
         )
         .await?
@@ -14016,15 +14053,20 @@ async fn shared_browser_download_lifecycle(
             .connection
             .as_ref()
             .ok_or_else(|| invalid("shared extension transport detached"))?;
+        let mut params = json!({"action":"arm"});
+        if let Some(url) = expected_url.as_deref() {
+            params["expected_url"] = json!(url);
+        }
+        if let Some(filename) = expected_filename {
+            params["expected_filename"] = json!(filename);
+        }
         let response = connection
             .command(
                 registry,
                 &live.handle,
                 tab_id,
                 "NaviChrome.downloadLifecycle",
-                json!({
-                    "action":"arm","expected_url":expected_url
-                }),
+                params,
             )
             .await
             .map_err(invalid)?;
@@ -14064,11 +14106,18 @@ async fn shared_browser_download_lifecycle(
         let connection = live.connection.as_ref().ok_or_else(|| invalid("shared extension transport detached"))?;
         let identity = super::super::shared_frame_identity(connection, registry, &live.handle, tab_id).await.map_err(invalid)?;
         let response = connection.command(registry, &live.handle, tab_id, "Runtime.callFunctionOn", json!({
-            "objectId":snapshot.object_id,"functionDeclaration":CLASSIFY,"arguments":[{"value":index}],"returnByValue":true
+            "objectId":snapshot.object_id,"functionDeclaration":CLASSIFY,"arguments":[{"value":index},{"value":expected_filename}],"returnByValue":true
         })).await.map_err(invalid)?;
         Ok::<_, rmcp::ErrorData>((identity, super::super::shared_value(&response).map_err(invalid)?))
     }.await;
-    let safe_to_click = matches!(recheck, Ok((ref identity, ref anchor)) if identity == &before && anchor["ok"] == true && anchor["href"] == expected_url);
+    let safe_to_click = matches!(recheck, Ok((ref identity, ref target))
+        if identity == &before && target["ok"] == true && if is_js_trigger {
+            target["kind"] == "button"
+                && expected_filename.is_some_and(|name| target["expected_filename"] == name)
+        } else {
+            target["kind"] == "anchor"
+                && expected_url.as_deref().is_some_and(|url| target["href"] == url)
+        });
     if !safe_to_click {
         let live = live.lock().await;
         if let (Some(connection), Ok(registry)) = (live.connection.as_ref(), live.registry()) {
@@ -14097,7 +14146,7 @@ async fn shared_browser_download_lifecycle(
             desktop_action: None,
             desktop_mode: None,
             expected_visual_revision: None,
-            expected_label: None,
+            expected_label: is_js_trigger.then(|| "Download".to_owned()),
             session_id: session_id.to_owned(),
             chrome_tab_id: tab_id.to_owned(),
             action: "click".into(),
@@ -14213,7 +14262,7 @@ async fn shared_browser_download_lifecycle(
     if lifecycle["status"] != "completed" {
         return Ok(native_download_lifecycle_receipt(&click, &lifecycle));
     }
-    let (path, _download_id) = match validate_native_download_completion(&lifecycle) {
+    let (path, _download_id) = match validate_native_download_completion(&lifecycle, expected_filename) {
         Ok(binding) => binding,
         Err(reason) => {
             return Ok(
@@ -20506,11 +20555,12 @@ impl AppV3 {
                 let chrome_tab_id = args.chrome_tab_id.clone().ok_or_else(|| {
                     invalid("steps on action=task require the exact chrome_tab_id to act on")
                 })?;
+                self.mark_task_owned_tab_used(&session_id, &chrome_tab_id, true).await;
                 let started = std::time::Instant::now();
                 let workflow = match self
                     .workflow(Parameters(V3WorkflowArgs {
-                        session_id,
-                        chrome_tab_id,
+                        session_id: session_id.clone(),
+                        chrome_tab_id: chrome_tab_id.clone(),
                         operation_id: None,
                         cancel: false,
                         steps: args.steps.take().unwrap_or_default(),
@@ -20530,12 +20580,18 @@ impl AppV3 {
                     }
                 };
                 let status = workflow["status"].clone();
+                let tab_cleanup = if task_result_is_verified(&workflow) {
+                    self.cleanup_unused_task_tabs(&session_id).await
+                } else {
+                    Value::Null
+                };
                 return Ok(Json(json!({
                     "status": status,
                     "action": "task",
                     "session_id": args.session_id,
                     "chrome_tab_id": args.chrome_tab_id,
                     "workflow": workflow,
+                    "tab_cleanup": tab_cleanup,
                     "elapsed_ms": started.elapsed().as_millis() as u64
                 })));
             }
@@ -20543,7 +20599,14 @@ impl AppV3 {
                 if args.task.is_some() {
                     return Err(invalid("provide only one of task or task_program"));
                 }
-                return self.run_task_program(&args, program).await;
+                let session_id = args.session_id.as_deref().ok_or_else(|| invalid("task_program requires session_id"))?;
+                let chrome_tab_id = args.chrome_tab_id.as_deref().ok_or_else(|| invalid("task_program requires chrome_tab_id"))?;
+                self.mark_task_owned_tab_used(session_id, chrome_tab_id, true).await;
+                let mut result = self.run_task_program(&args, program).await?;
+                if task_result_is_verified(&result.0) {
+                    result.0["tab_cleanup"] = self.cleanup_unused_task_tabs(session_id).await;
+                }
+                return Ok(result);
             }
             // Clone the small task envelope so the same args can also drive
             // automatic tab binding without a partial move.
@@ -21535,6 +21598,11 @@ impl AppV3 {
             });
             result["created"] =
                 json!(result["created_by_navichrome"] == true && result["idempotent_reuse"] != true);
+            if result["created"] == true
+                && let Some(tab_id) = result["tab_id"].as_str()
+            {
+                self.track_task_owned_tab(&session_id, tab_id).await;
+            }
             if mode == crate::v3::BrowserMode::Foreground {
                 annotate_foreground_open_presentation(&mut result);
             }
@@ -21671,10 +21739,11 @@ impl AppV3 {
                     .as_str()
                     .ok_or_else(|| invalid("open omitted tab_id"))?
                     .to_owned();
+                self.mark_task_owned_tab_used(&session_id, &tab_id, true).await;
                 result["workflow"] = match self
                     .workflow(Parameters(V3WorkflowArgs {
-                        session_id,
-                        chrome_tab_id: tab_id,
+                        session_id: session_id.clone(),
+                        chrome_tab_id: tab_id.clone(),
                         operation_id: None,
                         cancel: false,
                         steps,
@@ -21711,6 +21780,9 @@ impl AppV3 {
                     cold,
                     &result["workflow"],
                 );
+                if task_result_is_verified(&result["workflow"]) {
+                    result["tab_cleanup"] = self.cleanup_unused_task_tabs(&session_id).await;
+                }
             }
             result["elapsed_ms"] = json!(open_started.elapsed().as_millis() as u64);
             return Ok(Json(result));
@@ -26566,6 +26638,107 @@ impl AppV3 {
         Ok(Json(result))
     }
 
+    async fn track_task_owned_tab(&self, session_id: &str, tab_id: &str) {
+        self.task_owned_tabs
+            .lock()
+            .await
+            .entry(session_id.to_owned())
+            .or_default()
+            .entry(tab_id.to_owned())
+            .or_default();
+    }
+
+    async fn mark_task_owned_tab_used(
+        &self,
+        session_id: &str,
+        tab_id: &str,
+        retain_for_result: bool,
+    ) {
+        if let Some(state) = self
+            .task_owned_tabs
+            .lock()
+            .await
+            .get_mut(session_id)
+            .and_then(|tabs| tabs.get_mut(tab_id))
+        {
+            state.used = true;
+            state.retain_for_result |= retain_for_result;
+        }
+    }
+
+    async fn cleanup_unused_task_tabs(&self, session_id: &str) -> Value {
+        let candidates = {
+            let mut ledger = self.task_owned_tabs.lock().await;
+            let Some(tabs) = ledger.get_mut(session_id) else {
+                return json!({"status":"not_needed","closed":[],"retained":[]});
+            };
+            task_tabs_for_cleanup(tabs)
+        };
+        let mut closed = Vec::new();
+        let mut retained = Vec::new();
+        for tab_id in candidates {
+            let target = lease_target_key(session_id, &tab_id);
+            if self
+                .leases
+                .lock()
+                .await
+                .owner(&target, now_ms())
+                .is_some()
+            {
+                retained.push(json!({"tab_id":tab_id,"reason":"active_task_lease"}));
+                continue;
+            }
+            let result = self
+                .core
+                .legacy
+                .shared_tab(Parameters(super::SharedTabArgs {
+                    session_id: session_id.to_owned(),
+                    action: "close_owned".into(),
+                    chrome_tab_id: Some(tab_id.clone()),
+                    url: String::new(),
+                    idempotency_key: None,
+                    active: None,
+                    wait_until: None,
+                    create_background_window: None,
+                    target_window_id: None,
+                    candidate_tab_id: None,
+                    created_at_ms: None,
+                    since_ms: None,
+                    account_marker_selector: None,
+                    account_marker_text: None,
+                }))
+                .await;
+            match result {
+                Ok(Json(receipt)) if receipt["status"] == "closed" && receipt["verified"] == true => {
+                    let mut ledger = self.task_owned_tabs.lock().await;
+                    let reason = if ledger
+                        .get(session_id)
+                        .and_then(|tabs| tabs.get(&tab_id))
+                        .is_some_and(|state| state.used)
+                    {
+                        "intermediate_task_tab_closed"
+                    } else {
+                        "unused_task_tab_closed"
+                    };
+                    closed.push(json!({"tab_id":tab_id,"verified":true,"reason":reason}));
+                    if let Some(tabs) = ledger.get_mut(session_id) {
+                        tabs.remove(&tab_id);
+                    }
+                }
+                Ok(Json(receipt)) => retained.push(json!({"tab_id":tab_id,"reason":"close_not_verified","receipt":receipt})),
+                Err(error) => retained.push(json!({"tab_id":tab_id,"reason":"close_failed","detail":error.to_string()})),
+            }
+        }
+        let mut ledger = self.task_owned_tabs.lock().await;
+        if let Some(tabs) = ledger.get_mut(session_id) {
+            tabs.retain(|_, state| !state.retain_for_result);
+        }
+        if ledger.get(session_id).is_some_and(std::collections::BTreeMap::is_empty) {
+            ledger.remove(session_id);
+        }
+        json!({"status":if retained.is_empty() {"complete"} else {"incomplete"},"closed":closed,"retained":retained})
+    }
+
     async fn task(
         &self,
         Parameters(args): Parameters<V3TaskArgs>,
@@ -26593,6 +26766,7 @@ impl AppV3 {
         let session_id = args.session_id.clone();
         let cost_session_id = session_id.clone();
         let tab_id = args.chrome_tab_id.clone();
+        let cleanup_session_id = session_id.clone();
         let cost_router = self.execution_costs.clone();
         let qualified_route_history = self.cost_seen_qualified_routes.clone();
         let task_started = std::time::Instant::now();
@@ -26632,9 +26806,15 @@ impl AppV3 {
         } else {
             None
         };
+        self.mark_task_owned_tab_used(&session_id, &tab_id, true).await;
+        if let crate::v3_tasks::TaskPrimitive::Research { tab_ids: Some(tab_ids), .. } = &args.task {
+            for intermediate_tab in tab_ids.iter().filter(|owned_tab| owned_tab.as_str() != tab_id) {
+                self.mark_task_owned_tab_used(&session_id, intermediate_tab, false).await;
+            }
+        }
         let sequence = NEXT_WORKFLOW_OWNER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let task_owner = format!("task:{session_id}:{tab_id}:{}:{sequence}", now_ms());
-        let result = measured_receipt_with_budget(budget, navichrome_browser::scheduler::telemetry::with_browser_command_budget(
+        let mut result = measured_receipt_with_budget(budget, navichrome_browser::scheduler::telemetry::with_browser_command_budget(
             budget.max_browser_commands as u64,
             budget.max_cdp_commands as u64,
             wall_limit,
@@ -26650,6 +26830,14 @@ impl AppV3 {
                 }
             }),
         )).await;
+        if matches!(result.as_ref(), Ok(Json(value)) if task_result_is_verified(value)) {
+            let cleanup = self
+                .cleanup_unused_task_tabs(&cleanup_session_id)
+                .await;
+            if let Ok(Json(value)) = &mut result {
+                value["tab_cleanup"] = cleanup;
+            }
+        }
         if let (Some(cohort), Ok(receipt)) = (
             result
                 .as_ref()
@@ -28020,6 +28208,7 @@ impl AppV3 {
                     reference,
                     destination_path,
                     source,
+                    expected_filename,
                 } => {
                     let shared = self.core.legacy.shared_sessions.lock().await
                         .get(&args.session_id).cloned();
@@ -28028,7 +28217,7 @@ impl AppV3 {
                     } else { false };
                     let value = match source {
                         crate::v3_tasks::DownloadSource::BrowserLifecycle if is_shared => {
-                            shared_browser_download_lifecycle(self,&args.session_id,&active_tab_id,&reference,args.client_id.as_deref(),destination_path.as_deref()).await?
+                            shared_browser_download_lifecycle(self,&args.session_id,&active_tab_id,&reference,expected_filename.as_deref(),args.client_id.as_deref(),destination_path.as_deref()).await?
                         }
                         crate::v3_tasks::DownloadSource::BrowserLifecycle => json!({
                             "status":"unsupported","reason_code":"browser_lifecycle_requires_shared_extension",

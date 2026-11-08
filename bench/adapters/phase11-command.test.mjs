@@ -21,6 +21,8 @@ test('unsupported adapter task classes report missing evidence and leave safety 
   }
   assert.equal(output.success, false);
   assert.equal(output.independently_verified_success, false);
+  assert.equal(output.fallback_count, 0, 'pre-execution refusal cannot have browser fallback events');
+  assert.equal(output.metric_evidence.fallback_count.missing_reason, undefined);
   assert.doesNotThrow(() => validateAdapterResult(output, awaitContract, {
     adapter: 'playwright-mcp', task_id: input.task_id, mode: input.mode,
     execution_mode: input.execution_mode, concurrency: input.concurrency,
@@ -337,7 +339,7 @@ test('Controlla upload prompt omits null optionals and continues after an incomp
       {type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'release',session_id:'s'},result:{structured_content:{released:true}}}},
       {type:'item.completed',item:{type:'agent_message',text:'DONE'}},
     ];
-    await writeFile(executable, `#!/usr/bin/env node\nconst fs=require('node:fs'),prompt=process.argv.at(-1),file=/"file_path":"([^"]+)"/.exec(prompt)?.[1]; if (!file || fs.realpathSync(file)!==file || ['"trigger_reference":null','"acceptance":null','"persisted":null'].some(x=>prompt.includes(x)) || !prompt.includes('"file_path":"/') || !prompt.includes('"allow_local_file_path":true') || prompt.includes('bytes_base64') || !prompt.includes('status=incomplete') || !prompt.includes('continue') || !prompt.includes('"kind":"find"') || !prompt.includes('"kind":"click"') || !prompt.includes('"reference":"$register_upload"') || !prompt.includes('do not click again') || !prompt.includes('dispatch_may_have_occurred=false')) process.exit(9);\nfor(const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));\n`,{mode:0o755});
+    await writeFile(executable, `#!/usr/bin/env node\nconst fs=require('node:fs'),prompt=process.argv.at(-1),file=/"file_path":"([^"]+)"/.exec(prompt)?.[1]; if (!file || fs.realpathSync(file)!==file || ['"trigger_reference":null','"acceptance":null','"persisted":null'].some(x=>prompt.includes(x)) || !prompt.includes('"file_path":"/') || !prompt.includes('"allow_local_file_path":true') || prompt.includes('bytes_base64') || !prompt.includes('status=incomplete') || !prompt.includes('continue') || !prompt.includes('"kind":"find"') || !prompt.includes('"kind":"click"') || !prompt.includes('"reference":"$register_upload"') || !prompt.includes('do not click again') || !prompt.includes('dispatch_may_have_occurred=false') || !prompt.includes('Use the browser tool (not act) for action=task')) process.exit(9);\nfor(const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));\n`,{mode:0o755});
     const output=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'controlla'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(input));});
     assert.equal(output.success,true);
     assert.equal(output.cleanup_completed,true);

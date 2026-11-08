@@ -1,6 +1,6 @@
 # NaviChrome browser-agent speed and safety plan
 
-**Status:** Implementation in progress (2026-11-05). Keep the existing six-tool V3 contract and Chrome-only product boundary. Local click-authority, pointer revalidation, attachment-verification, and owned-tab close guards are implemented. The installed extension/native host reload passed; read-only Gmail identity/Sent-row checks ran only under `praketg1@gmail.com`. Paired latency, automatic task-local tab tracking, full live account qualification, and hosted CI remain open.
+**Status:** Partial implementation (updated 2026-11-08). Keep the existing six-tool V3 contract and Chrome-only product boundary. Local click-authority, pointer revalidation, attachment-verification, and owned-tab close guards are implemented. Filename-bound JS-only download tracking and automatic cleanup of unused/intermediate NaviChrome-owned tabs are implemented locally. The cleanup ledger is in-memory and session-scoped, so task-ID isolation and restart recovery are still open. The installed extension/native host reload passed; Google account work remains restricted to `praketg1@gmail.com`. The full Phase 11 matrix, 30-repetition latency evidence, end-to-end live cleanup, full live account qualification, and hosted CI remain open.
 
 ## Diagnosis from the five-task run
 
@@ -50,6 +50,7 @@ The extension source has 28 JavaScript modules. Static import mapping found no u
 - For Gmail, require the exact recipient and an independently observed attachment filename before clicking Send. After dispatch, verify the sent message and attachment in Sent. If send status is unknown, inspect Sent/Drafts read-only before deciding whether any follow-up is needed.
 - For Classroom, verify the exact signed-in personal account and testing class before Post. Require both the published announcement and accepted attachment; do not treat a visible draft or stale upload receipt as completion.
 - For downloads, wait for the browser completion event and verify the resulting path, byte length, and digest against the expected source when one exists. A click or early filesystem miss is not the final state.
+- When a download control is JavaScript-only and has no stable URL, arm the selected document's download observer with the exact expected filename before the guarded click; verify the completed event and basename before reading bytes.
 - For Forms and other submissions, require the app’s final confirmation or a durable submitted record; an empty form or “Next” control is a non-completion result.
 
 **Gate:** delayed picker, too-large file, canceled chooser, app-rejected file, delayed write, duplicate-looking attachment, and timeout-after-submit fixtures preserve data and report exact uncertainty. No write proceeds past a failed prerequisite.
@@ -71,6 +72,8 @@ The extension source has 28 JavaScript modules. Static import mapping found no u
 - Before close, require no active lease, no unresolved/unknown mutation, and the same owned tab identity. Close through the existing explicit tabs API and verify the topology receipt. A close failure is reported; it does not trigger a broader window/tab close.
 - On interruption, preserve tabs with unresolved writes for inspection. On completion, release the session and verify user-owned tabs remain untouched.
 - Never infer creation ownership from the screenshot. The tabs shown in this run cannot be safely closed retroactively without their ownership receipts.
+
+**Implementation note (2026-11-08):** the runtime tracks NaviChrome-created tabs per session, retains the primary result tab, and closes unused/intermediate candidates only after verified task receipts and through the existing exact ownership/lease close path. The ledger is volatile and session-scoped, so task-ID isolation, durable restart recovery, and full integration/live qualification remain open.
 
 **Gate:** fixtures prove unused and intermediate task-created tabs close; result tabs stay open; reused/user-created tabs survive; changed identity, active lease, unknown write, or failed close is reported without deleting anything else.
 

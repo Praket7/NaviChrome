@@ -7,6 +7,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadPhase11Config } from '../bench/runners/phase11-runner.mjs';
 
 export const EXTENSION_BUILD_PATH = 'extensions/navichrome';
 
@@ -21,6 +22,26 @@ export function verifyAdapterVersions(versions, runtimeHash) {
   for (const [id, version] of Object.entries(versions)) {
     const expected = id === 'controlla' ? `sha256:${runtimeHash}` : id === 'playwright-mcp' ? '0.0.83' : null;
     if (!expected || version !== expected) throw new Error(`unverified adapter identity for ${id}`);
+  }
+}
+
+export function configuredMatrixBlockers({adapters,tasks,modes,executionModes,concurrency}) {
+  const blockers=[];
+  const supportedAdapters=new Set(['controlla','playwright-mcp']);
+  const supportedTasks=new Set(['form-guarded-fill','structured-extraction','guarded-upload']);
+  for(const adapter of adapters) if(!supportedAdapters.has(adapter)) blockers.push(`adapter ${adapter} has no configured convenience actor`);
+  for(const mode of modes) if(mode!=='cold_browser') blockers.push(`mode ${mode} has no warm-session lifecycle binding`);
+  for(const mode of executionModes) if(mode!=='headless') blockers.push(`execution mode ${mode} has no headed Chrome display binding`);
+  for(const level of concurrency) if(level!==1) blockers.push(`concurrency ${level} has no adapter resource/telemetry binding`);
+  for(const task of tasks) if(!supportedTasks.has(task.id)||task.scenario) blockers.push(`task ${task.id} has no configured independent acceptance and actor path`);
+  return [...new Set(blockers)];
+}
+
+export function assertConfiguredMatrixSupported(input) {
+  const blockers=configuredMatrixBlockers(input);
+  if(blockers.length) {
+    const shown=blockers.slice(0,12);
+    throw new Error(`configured Phase 11 matrix rejected before browser startup: ${shown.join('; ')}${blockers.length>shown.length?`; and ${blockers.length-shown.length} more unsupported cases`:''}`);
   }
 }
 
@@ -130,12 +151,22 @@ export function parseAdapterVersions(raw, adapters) {
 
 async function main() {
   const sourceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const adapters = configuredAdapterIds(process.env.PHASE11_CANDIDATE_ID ?? 'controlla', process.env.PHASE11_BASELINE_IDS ?? 'playwright-mcp');
+  const configPath=resolve(sourceRoot,process.env.PHASE11_TASK_SET??'bench/tasks/phase11-realistic.json');
+  const config=await loadPhase11Config(configPath);
+  const list=(raw,fallback)=>raw===undefined?fallback:raw.split(',').map(value=>value.trim()).filter(Boolean);
+  assertConfiguredMatrixSupported({
+    adapters,
+    tasks:config.tasks,
+    modes:list(process.env.PHASE11_MODES,['cold_browser','warm_browser_cold_site','warm_qualified_route','reconnect']),
+    executionModes:list(process.env.PHASE11_EXECUTION_MODES,['headless']),
+    concurrency:list(process.env.PHASE11_CONCURRENCY,['1']).map(Number),
+  });
   const candidate = await createCleanCandidateSnapshot(sourceRoot);
   const root = candidate.root;
   let stateDir;
   let fixture;
   try {
-    const adapters = configuredAdapterIds(process.env.PHASE11_CANDIDATE_ID ?? 'controlla', process.env.PHASE11_BASELINE_IDS ?? 'playwright-mcp');
     const clientVersions = parseAdapterVersions(process.env.PHASE11_CLIENT_ADAPTER_VERSIONS_JSON, adapters);
     stateDir = await mkdtemp(join(tmpdir(), 'controlla-phase11-'));
     const stateFile = join(stateDir, 'state.json');

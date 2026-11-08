@@ -1,5 +1,53 @@
 # Blockers and external dependencies
 
+## Phase 11, Drive download, and cleanup — 2026-11-08 continuation
+
+The Drive JS-only download route now has a filename-bound observer and requires
+the Chrome completion event, exact filename, and downloaded path basename
+before reading. A `blob:` credential bypass was found by the new regression and
+closed. The extension/runtime route is locally tested, but no live Drive
+download was run.
+
+The reinstall script now opens the extension's background-only bridge probe
+after reload. Its regression and installed run passed: the host ID changed,
+Hotload returned ready with six tools, discovery matched 51 tabs, and both
+temporary reload pages closed. No Google page was touched.
+
+Successful verified tasks now clean up unused and intermediate NaviChrome-owned
+tabs through the exact owned receipt and lease checks, retaining the result tab
+and leaving failed/unknown tasks for inspection. The current ledger is
+in-memory and session-scoped rather than durable/task-scoped; live multi-task
+cleanup and restart recovery remain unverified.
+
+The configured Phase 11 suite still rejects the full matrix before Chrome
+starts: most tasks lack independent acceptance plus actor paths, and warm,
+reconnect, headed, and concurrency bindings are not implemented. The prior
+three-task one-pair subset is diagnostic only; no 30-repetition full-matrix
+speed evidence exists. Hosted CI is pending for the current branch.
+
+## Phase 11 full matrix and live bridge — 2026-11-08
+
+The configured convenience run supports only its qualified cold/headless,
+single-concurrency subset. That subset now has one paired, independently
+verified row for form fill, structured extraction, and upload. The first run
+also exposed one intermittent upload actor schema error: Codex called `act`
+with a browser task. The prompt now names the `browser` tool, and a fresh
+upload-only paired run plus two warmups passed. These small samples are
+diagnostic only. The default matrix still includes warm-session and reconnect
+modes plus task classes without an independently accepted result or matching
+actor workflow; the preflight rejects these rows before Chrome starts.
+
+The installed NaviChrome runtime/extension reload completed. Its native tab
+inventory initially expired; opening the NaviChrome popup refreshed it, and
+read-only pairing/snapshot then succeeded. The trusted keyboard route refused
+background `Control+A` before dispatch; the existing guarded rich-text fill path
+then replaced the draft body in the background and verified exact readback. The
+draft was saved and re-read in Drafts, then NaviChrome navigated the same tab to
+Google Sites. No message was sent and no post was made. The reinstall script
+waits for a fresh inventory from a changed native-host ID, and the earlier
+background Chrome reload plus Hotload refresh passed. Full-matrix evidence and
+hosted CI remain open.
+
 ## Classroom upload receipt boundary — 2026-11-04
 
 The announcement, attachment, and download are verified in the personal

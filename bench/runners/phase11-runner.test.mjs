@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { analyzePaired, evaluateClaimGate } from '../analysis/phase11-analysis.mjs';
-import { parseCommand, runBenchmark, validateAdapterResult, loadAdapterContract, loadPhase11Config, liveTaskUrl, assertBoundedRow } from './phase11-runner.mjs';
+import { parseCommand, runBenchmark, validateAdapterResult, loadAdapterContract, loadPhase11Config, liveTaskUrl, assertBoundedRow, phase11Acceptance } from './phase11-runner.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mock = resolve(here, 'mock-phase11-command.mjs');
@@ -49,6 +49,23 @@ test('parseCommand rejects shell strings and accepts argv JSON', () => {
   assert.deepEqual(parseCommand('["node","adapter.mjs"]', 'TEST'), ['node', 'adapter.mjs']);
   assert.throws(() => parseCommand('node adapter.mjs', 'TEST'), /valid JSON/);
   assert.throws(() => parseCommand('[]', 'TEST'), /non-empty JSON array/);
+});
+
+test('editor fixtures carry bounded independent text acceptance contracts', () => {
+  const cases = [
+    ['rich-editor-1000-char-fastkeys','root'],
+    ['root-1000-char-transaction','root'],
+    ['child-frame-1000-char-transaction','child'],
+    ['contenteditable-ime-unicode','ime'],
+  ];
+  for (const [id, source] of cases) {
+    const acceptance = phase11Acceptance({id});
+    assert.equal(acceptance.kind, 'editor');
+    assert.equal(acceptance.source, source);
+    assert.equal(acceptance.length, acceptance.text.length);
+    assert.ok(acceptance.length <= 12000);
+  }
+  assert.equal(phase11Acceptance({id:'unqualified-scenario'}), undefined);
 });
 
 test('live site URLs require HTTPS and exact host allowlists', () => {

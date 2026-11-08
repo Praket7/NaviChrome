@@ -1,0 +1,42 @@
+{
+  "schema_version": 3,
+  "track": "phase11-realistic",
+  "candidate_adapter": "controlla",
+  "randomization": {
+    "method": "seeded_counterbalanced_paired_order",
+    "seed": 20261015
+  },
+  "results_storage": "comparison_files",
+  "environment": {
+    "candidate_source_sha": "a7ca9ea040a340b342808eb9e3a7c38169d9ebf4",
+    "dirty_tree_patch_sha256": "4843796d824673f3441164b97f1106afd9bdb4686cfea2e896d3ff3c2b4012b0",
+    "runtime_binary_sha256": "dc3cd753f9865d7e4b8559895121da88c44f18af601d46834efc1d4003f40f47",
+    "extension_build_sha256": "022e533338989738890dbc75c6420b137a3d47ac5d2d6e6e4073ddbaff81b9db",
+    "chrome_version": "Google Chrome 156.0.8078.81",
+    "browser_version": "Google Chrome 156.0.8078.81",
+    "codex_version": "codex-cli 0.160.1",
+    "os_build": "darwin-arm64",
+    "machine_profile": "darwin-arm64",
+    "model": "gpt-6-luna",
+    "model_settings": "unspecified",
+    "prompt_hash": "adapter-generated",
+    "token_budget": 32000,
+    "fixture_revision": "local-realistic-v2-server-acceptance",
+    "network_profile": "loopback fixture; client and model network unrestricted",
+    "account_fixture_id": "phase11-local-disposable",
+    "client_adapter_versions": {
+      "controlla": "sha256:dc3cd753f9865d7e4b8559895121da88c44f18af601d46834efc1d4003f40f47",
+      "playwright-mcp": "0.0.83"
+    }
+  },
+  "comparisons": [
+    {
+      "baseline_adapter": "playwright-mcp",
+      "evidence_file": "phase11-upload-prompt-fix-2026-11-08.comparisons/playwright-mcp.json",
+      "randomization": {
+        "method": "seeded_counterbalanced_paired_order",
+        "seed": 20261015
+      }
+    }
+  ]
+}

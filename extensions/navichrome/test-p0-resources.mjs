@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { configureOwnedTabOpener, reserveOwnedBackgroundSlot } from "./lib/owned-open.js";
+import { validDownloadUrl, safeDownloadFilename, validExpectedDownloadFilename } from "./lib/download-lifecycle.js";
 
 import {
   PresentationSlotManager, PresentationRequirement, PresentationConflict,
@@ -25,6 +26,18 @@ function clock(start = 1_000) {
     wait: async () => { value += 1; },
   };
 }
+
+test("download URL and filename guards reject credentials and path controls", () => {
+  assert.equal(validDownloadUrl("https://example.test/export.txt"), true);
+  assert.equal(validDownloadUrl("blob:https://example.test/123"), true);
+  assert.equal(validDownloadUrl("blob:https://user:secret@example.test/123"), false);
+  assert.equal(validDownloadUrl("https://user:secret@example.test/export.txt"), false);
+  assert.equal(safeDownloadFilename("/tmp/export.txt"), "export.txt");
+  assert.equal(validExpectedDownloadFilename("export.txt"), true);
+  for (const name of ["../export.txt", "..", "bad\nname.txt", " padded.txt "]) {
+    assert.equal(validExpectedDownloadFilename(name), false, `accepted unsafe filename: ${name}`);
+  }
+});
 
 test("shared activation verifies the exact document and focused tab", async () => {
   let active = false, focused = false;

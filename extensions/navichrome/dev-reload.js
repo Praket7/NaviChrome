@@ -49,9 +49,10 @@ async function writeMarker(marker) {
   }
 }
 
-function reloadNow() {
+async function reloadNow() {
   render("reloading", "Reloading extension…");
   try {
+    await chrome.storage.session.remove("nativeReconnectAttempts").catch(() => {});
     chrome.runtime.reload();
     return true;
   } catch (error) {
@@ -61,9 +62,9 @@ function reloadNow() {
 }
 
 if (button) {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     button.disabled = true;
-    if (reloadNow() && params.get("close") === "1") window.close();
+    if (await reloadNow() && params.get("close") === "1") window.close();
   });
 }
 
@@ -95,7 +96,7 @@ if (justReloaded) {
   });
   // A failed marker write only costs the loop guard, not the reload.
   if (!requested) detailNode && (detailNode.textContent = "Session marker unavailable; reload still requested.");
-  if (!reloadNow()) {
+  if (!(await reloadNow())) {
     // Nothing else to do: surface the error and leave the button usable.
     if (button) button.disabled = false;
   } else if (params.get("close") === "1") {

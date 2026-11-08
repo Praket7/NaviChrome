@@ -1,5 +1,38 @@
 # Verification matrix
 
+## Drive download and tab-cleanup continuation — 2026-11-08
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Filename-bound download lifecycle | pass, local | Extension tests cover exact expected filename matching when the URL is unavailable and ignore unrelated downloads; the Rust route requires completed status and matching filename/path basename. No live Drive viewer download was run. |
+| Download URL/name guards | pass | `download-lifecycle.js` tests reject credentialed HTTP(S)/blob URLs, path separators, control characters, and `.`/`..`; the credentialed `blob:` case failed before the fix. |
+| Task-owned tab cleanup | pass, focused local policy | Rust regression selects unused and used-intermediate NaviChrome-owned tabs while retaining the result tab. Cleanup runs only after verified task receipts and calls the existing identity/lease-checked close operation. No live tab was closed. |
+| Extension packaging | pass | The new download module is included in the extension build hash, packaged assets, native-host embed list, and test harness; 25 asset/resource tests pass. |
+| Background extension/native bridge reload | pass, installed Chrome | The reinstall script's background probe refreshed inventory from a changed host ID; Hotload `navichrome` is ready at generation 7 with six tools, discovery matched 51 tabs, and zero reload/probe helper tabs remained. No Google page was opened or changed. |
+| Full workspace Rust suite | pass | `cargo test --workspace --locked --offline` passed; Chrome-dependent tests remain ignored by their declared local requirement. |
+| Hosted CI | pending | Will be reported only after a branch push and exact run inspection; no main-branch promotion is claimed. |
+| Full Phase 11 matrix / 30 repetitions | blocked before browser startup | Preflight still rejects unsupported actors/oracles, warm/reconnect modes, headed execution, and concurrency bindings. The earlier three-task N=1 pilot does not satisfy the matrix or 30-repetition requirement. |
+
+## 2026-11-08 Unicode and Phase 11 continuation
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| `npm run check:bench` | pass | 117 tests passed; held-out manifest (100 templates), Phase 11 contract (32 tasks, 9 adapters), live-site contract (19 action/perception classes), and Phase 15 fault contract (9 failures) validated. This is fixture/contract evidence, not a full-matrix benchmark. |
+| Focused verifier/runner regressions | pass | The suite includes the repeat-workflow class binding, unsupported-matrix preflight, upload prompt routing, and independent acceptance checks. |
+| Default Phase 11 configured runner | rejected before startup | It reports unsupported warm/reconnect modes and task actor/oracle paths before candidate checkout or browser startup; the default full matrix measured no rows. |
+| Supported Phase 11 subset | pass, one paired repetition per task | Cold/headless, concurrency 1, NaviChrome vs pinned Playwright MCP: form 20.5s vs 29.0s, extraction 19.5s vs 20.9s, upload 34.4s vs 40.5s. All 3/3 paired rows independently verified. N=1 is diagnostic only and does not qualify a speed claim. Preserved report: `bench/reports/phase11-supported-subset-2026-11-08.json`. |
+| Upload actor prompt correction | pass, local Chrome actors | The first subset run had one upload warmup with a non-dispatched `act(action="task")` schema error; the app oracle showed accepted state, but the actor row remained failed. The prompt now directs this task through the `browser` tool. A fresh upload-only run passed both warmups and its paired row with no failed tool calls (33.4s vs 41.4s, N=1). Preserved report: `bench/reports/phase11-upload-prompt-fix-2026-11-08.json`. |
+| Unicode typing policy | pass | Focused Rust regression verifies CJK and curly-apostrophe text use the normal path and explicit IME remains available. |
+| Rust runtime tests | pass | `cargo test -p navichrome-runtime --bin navichrome-v2 --locked --offline`: 360 passed, 0 failed, 5 ignored. Ignored cases require installed Chrome; this run used local unit and disposable headless fixtures, not the signed-in Google account. |
+| Dev reload and inventory gate | pass, local and live | `scripts/reinstall-local.test.mjs`: 2 passed, including rejection of a fresh heartbeat from the old host. A background run of `scripts/reinstall-local.sh agefmpphbpkiklipjpgbffjjhkmlhifd` then observed a fresh inventory with a changed host ID and exited successfully. |
+| Release structure | pass, claim disabled | `npm run check:release`: 16 tests passed; the checker confirms superiority remains disabled without measured Phase 11 results. |
+| Formatting and diff checks | pass | `cargo fmt --all -- --check` and `git diff --check` passed. |
+| Native host and extension reload | pass | The earlier reload recovered through the popup and allowed exact Gmail tab/document pairing. On 2026-11-08, the revised background script waited for the fresh native-host inventory; Hotload `navichrome` was then reloaded to generation 5 and reported ready with six tools, and NaviChrome discovery returned 52 current tabs. |
+| Gmail draft readback | pass, read only | NaviChrome confirmed account `praketg1@gmail.com`, exact recipient `praket.gauri1234@gmail.com`, subject `NaviChrome draft test`, and body beginning `HHi`. No send occurred. |
+| Gmail draft correction / save | pass, background UI readback | The guarded rich-text `fill` replaced the body after a fresh exact-value snapshot. `Save & close` produced an observed document change; a fresh Drafts list showed `NaviChrome draft test` and the corrected body. The compose snapshot before save showed the exact recipient and personal-account marker. No send occurred. |
+| Google Sites | pass, read only | NaviChrome reused the same Gmail tab, loaded `https://sites.google.com/`, and read back title `Google Sites`. No site was created or posted. |
+| Full live Phase 11 matrix / speed | not run | Only the supported three-task cold/headless single-concurrency subset ran. Task/oracle coverage for remaining cases, warm/reconnect lifecycles, headed modes, concurrency bindings, and 30 repetitions remains incomplete. No full-matrix speed evidence exists. |
+
 ### 2026-11-04 frame verification and five-task live continuation
 
 | Check | Result | Evidence and boundary |

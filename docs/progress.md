@@ -1,5 +1,102 @@
 # Build progress
 
+## Drive downloads and task tab cleanup — 2026-11-08
+
+The Drive viewer may expose its download only through a JavaScript button, with
+no stable URL to arm against. The shared download lifecycle now accepts an
+exact expected filename and binds the event to the selected tab/document; the
+runtime requires the completed event's filename and downloaded path basename
+to match before reading the file. URL-only behavior remains supported. A
+regression found and fixed credential acceptance inside `blob:` URLs; expected
+filenames also reject path separators, controls, `.` and `..`. Extension
+harness, package/hash asset checks, and focused Rust tests pass. This is local
+fixture evidence; a live Drive viewer download is not claimed.
+
+Verified task completion now closes NaviChrome-created unused and intermediate
+tabs through the existing owned-tab close receipt, after checking the task
+lease and exact extension ownership receipt. The primary result tab is kept;
+unknown or failed tasks do not trigger cleanup. Focused Rust policy coverage
+proves unused/intermediate selection and result retention, while extension
+tests retain the existing identity-bound close guard. The ownership ledger is
+currently in-memory and session-scoped, so a process restart loses pending
+cleanup state and unrelated unfinished work in one session can share a cleanup
+boundary; no live multi-task close cycle is claimed yet.
+
+The reinstall flow now opens a background-only bridge probe after the
+extension reload. It asks the service worker for `native-status` without
+enumerating tabs and closes its helper tab. The regression passes; the
+installed run produced a fresh inventory from a changed native-host ID,
+Hotload `navichrome` returned ready at generation 7 with six tools, NaviChrome
+discovery matched 51 tabs, and no reload/probe helper tabs remained. No Google
+page was opened or changed.
+
+The canonical Phase 11 matrix still rejects before browser startup because most
+task/oracle actors, warm/reconnect lifecycles, headed display bindings, and
+concurrency telemetry are absent. No full matrix or 30-repetition result was
+fabricated. Hosted CI remains pending until the local verification set is
+green and this branch is pushed.
+
+## Unicode typing and Phase 11 verifier continuation — 2026-11-08
+
+Fixed two live-relevant correctness gaps. Plain Unicode text now follows the
+normal verified text path; explicit composition-sensitive input still uses
+IME. The Phase 11 fixture now accepts bounded editor receipts and binds them
+to the exact task, scenario, source, and persisted text. The repeat-qualified
+form task also uses its declared `repeated_workflow` class in the acceptance
+predicate.
+
+The extension reload page now clears the stored native reconnect-attempt
+counter before reloading, matching the popup's recovery action. A mocked
+extension-page regression verifies the reset happens before reload and close.
+The installed reload still left the tab inventory stale by itself. Opening the
+NaviChrome popup refreshed it; pairing then succeeded, so the live bridge was
+recovered. The reconnect-counter reset is not a complete inventory-recovery
+fix on its own.
+
+The reinstall script previously returned as soon as macOS accepted the reload
+URL. It now waits up to 30 seconds for a fresh inventory from a different
+32-character native-host ID. This avoids accepting a timestamp refresh from an
+older host. The isolated regression simulated that old-host refresh before the
+replacement host appeared and passed (2/2 script tests). This timing guard is
+locally verified. A subsequent background run of
+`scripts/reinstall-local.sh agefmpphbpkiklipjpgbffjjhkmlhifd` observed the new
+host inventory and exited successfully. Hotload was refreshed to generation 5,
+reported ready with six tools, and NaviChrome discovery returned a fresh
+52-tab inventory. This verifies reload and rediscovery, not the full Phase 11
+matrix or new Google task outcomes.
+
+The configured Phase 11 runner now rejects unsupported task, mode, execution,
+and concurrency rows before candidate checkout or browser startup. This avoids
+repeating the prior warmup-only run, but the full matrix still has no qualified
+actors/oracles for the rejected rows and has no full-matrix speed evidence.
+
+The release rebuild installed the runtime and requested the unpacked extension
+reload. Hotload restarted and reported `navichrome` ready with six tools. After
+the popup refreshed the native bridge, NaviChrome paired the exact Gmail tab and
+confirmed account `praketg1@gmail.com`, recipient `praket.gauri1234@gmail.com`,
+subject `NaviChrome draft test`, and the duplicated leading `H` in the body. The
+trusted-key route correctly refused `Control+A` in the background; a guarded
+background rich-text `fill` then replaced the body and returned verified DOM
+readback. `Save & close` was clicked without a send action, and a fresh Drafts
+list snapshot showed the exact subject and corrected body. NaviChrome then
+navigated that same tab to `https://sites.google.com/` and read back the Google
+Sites home title. No Gmail message or Classroom post was sent; no extra tab was
+created.
+
+The bounded local Phase 11 run completed the three configured tasks in
+cold/headless mode at concurrency 1. All three paired rows independently
+verified: form fill 20.5s vs 29.0s, extraction 19.5s vs 20.9s, and upload 34.4s
+vs 40.5s (N=1 per task; not a speed qualification). One pre-fix upload warmup
+made a non-dispatched `act(action="task")` call; the actor prompt now names the
+`browser` tool explicitly. A fresh upload-only paired run plus two warmups
+passed with no failed tool call. The reports and warmup failure are retained in
+`bench/reports/phase11-supported-subset-2026-11-08.json` and
+`bench/reports/phase11-upload-prompt-fix-2026-11-08.json`.
+
+The Drive viewer's JS-button download path and automatic task-owned tab ledger
+remain open plan items. Full Phase 11 task, adapter, warm/reconnect, headed, and
+concurrency coverage, hosted CI, and paired 30-repetition evidence remain open.
+
 ## Frame verification and live demo continuation — 2026-11-04
 
 The frame-scoped `TextPresent` verifier requested a 1 MiB internal snapshot but

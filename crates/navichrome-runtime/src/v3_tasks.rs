@@ -53,6 +53,8 @@ pub enum TaskPrimitive {
         /// the existing authenticated page-fetch and artifact behavior.
         #[serde(default)]
         source: DownloadSource,
+        #[serde(default)]
+        expected_filename: Option<String>,
     },
     /// One-call transfer: obtain a guarded download artifact, then select that
     /// exact artifact for an upload and require the requested acceptance proof.
@@ -62,6 +64,8 @@ pub enum TaskPrimitive {
         destination_path: Option<String>,
         #[serde(default)]
         source: DownloadSource,
+        #[serde(default)]
+        expected_filename: Option<String>,
         selector: Option<String>,
         trigger_reference: Option<String>,
         #[serde(default)]
@@ -155,6 +159,7 @@ pub enum ExpandedStep {
         reference: String,
         destination_path: Option<String>,
         source: DownloadSource,
+        expected_filename: Option<String>,
     },
     UploadPreviousDownload {
         selector: Option<String>,
@@ -507,24 +512,33 @@ impl TaskPrimitive {
                 reference,
                 destination_path,
                 source,
+                expected_filename,
             } => {
                 if reference.is_empty()
                     || destination_path.as_deref().is_some_and(|path| {
                         path.is_empty() || path.len() > 4096 || path.chars().any(char::is_control)
                     })
+                    || expected_filename
+                        .as_deref()
+                        .is_some_and(|filename| !valid_expected_download_filename(filename))
+                    || expected_filename.is_some() && *source != DownloadSource::BrowserLifecycle
                 {
-                    return Err("download requires a reference and a bounded destination path");
+                    return Err(
+                        "download requires a reference, bounded destination, and safe filename hint only for browser_lifecycle",
+                    );
                 }
                 vec![ExpandedStep::Download {
                     reference: reference.clone(),
                     destination_path: destination_path.clone(),
                     source: *source,
+                    expected_filename: expected_filename.clone(),
                 }]
             }
             Self::DownloadUpload {
                 download_reference,
                 destination_path,
                 source,
+                expected_filename,
                 selector,
                 trigger_reference,
                 acceptance,
@@ -535,6 +549,10 @@ impl TaskPrimitive {
                     || destination_path.as_deref().is_some_and(|path| {
                         path.is_empty() || path.len() > 4096 || path.chars().any(char::is_control)
                     })
+                    || expected_filename
+                        .as_deref()
+                        .is_some_and(|filename| !valid_expected_download_filename(filename))
+                    || expected_filename.is_some() && *source != DownloadSource::BrowserLifecycle
                     || (selector.is_some() == trigger_reference.is_some())
                     || selector
                         .as_ref()
@@ -562,6 +580,7 @@ impl TaskPrimitive {
                         reference: download_reference.clone(),
                         destination_path: destination_path.clone(),
                         source: *source,
+                        expected_filename: expected_filename.clone(),
                     },
                     ExpandedStep::UploadPreviousDownload {
                         selector: selector.clone(),
@@ -675,6 +694,16 @@ fn valid_http_url(url: &str) -> bool {
     !authority.is_empty() && !authority.contains('@')
 }
 
+fn valid_expected_download_filename(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value.trim() == value
+        && !matches!(value, "." | "..")
+        && !value
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '\\'))
+}
+
 #[cfg(test)]
 mod task_expansion_tests {
     use super::{
@@ -728,6 +757,7 @@ mod task_expansion_tests {
             reference: "@c1".into(),
             destination_path: None,
             source: DownloadSource::PageFetch,
+            expected_filename: None,
         };
         let upload = TaskPrimitive::Upload {
             artifact_handle: Some("artifact-1".into()),
@@ -742,6 +772,7 @@ mod task_expansion_tests {
             download_reference: "@c3".into(),
             destination_path: None,
             source: DownloadSource::PageFetch,
+            expected_filename: None,
             selector: Some("input[type=file]".into()),
             trigger_reference: Some("@c4".into()),
             acceptance: Some(serde_json::json!({"kind":"visible_text","text":"Uploaded"})),
@@ -859,11 +890,12 @@ mod task_expansion_tests {
             reference: "@c4".into(),
             destination_path: Some("/tmp/report.pdf".into()),
             source: DownloadSource::PageFetch,
+            expected_filename: None,
         }
         .expand()
         .unwrap();
         assert!(matches!(&steps[0], ExpandedStep::Download {
-            reference, destination_path: Some(path), source: DownloadSource::PageFetch
+            reference, destination_path: Some(path), source: DownloadSource::PageFetch, ..
         } if reference == "@c4" && path == "/tmp/report.pdf"));
         let defaulted: TaskPrimitive = serde_json::from_value(serde_json::json!({
             "kind":"download","reference":"@c4"
@@ -887,6 +919,30 @@ mod task_expansion_tests {
                 ..
             }]
         ));
+    }
+
+    #[test]
+    fn browser_lifecycle_download_binds_a_js_trigger_to_a_safe_filename() {
+        let task: TaskPrimitive = serde_json::from_value(serde_json::json!({
+            "kind":"download","reference":"@c4","source":"browser_lifecycle",
+            "expected_filename":"viewer-export.txt"
+        }))
+        .unwrap();
+        let expanded = task.expand().unwrap();
+        assert_eq!(
+            serde_json::to_value(expanded).unwrap()[0]["expected_filename"],
+            "viewer-export.txt"
+        );
+    }
+
+    #[test]
+    fn browser_lifecycle_download_rejects_path_like_expected_filenames() {
+        let task: TaskPrimitive = serde_json::from_value(serde_json::json!({
+            "kind":"download","reference":"@c4","source":"browser_lifecycle",
+            "expected_filename":"../viewer-export.txt"
+        }))
+        .unwrap();
+        assert!(task.expand().is_err());
     }
 
     #[test]

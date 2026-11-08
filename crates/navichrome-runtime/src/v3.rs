@@ -108,7 +108,7 @@ impl TypingPolicy {
             InputCharacteristics {
                 ordinary_text_control: !requires_key_events,
                 requires_trusted_events: requires_key_events,
-                ime_required: composition_sensitive || !text.is_ascii(),
+                ime_required: composition_sensitive,
                 value_length: text.len(),
                 ..InputCharacteristics::default()
             },

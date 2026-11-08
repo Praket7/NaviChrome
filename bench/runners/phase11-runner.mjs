@@ -299,9 +299,31 @@ export function actingAdapterEnvironment(env) {
   return actingEnv;
 }
 
+export function phase11Acceptance(task) {
+  if (task.id === 'form-guarded-fill' || task.id === 'slow-media-early-form' || task.id === 'repeat-qualified-flow') {
+    return {kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'};
+  }
+  if (task.id === 'guarded-upload') {
+    const bytes=Buffer.from('Controlla benchmark\n');
+    return {kind:'upload',filename:'benchmark.txt',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+  }
+  if (task.id === 'structured-extraction') return {kind:'extraction',row:'record-42',status:'older'};
+  const editorSource={
+    'rich-editor-1000-char-fastkeys':'root',
+    'root-1000-char-transaction':'root',
+    'child-frame-1000-char-transaction':'child',
+    'contenteditable-ime-unicode':'ime',
+  }[task.id];
+  if (editorSource) {
+    const text=task.id==='contenteditable-ime-unicode'?'Cafe\u0301\n東京🙂':'x'.repeat(1000);
+    return {kind:'editor',source:editorSource,text,length:text.length};
+  }
+  return undefined;
+}
+
 async function runOne({ adapter, command, task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env }) {
   const fixtureUrl = task.url ? liveTaskUrl(task) : (() => { const url = new URL(task.fixture, fixtureBaseUrl); url.searchParams.set('task', task.id); if (task.scenario) url.searchParams.set('scenario', task.scenario); return url.toString(); })();
-  const acceptance=task.id==='form-guarded-fill'?{kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'}:task.id==='guarded-upload'?{kind:'upload',filename:'benchmark.txt',size:Buffer.byteLength('Controlla benchmark\n'),sha256:createHash('sha256').update('Controlla benchmark\n').digest('hex')}:task.id==='structured-extraction'?{kind:'extraction',row:'record-42',status:'older'}:undefined;
+  const acceptance=phase11Acceptance(task);
   const input = { run_id:randomUUID(), ...(acceptance?{acceptance}:{}), task_id: task.id, task_class: task.class, scenario: task.scenario, mode, execution_mode: executionMode, concurrency, fixture_url: fixtureUrl, site_urls: task.site_urls ?? [fixtureUrl], deadline_ms: deadlineMs, source_ref: adapter.source_ref ?? null };
   await resetFixture(resetCommand, input, deadlineMs, env);
   const adapterRequestStartedNs = process.hrtime.bigint();

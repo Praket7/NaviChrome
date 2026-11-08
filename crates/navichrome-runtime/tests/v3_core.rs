@@ -70,6 +70,10 @@ fn fast_keys_have_zero_intentional_delay_and_human_keys_are_bounded() {
     );
     assert_eq!(
         TypingPolicy::choose("こんにちは", false, false).mode,
+        TypingMode::Block
+    );
+    assert_eq!(
+        TypingPolicy::choose("が", false, true).mode,
         TypingMode::Ime
     );
 }

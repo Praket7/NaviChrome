@@ -39,12 +39,32 @@ if [ -z "$EXTENSION_ID" ]; then
 fi
 
 PAGE="chrome-extension://$EXTENSION_ID/dev-reload.html?close=1"
+BRIDGE_PROBE_PAGE="chrome-extension://$EXTENSION_ID/popup.html?bridge_probe=1"
+if ! command -v node >/dev/null 2>&1; then
+  echo "Cannot verify the reloaded native bridge because Node.js is unavailable." >&2
+  exit 1
+fi
+NAVICHROME_PREVIOUS_HOST_ID="$(node -e 'try{const value=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));if(typeof value.host_id==="string")process.stdout.write(value.host_id)}catch{}' "$HOME/.navichrome/native-tabs.json")"
+NAVICHROME_RELOAD_STARTED_AT_MS="$(node -p 'Date.now()')"
 if command -v open >/dev/null 2>&1; then
   open -g -a "Google Chrome" "$PAGE"
+  open -g -a "Google Chrome" "$BRIDGE_PROBE_PAGE"
 elif command -v xdg-open >/dev/null 2>&1; then
   xdg-open "$PAGE"
+  xdg-open "$BRIDGE_PROBE_PAGE"
 else
   echo "Open $PAGE in Chrome to reload the extension." >&2
   exit 0
 fi
-echo "Asked Chrome to reload $EXTENSION_ID"
+echo "Asked Chrome to reload $EXTENSION_ID and wake its native bridge"
+INVENTORY="$HOME/.navichrome/native-tabs.json"
+DEADLINE=$((SECONDS + 30))
+while (( SECONDS < DEADLINE )); do
+  if node -e 'const fs=require("node:fs"),p=process.argv[1],started=Number(process.argv[2]),previous=process.argv[3];try{const s=fs.statSync(p),v=JSON.parse(fs.readFileSync(p,"utf8")),age=Math.floor(Date.now()/1000)-v.last_seen_unix;process.exit(s.mtimeMs>started&&/^[0-9a-f]{32}$/i.test(v.host_id)&&v.host_id!==previous&&Array.isArray(v.tabs)&&age>=0&&age<=15?0:1)}catch{process.exit(1)}' "$INVENTORY" "$NAVICHROME_RELOAD_STARTED_AT_MS" "$NAVICHROME_PREVIOUS_HOST_ID" >/dev/null 2>&1; then
+    echo "Native tab inventory refreshed after extension reload."
+    exit 0
+  fi
+  sleep 1
+done
+echo "Chrome accepted the reload request, but the native tab inventory did not refresh within 30 seconds. Open the NaviChrome popup and choose Reload bridge, then rediscover tabs." >&2
+exit 1

@@ -34,6 +34,7 @@ const EXTENSION_RUNTIME_ASSETS: &[&str] = &[
     "lib/owned-open.js",
     "lib/fast-type.js",
     "lib/page-diagnostics.js",
+    "lib/download-lifecycle.js",
 ];
 
 fn main() {

@@ -22,6 +22,7 @@ import { evictOwnedPoolTabs } from "./lib/owned-pool.js";
 import { executionCounterReceipt, executionCounters, noteCdpCommand, resetExecutionCounters } from "./lib/execution-counters.js";
 import { isSameDocumentUrl, validateNavigationUrl } from "./lib/navigation-url.js";
 import { dispatchFrameMultiTouch } from "./lib/frame-multitouch.js";
+import { validDownloadUrl, downloadUrlHash, safeDownloadFilename, validExpectedDownloadFilename } from "./lib/download-lifecycle.js";
 
 let socket;
 const NATIVE_HOST = "navichrome_bridge";
@@ -64,7 +65,7 @@ const MAX_DOWNLOAD_OBSERVERS_PER_TAB = 4;
 const MAX_DOWNLOAD_OBSERVERS = 64;
 function uploadInputPolicyFunction() { return "function(names){const e=this;if(!e||e.nodeName!=='INPUT'||e.type!=='file')return {ok:false,reason:'target_not_file_input'};const accept=(e.getAttribute('accept')||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);const mime=n=>({txt:'text/plain',csv:'text/csv',json:'application/json',pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp3:'audio/mpeg',mp4:'video/mp4',html:'text/html',xml:'application/xml'})[String(n).split('.').pop().toLowerCase()];if(names.length>1&&!e.multiple)return {ok:false,reason:'multiple_files_not_allowed'};for(const name of names){const lower=String(name).toLowerCase(),ext='.'+lower.split('.').pop(),type=mime(name);if(accept.length&&!accept.some(a=>a.startsWith('.')?lower.endsWith(a):a.endsWith('/*')?!!type&&type.startsWith(a.slice(0,-1)):a.includes('/')?a===type:false))return {ok:false,reason:'accept_filter_mismatch',filename:name};}return {ok:true,accept,multiple:!!e.multiple}}"; }
 const DOWNLOAD_OBSERVER_TTL_MS = 60000;
-const NAVICHROME_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js",    "lib/frame-multitouch.js", "lib/owned-open.js", "lib/fast-type.js", "lib/page-diagnostics.js"];
+const NAVICHROME_EXTENSION_BUILD_ASSETS = ["background.js", "manifest.json", "open-recovery.html", "popup.html", "popup.js", "secure-input.css", "secure-input.html", "secure-input.js", "lib/transport.js", "lib/frame-tree.js", "lib/debugger-sessions.js", "lib/presentation-input.js", "lib/input-scripts.js", "lib/typing-support.js", "lib/input-guards.js", "lib/input.js", "lib/file-input-selection.js", "lib/editor-adapters.js", "lib/observation.js", "lib/pointer.js", "lib/resource-keys.js", "lib/owned-resources.js", "lib/presentation-slots.js", "lib/tab-control.js", "lib/focus-emulation.js", "lib/owned-pool.js", "lib/execution-counters.js", "lib/navigation-url.js", "lib/frame-multitouch.js", "lib/owned-open.js", "lib/fast-type.js", "lib/page-diagnostics.js", "lib/download-lifecycle.js"];
 const NAVICHROME_EXTENSION_BUILD_ID_PROMISE = (async () => {
   const runtimeFallback = `navichrome-chrome-extension:${chrome.runtime.getManifest().version}:runtime`;
   const compute = (async () => {
@@ -479,28 +480,6 @@ function waitForFileChooser(tabId, documentId, timeoutMs, afterSequence = 0) {
     fileChooserWaiters.set(tabId, waiter);
   });
 }
-function validDownloadUrl(value) {
-  if (typeof value !== "string" || !value || value.length > 2048 || /\s/.test(value)) return false;
-  try {
-    const url = new URL(value);
-    if (url.username || url.password) return false;
-    if (url.protocol === "http:" || url.protocol === "https:") return !!url.hostname;
-    if (url.protocol === "blob:") {
-      const inner = new URL(url.pathname);
-      return (inner.protocol === "http:" || inner.protocol === "https:") && !!inner.hostname;
-    }
-    return false;
-  } catch { return false; }
-}
-async function downloadUrlHash(value) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
-}
-function safeDownloadFilename(value) {
-  if (typeof value !== "string" || !value) return null;
-  const name = value.split(/[\\/]/).at(-1).slice(0, 255);
-  return name || null;
-}
 function clearDownloadObserver(observerId, outcome) {
   const observer = downloadObservers.get(observerId);
   if (!observer) return false;
@@ -552,7 +531,8 @@ function publishDownloadEvent(observer, item, status, reasonCode) {
     const sourceUrl = typeof item.url === "string" ? item.url : "";
     const finalUrl = typeof item.finalUrl === "string" ? item.finalUrl : "";
     const urlIdentity = {
-      matches_expected: sourceUrl === observer.expectedUrl,
+      matches_expected: (!observer.expectedUrl || sourceUrl === observer.expectedUrl)
+        && (!observer.expectedFilename || filename === observer.expectedFilename),
       url_sha256: validDownloadUrl(sourceUrl) ? await downloadUrlHash(sourceUrl) : null,
       final_url_sha256: validDownloadUrl(finalUrl) ? await downloadUrlHash(finalUrl) : null,
     };
@@ -587,7 +567,9 @@ function publishDownloadEvent(observer, item, status, reasonCode) {
 chrome.downloads.onCreated.addListener(item => {
   if (!Number.isSafeInteger(item?.tabId) || !Number.isSafeInteger(item?.id) || typeof item.url !== "string") return;
   for (const observer of downloadObservers.values()) {
-    if (observer.tabId !== item.tabId || observer.documentId !== pairedTabDocumentIds.get(item.tabId) || item.url !== observer.expectedUrl) continue;
+    if (observer.tabId !== item.tabId || observer.documentId !== pairedTabDocumentIds.get(item.tabId)
+      || observer.expectedUrl && item.url !== observer.expectedUrl
+      || observer.expectedFilename && safeDownloadFilename(item.filename) !== observer.expectedFilename) continue;
     observer.item = item;
     void publishDownloadEvent(observer, item, item.state === "complete" ? "completed" : item.state === "interrupted" ? "interrupted" : "started",
       item.state === "interrupted" ? "download_interrupted" : undefined);
@@ -2230,12 +2212,16 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       const action = params.action;
       if (action === "arm") {
         if ((params.expected_document_id !== undefined && params.expected_document_id !== expectedDocumentId) || pairedTabDocumentIds.get(tabId) !== expectedDocumentId) throw new Error("Download observer requires the current paired document identity.");
-        if (!validDownloadUrl(params.expected_url)) throw new Error("Download observer requires an exact credential-free HTTP(S) or HTTP(S)-blob URL.");
+        const expectedUrl = params.expected_url === undefined ? undefined : params.expected_url;
+        const expectedFilename = params.expected_filename === undefined ? undefined : params.expected_filename;
+        if (expectedUrl !== undefined && !validDownloadUrl(expectedUrl)) throw new Error("Download observer expected_url must be a credential-free HTTP(S) or HTTP(S)-blob URL.");
+        if (expectedFilename !== undefined && !validExpectedDownloadFilename(expectedFilename)) throw new Error("Download observer expected_filename must be a safe basename.");
+        if (expectedUrl === undefined && expectedFilename === undefined) throw new Error("Download observer requires an exact URL or expected filename.");
         const perTab = [...downloadObservers.values()].filter(observer => observer.tabId === tabId);
         if (perTab.length >= MAX_DOWNLOAD_OBSERVERS_PER_TAB || downloadObservers.size >= MAX_DOWNLOAD_OBSERVERS) throw new Error("Download observer capacity is full.");
-        if (perTab.some(observer => observer.expectedUrl === params.expected_url)) throw new Error("A download observer for this URL is already active on the tab.");
+        if (perTab.some(observer => observer.expectedUrl === expectedUrl && observer.expectedFilename === expectedFilename)) throw new Error("A matching download observer is already active on the tab.");
         const observerId = crypto.randomUUID();
-        const observer = { id: observerId, tabId, documentId: expectedDocumentId, expectedUrl: params.expected_url,
+        const observer = { id: observerId, tabId, documentId: expectedDocumentId, expectedUrl, expectedFilename,
           downloadId: undefined, filename: null, bytesReceived: 0, totalBytes: null, urlIdentity: null,
           events: [], waiter: undefined, item: undefined, expiryTimer: undefined };
         downloadObservers.set(observerId, observer);

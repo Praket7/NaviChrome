@@ -713,6 +713,7 @@ const extensionLibraryAssets = [
   "lib/owned-open.js",
   "lib/fast-type.js",
   "lib/page-diagnostics.js",
+  "lib/download-lifecycle.js",
 ];
 function stripModuleSyntax(source) {
   return source.replace(/^import[^;]*;[ \t]*$/gm, "").replace(/^export default /gm, "").replace(/^export /gm, "");
@@ -3663,6 +3664,25 @@ async function waitFor(predicate, description) {
   assert.equal(completedDownload.result.download_id, 9101, "completion is bound to the matched Chrome download ID");
   assert.equal(completedDownload.result.file_path, "/Users/fixture/Downloads/report.csv",
     "only the internally consumed completed event carries Chrome's file path");
+
+  const jsOnlyArm = await sendDownloadCommand("download-js-only-arm", {
+    action: "arm", expected_filename: "viewer-export.txt", expected_document_id: expectedDocuments([98])[98]
+  });
+  assert.equal(jsOnlyArm.result.status, "armed", "a filename-bound observer supports a JS-triggered download with no anchor URL");
+  const jsOnlyObserver = jsOnlyArm.result.observer_id;
+  void sendDownloadCommand("download-js-only-start", { action: "wait", observer_id: jsOnlyObserver, timeout_ms: 1000 });
+  emitDownloadCreated({ id: 9110, tabId: 98, url: "https://drive.google.com/download?token=secret", finalUrl: "https://drive.google.com/download?token=secret",
+    filename: "/Users/fixture/Downloads/other.txt", state: "in_progress", bytesReceived: 0, totalBytes: 5 });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(restartPort.sent.findLast(message => message.id === "download-js-only-start"), undefined,
+    "an unrelated download in the same tab does not satisfy the expected filename");
+  emitDownloadCreated({ id: 9111, tabId: 98, url: "https://drive.google.com/download?token=private", finalUrl: "https://drive.google.com/download?token=private",
+    filename: "/Users/fixture/Downloads/viewer-export.txt", state: "in_progress", bytesReceived: 0, totalBytes: 5 });
+  const jsOnlyStarted = await waitForNativeMessage("download-js-only-start");
+  assert.equal(jsOnlyStarted.result.status, "started");
+  assert.equal(jsOnlyStarted.result.url_identity.matches_expected, true);
+  assert.equal(jsOnlyStarted.result.url_identity.url_sha256.length, 64);
+  assert.doesNotMatch(JSON.stringify(jsOnlyStarted.result), /token=private/, "JS-only URL identity is redacted");
 
   const interruptedArm = await sendDownloadCommand("download-interrupted-arm", {
     action: "arm", expected_url: "https://example.test/files/fail.bin", expected_document_id: expectedDocuments([98])[98]

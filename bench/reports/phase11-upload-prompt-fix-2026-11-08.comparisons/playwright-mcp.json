@@ -1,0 +1,2216 @@
+{
+  "schema_version": 2,
+  "track": "phase11-realistic",
+  "candidate_adapter": "controlla",
+  "environment": {
+    "candidate_source_sha": "a7ca9ea040a340b342808eb9e3a7c38169d9ebf4",
+    "dirty_tree_patch_sha256": "4843796d824673f3441164b97f1106afd9bdb4686cfea2e896d3ff3c2b4012b0",
+    "runtime_binary_sha256": "dc3cd753f9865d7e4b8559895121da88c44f18af601d46834efc1d4003f40f47",
+    "extension_build_sha256": "022e533338989738890dbc75c6420b137a3d47ac5d2d6e6e4073ddbaff81b9db",
+    "chrome_version": "Google Chrome 156.0.8078.81",
+    "browser_version": "Google Chrome 156.0.8078.81",
+    "codex_version": "codex-cli 0.160.1",
+    "os_build": "darwin-arm64",
+    "machine_profile": "darwin-arm64",
+    "model": "gpt-6-luna",
+    "model_settings": "unspecified",
+    "prompt_hash": "adapter-generated",
+    "token_budget": 32000,
+    "fixture_revision": "local-realistic-v2-server-acceptance",
+    "network_profile": "loopback fixture; client and model network unrestricted",
+    "account_fixture_id": "phase11-local-disposable",
+    "client_adapter_versions": {
+      "controlla": "sha256:dc3cd753f9865d7e4b8559895121da88c44f18af601d46834efc1d4003f40f47",
+      "playwright-mcp": "0.0.83"
+    }
+  },
+  "randomization": {
+    "method": "seeded_counterbalanced_paired_order",
+    "seed": 20261015
+  },
+  "baseline_adapter": "playwright-mcp",
+  "warmup_rows": [
+    {
+      "warmup": true,
+      "replicate": 2,
+      "task_id": "guarded-upload",
+      "mode": "cold_browser",
+      "execution_mode": "headless",
+      "concurrency": 1,
+      "candidate_order": "second",
+      "candidate": {
+        "adapter": "controlla",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 68241.50875,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 5,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7623,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "private_session_released",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": "verified",
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 68371.550417,
+        "adapter_request_to_verifier_decision_ms": 68371.550417,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 68297.167875,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "bc72c313c8d5f08d41819174ab3b08960b732a53ca7a3b2716a44daf1d1ae201"
+      },
+      "baseline": {
+        "adapter": "playwright-mcp",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 31761.830667,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 8,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7625,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "browser_close_acknowledged",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": null,
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 31894.5695,
+        "adapter_request_to_verifier_decision_ms": 31894.5695,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 31809.867333,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "ab9ab31a49825d878107bcb512f91aabf3fa9b2a082d7d2f9e8690396ad9302d"
+      }
+    },
+    {
+      "warmup": true,
+      "replicate": 1,
+      "task_id": "guarded-upload",
+      "mode": "cold_browser",
+      "execution_mode": "headless",
+      "concurrency": 1,
+      "candidate_order": "first",
+      "candidate": {
+        "adapter": "controlla",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 42088.634208,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 5,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7624,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "private_session_released",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": "verified",
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 42208.982041,
+        "adapter_request_to_verifier_decision_ms": 42208.982041,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 42136.376208,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "3f86bd3700aac25963574a212000a9249ba3413f40a858cbc894a144ebfbda60"
+      },
+      "baseline": {
+        "adapter": "playwright-mcp",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 42234.526916,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 8,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7625,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "browser_close_acknowledged",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": null,
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 42359.121167,
+        "adapter_request_to_verifier_decision_ms": 42359.121167,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 42286.736166,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "010f46d972f4a7816ee899cba7dc716792b9c56707a738e613c707951e458cfb"
+      }
+    }
+  ],
+  "paired_rows": [
+    {
+      "replicate": 1,
+      "task_id": "guarded-upload",
+      "mode": "cold_browser",
+      "execution_mode": "headless",
+      "concurrency": 1,
+      "candidate_order": "second",
+      "candidate": {
+        "adapter": "controlla",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 33403.660042,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 5,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7624,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "private_session_released",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": "verified",
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 33530.260708,
+        "adapter_request_to_verifier_decision_ms": 33530.260708,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 33450.996125,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "948c5301324ae7b333ec2c9381e74d4af2e4b9077d4e38428e5029083443fc72"
+      },
+      "baseline": {
+        "adapter": "playwright-mcp",
+        "task_id": "guarded-upload",
+        "mode": "cold_browser",
+        "execution_mode": "headless",
+        "concurrency": 1,
+        "success": true,
+        "independently_verified_success": true,
+        "wall_ms": 41448.981542,
+        "model_round_trips": null,
+        "model_tokens": null,
+        "mcp_calls": 8,
+        "browser_ops": null,
+        "observation_bytes": null,
+        "screenshot_bytes": null,
+        "retries": null,
+        "recovery_events": null,
+        "cache_status": null,
+        "verification_ms": null,
+        "cpu_ms": null,
+        "peak_rss_bytes": null,
+        "focus_disruptions": null,
+        "clipboard_disruptions": null,
+        "human_interventions": null,
+        "severe_wrong_target_events": null,
+        "authority_violations": null,
+        "silent_stale_mutations": null,
+        "external_controlla_calls": null,
+        "model_turns": 1,
+        "model_visible_observations": null,
+        "internal_model_calls": null,
+        "browser_cdp_commands": null,
+        "host_round_trips": null,
+        "native_host_messages_sent": null,
+        "native_host_messages_received": null,
+        "schema_bytes": null,
+        "prompt_input_bytes": null,
+        "tool_input_bytes": null,
+        "output_bytes": 7625,
+        "unknown_delivery_count": null,
+        "fallback_count": null,
+        "timeout_count": null,
+        "cleanup_completed": true,
+        "cleanup_outcome": "browser_close_acknowledged",
+        "model_visible_calls": null,
+        "browser_commands": null,
+        "native_host_commands": null,
+        "cdp_commands": null,
+        "full_ax_reads": null,
+        "frame_tree_reads": null,
+        "target_rebinds": null,
+        "automatic_recoveries": null,
+        "user_visible_recoveries": null,
+        "application_accepted": null,
+        "input_commands": null,
+        "verification_reads": null,
+        "auto_attach_calls": null,
+        "source_ref": null,
+        "metric_evidence": {
+          "success": {
+            "s": "observed",
+            "p": "acting_result_and_independent_verifier"
+          },
+          "independently_verified_success": {
+            "s": "observed",
+            "p": "independent_verifier"
+          },
+          "severe_wrong_target_events": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "authority_violations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "silent_stale_mutations": {
+            "s": "unavailable",
+            "p": "independent_safety_trace",
+            "r": "not reported by this adapter command"
+          },
+          "wall_ms": {
+            "s": "observed",
+            "p": "runner_monotonic_clock"
+          },
+          "model_round_trips": {
+            "s": "unavailable",
+            "p": "client_model_turn_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_tokens": {
+            "s": "unavailable",
+            "p": "client_model_usage_trace",
+            "r": "not reported by this adapter command"
+          },
+          "mcp_calls": {
+            "s": "observed",
+            "p": "client_transport_call_trace"
+          },
+          "browser_ops": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_verified_ms": {
+            "s": "unavailable",
+            "p": "submit_verifier_trace",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_to_final_ms": {
+            "s": "unavailable",
+            "p": "final_answer_trace",
+            "r": "not reported by this adapter command"
+          },
+          "external_controlla_calls": {
+            "s": "unavailable",
+            "p": "client_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_turns": {
+            "s": "observed",
+            "p": "client_model_trace"
+          },
+          "model_visible_observations": {
+            "s": "unavailable",
+            "p": "client_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "internal_model_calls": {
+            "s": "unavailable",
+            "p": "runtime_model_counter",
+            "r": "not reported by this adapter command"
+          },
+          "browser_cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "host_round_trips": {
+            "s": "unavailable",
+            "p": "native_host_roundtrip_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_sent": {
+            "s": "unavailable",
+            "p": "native_host_send_counter",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_messages_received": {
+            "s": "unavailable",
+            "p": "native_host_receive_counter",
+            "r": "not reported by this adapter command"
+          },
+          "schema_bytes": {
+            "s": "unavailable",
+            "p": "schema_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "prompt_input_bytes": {
+            "s": "unavailable",
+            "p": "prompt_submit_counter",
+            "r": "not reported by this adapter command"
+          },
+          "tool_input_bytes": {
+            "s": "unavailable",
+            "p": "tool_input_counter",
+            "r": "not reported by this adapter command"
+          },
+          "output_bytes": {
+            "s": "observed",
+            "p": "runner_output_counter"
+          },
+          "observation_bytes": {
+            "s": "unavailable",
+            "p": "observation_serializer_counter",
+            "r": "not reported by this adapter command"
+          },
+          "screenshot_bytes": {
+            "s": "unavailable",
+            "p": "visual_artifact_counter",
+            "r": "not reported by this adapter command"
+          },
+          "unknown_delivery_count": {
+            "s": "unavailable",
+            "p": "unknown_delivery_counter",
+            "r": "not reported by this adapter command"
+          },
+          "fallback_count": {
+            "s": "unavailable",
+            "p": "fallback_counter",
+            "r": "not reported by this adapter command"
+          },
+          "retries": {
+            "s": "unavailable",
+            "p": "client_or_runtime_retry_counter",
+            "r": "not reported by this adapter command"
+          },
+          "timeout_count": {
+            "s": "unavailable",
+            "p": "timeout_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cleanup_completed": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "cleanup_outcome": {
+            "s": "observed",
+            "p": "cleanup_postcondition"
+          },
+          "recovery_events": {
+            "s": "unavailable",
+            "p": "recovery_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "cache_status": {
+            "s": "unavailable",
+            "p": "route_cache_receipt",
+            "r": "not reported by this adapter command"
+          },
+          "verification_ms": {
+            "s": "unavailable",
+            "p": "independent_verifier_clock",
+            "r": "not reported by this adapter command"
+          },
+          "cpu_ms": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "peak_rss_bytes": {
+            "s": "unavailable",
+            "p": "process_accounting",
+            "r": "not reported by this adapter command"
+          },
+          "focus_disruptions": {
+            "s": "unavailable",
+            "p": "focus_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "clipboard_disruptions": {
+            "s": "unavailable",
+            "p": "clipboard_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "human_interventions": {
+            "s": "unavailable",
+            "p": "intervention_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "model_visible_calls": {
+            "s": "unavailable",
+            "p": "client_or_mcp_transport_call_trace",
+            "r": "not reported by this adapter command"
+          },
+          "browser_commands": {
+            "s": "unavailable",
+            "p": "browser_provider_operation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "native_host_commands": {
+            "s": "unavailable",
+            "p": "native_host_command_counter",
+            "r": "not reported by this adapter command"
+          },
+          "cdp_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_counter",
+            "r": "not reported by this adapter command"
+          },
+          "full_ax_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "frame_tree_reads": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "target_rebinds": {
+            "s": "unavailable",
+            "p": "runtime_target_registry_rebind_trace",
+            "r": "not reported by this adapter command"
+          },
+          "automatic_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_recovery_policy_event_trace",
+            "r": "not reported by this adapter command"
+          },
+          "user_visible_recoveries": {
+            "s": "unavailable",
+            "p": "runtime_terminal_ambiguity_trace",
+            "r": "not reported by this adapter command"
+          },
+          "application_accepted": {
+            "s": "unavailable",
+            "p": "independent_verifier",
+            "r": "not reported by this adapter command"
+          },
+          "input_commands": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          },
+          "verification_reads": {
+            "s": "unavailable",
+            "p": "runtime_verifier_observation_trace",
+            "r": "not reported by this adapter command"
+          },
+          "auto_attach_calls": {
+            "s": "unavailable",
+            "p": "browser_cdp_method_counter",
+            "r": "not reported by this adapter command"
+          }
+        },
+        "codex_event_types": "agent_message,item.completed,item.started,mcp_tool_call,thread.started",
+        "codex_error_class": null,
+        "codex_turn_failed": false,
+        "codex_failed_tool": null,
+        "codex_tool_failure_status": null,
+        "codex_tool_failure_reason": null,
+        "codex_failed_action": null,
+        "codex_final_kind": "done",
+        "upload_confirmation_status": null,
+        "prompt_to_verified_ms": null,
+        "prompt_to_verifier_decision_ms": null,
+        "prompt_to_final_ms": null,
+        "process_start_to_outcome_ms": null,
+        "adapter_request_to_verified_ms": 41566.564959,
+        "adapter_request_to_verifier_decision_ms": 41566.564959,
+        "prompt_trace": {
+          "prompt_sent": null,
+          "prompt_boundary": null,
+          "clock_domain": null,
+          "clock_offset_ms": null,
+          "clock_uncertainty_ms": null,
+          "prompt_sent_monotonic_ns": null,
+          "process_start_monotonic_ns": null,
+          "process_end_monotonic_ns": null,
+          "verifier_clock_domain": null,
+          "verifier_decision_monotonic_ns": null,
+          "prompt_sent_observed": false,
+          "final_answer_observed": false,
+          "first_tool_decision_ms": null,
+          "controlla_received_ms": null,
+          "first_browser_op_ms": null,
+          "last_browser_op_ms": null,
+          "tool_result_delivered_ms": null,
+          "adapter_command_completed_ms": 41495.679333,
+          "partial_counters": false,
+          "missing_counters": "fallback_count",
+          "cold_warm": "cold_browser",
+          "execution_tier": null,
+          "trace_valid": false
+        },
+        "verifier_evidence_hash": "29a10cdc861274b99d505c965ef8d60fc64808c964d2d19b859aff58df322b35"
+      }
+    }
+  ]
+}

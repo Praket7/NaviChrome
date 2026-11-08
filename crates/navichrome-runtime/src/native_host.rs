@@ -1368,6 +1368,10 @@ mod tests {
                 "lib/page-diagnostics.js",
                 include_bytes!("../../../extensions/navichrome/lib/page-diagnostics.js"),
             ),
+            (
+                "lib/download-lifecycle.js",
+                include_bytes!("../../../extensions/navichrome/lib/download-lifecycle.js"),
+            ),
         ];
         let extension_source = include_str!("../../../extensions/navichrome/background.js");
         let asset_declaration = extension_source

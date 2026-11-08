@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { configuredAdapterIds, createCleanCandidateSnapshot, EXTENSION_BUILD_PATH, hashDirectory, parseAdapterVersions, requireCleanTree, verifyAdapterVersions } from './run-phase11-suite.mjs';
+import { assertConfiguredMatrixSupported, configuredAdapterIds, configuredMatrixBlockers, createCleanCandidateSnapshot, EXTENSION_BUILD_PATH, hashDirectory, parseAdapterVersions, requireCleanTree, verifyAdapterVersions } from './run-phase11-suite.mjs';
+import { loadPhase11Config } from '../bench/runners/phase11-runner.mjs';
 
 test('recorded adapter identities must match the pinned client and runtime bytes', () => {
   const hash='a'.repeat(64);
@@ -16,6 +17,18 @@ test('recorded adapter identities must match the pinned client and runtime bytes
 test('configured run requires versions only for the selected candidate and baselines', () => {
   assert.deepEqual(configuredAdapterIds('controlla', 'playwright-mcp'), ['controlla','playwright-mcp']);
   assert.throws(() => configuredAdapterIds('controlla', 'controlla'), /baseline/);
+});
+
+test('configured suite rejects unsupported Phase 11 rows before launching browsers', async () => {
+  const config=await loadPhase11Config();
+  const supported=config.tasks.filter(task=>['form-guarded-fill','structured-extraction','guarded-upload'].includes(task.id));
+  const supportedMatrix={adapters:['controlla','playwright-mcp'],tasks:supported,modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(supportedMatrix),[]);
+  assert.doesNotThrow(()=>assertConfiguredMatrixSupported(supportedMatrix));
+  assert.throws(()=>assertConfiguredMatrixSupported({
+    adapters:['controlla','playwright-mcp'],tasks:config.tasks,modes:config.modes,
+    executionModes:config.execution_modes,concurrency:config.concurrency,
+  }),/rejected before browser startup.*warm-session lifecycle binding.*more unsupported cases/);
 });
 
 test('adapter provenance requires explicit exact versions for every configured client', () => {
