@@ -1,5 +1,17 @@
 # Build progress
 
+## Build storage and client contracts — 2026-11-08
+
+Cargo dev/test profiles now disable incremental compilation and debug symbols,
+preventing future build runs from producing the large incremental `.bin`
+caches and oversized test executables shown in the storage report. Existing
+files are not removed by this change. `scripts/cargo-storage.test.mjs` guards
+the profile settings; `npm run check:release` passed 17/17, and the six-client
+launch contract smoke passed locally. Hosted CI run
+[42497249871](https://github.com/Praket7/NaviChrome/actions/runs/42497249871)
+passed all jobs for commit `d9fb24a`. The V3 and ChatGPT Desktop schema pins
+were refreshed to the built runtime's current fingerprints.
+
 ## Drive downloads and task tab cleanup — 2026-11-08
 
 The Drive viewer may expose its download only through a JavaScript button, with
@@ -33,8 +45,8 @@ page was opened or changed.
 The canonical Phase 11 matrix still rejects before browser startup because most
 task/oracle actors, warm/reconnect lifecycles, headed display bindings, and
 concurrency telemetry are absent. No full matrix or 30-repetition result was
-fabricated. Hosted CI remains pending until the local verification set is
-green and this branch is pushed.
+fabricated. Hosted CI is green for `d9fb24a`; this does not qualify the full
+matrix or a speed claim.
 
 ## Unicode typing and Phase 11 verifier continuation — 2026-11-08
 

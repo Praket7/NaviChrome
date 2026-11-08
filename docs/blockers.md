@@ -23,7 +23,9 @@ The configured Phase 11 suite still rejects the full matrix before Chrome
 starts: most tasks lack independent acceptance plus actor paths, and warm,
 reconnect, headed, and concurrency bindings are not implemented. The prior
 three-task one-pair subset is diagnostic only; no 30-repetition full-matrix
-speed evidence exists. Hosted CI is pending for the current branch.
+speed evidence exists. Hosted CI run
+[42497249871](https://github.com/Praket7/NaviChrome/actions/runs/42497249871)
+passed for commit `d9fb24a`; the full matrix remains blocked before browser startup.
 
 ## Phase 11 full matrix and live bridge — 2026-11-08
 
@@ -46,7 +48,7 @@ draft was saved and re-read in Drafts, then NaviChrome navigated the same tab to
 Google Sites. No message was sent and no post was made. The reinstall script
 waits for a fresh inventory from a changed native-host ID, and the earlier
 background Chrome reload plus Hotload refresh passed. Full-matrix evidence and
-hosted CI remain open.
+live account qualification remain open; hosted CI is green for `d9fb24a`.
 
 ## Classroom upload receipt boundary — 2026-11-04
 

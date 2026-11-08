@@ -1,5 +1,14 @@
 # Verification matrix
 
+## Build storage and client contracts — 2026-11-08
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Rust dev/test artifact growth | pass | Cargo profiles disable incremental caches and debug symbols; the regression test and all CI platform builds pass. Existing generated files must be deleted separately; no cleanup was performed. |
+| Six-client MCP launch contracts | pass | Local contract smoke verified all six clients against the rebuilt V3 binary. The generic and ChatGPT Desktop schema fingerprints now match the shipped runtime. This proves launch/schema compatibility only, not behavioral or live-client qualification. |
+| Hosted CI | pass | [Run 42497249871](https://github.com/Praket7/NaviChrome/actions/runs/42497249871) passed every job for commit `d9fb24a`. |
+| Phase 11 matrix and 30 repetitions | still blocked | Existing preflight rejects unsupported task/oracle actors, warm/reconnect modes, headed execution, and concurrency bindings before browser startup. No speed claim is made. |
+
 ## Drive download and tab-cleanup continuation — 2026-11-08
 
 | Check | Result | Evidence and boundary |
