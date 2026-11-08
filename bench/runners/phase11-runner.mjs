@@ -532,13 +532,39 @@ export async function runBenchmark({
   for (const mode of selectedModes) if (!config.modes.includes(mode)) throw new Error(`unsupported mode ${mode}`);
   for (const executionMode of selectedExecutionModes) if (!config.execution_modes.includes(executionMode)) throw new Error(`unsupported execution mode ${executionMode}`);
   for (const value of selectedConcurrency) if (!config.concurrency.includes(value)) throw new Error(`unsupported concurrency ${value}`);
-  if (selectedConcurrency.some(value => value > 1)) throw new Error('concurrency levels above 1 are unsupported: the runner executes paired adapter commands sequentially');
   const candidateCommand = commands?.[candidateId];
   const baselineCommand = commands?.[baselineId];
   if (!candidateCommand || !baselineCommand || !resetCommand || !verifierCommand) throw new Error('candidate, baseline, reset, and verifier commands are required');
 
   const warmupRows = [];
   let reportBytes = 0;
+  let rowCallback = Promise.resolve();
+  const retainRow = async row => {
+    if (!onRow) return;
+    const pending = rowCallback.then(() => onRow(row));
+    rowCallback = pending.catch(() => {});
+    await pending;
+  };
+  const runTrials = async (trials, run) => {
+    const groups = new Map();
+    for (const trial of trials) {
+      const key = JSON.stringify([trial.replicate, trial.mode, trial.executionMode, trial.concurrency]);
+      const group = groups.get(key) ?? [];
+      group.push(trial);
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      let index = 0, failure;
+      const workers = Array.from({ length: Math.min(group[0].concurrency, group.length) }, async () => {
+        while (!failure && index < group.length) {
+          const trial = group[index++];
+          try { await run(trial); } catch (error) { failure ??= error; }
+        }
+      });
+      await Promise.all(workers);
+      if (failure) throw failure;
+    }
+  };
   const warmupCases = [];
   for (let replicate = 0; replicate < selectedWarmupRepetitions; replicate++) {
     for (const task of config.tasks) for (const mode of selectedModes) for (const executionMode of selectedExecutionModes) for (const concurrency of selectedConcurrency) {
@@ -547,7 +573,8 @@ export async function runBenchmark({
   }
   shuffle(warmupCases, random);
   counterbalanceOrder(warmupCases, random);
-  for (const trial of warmupCases) {
+  warmupCases.forEach((trial, index) => { trial.outputIndex = index; });
+  await runTrials(warmupCases, async trial => {
     const { replicate, task, mode, executionMode, concurrency } = trial;
     const common = { task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env };
     const candidateFirst = trial.candidateFirst;
@@ -566,9 +593,9 @@ export async function runBenchmark({
       candidate_order: candidateFirst ? 'first' : 'second', candidate: candidateResult, baseline: baselineResult };
     reportBytes += assertBoundedRow(row, true);
     if (reportBytes > maxReportBytes) throw new Error(`benchmark report exceeded ${maxReportBytes} bytes`);
-    warmupRows.push(row);
-    if (onRow) await onRow(row);
-  }
+    warmupRows[trial.outputIndex] = row;
+    await retainRow(row);
+  });
   const cases = [];
   for (let replicate = 0; replicate < selectedRepetitions; replicate++) {
     for (const task of config.tasks) {
@@ -582,28 +609,29 @@ export async function runBenchmark({
   shuffle(cases, random);
   counterbalanceOrder(cases, random);
   const pairedRows = [];
-  for (const trial of cases) {
-        const { replicate, task, mode, executionMode, concurrency } = trial;
-        const common = { task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env };
-        const candidateFirst = trial.candidateFirst;
-        const runCandidate = () => runOne({ ...common, adapter: candidate, command: candidateCommand });
-        const runBaseline = () => runOne({ ...common, adapter: baseline, command: baselineCommand });
-        let candidateResult;
-        let baselineResult;
-        if (candidateFirst) {
-          candidateResult = await runCandidate();
-          baselineResult = await runBaseline();
-        } else {
-          baselineResult = await runBaseline();
-          candidateResult = await runCandidate();
-        }
-        const row = { replicate, task_id: task.id, mode, execution_mode: executionMode, concurrency,
-          candidate_order: candidateFirst ? 'first' : 'second', candidate: candidateResult, baseline: baselineResult };
-        reportBytes += assertBoundedRow(row, true);
-        if (reportBytes > maxReportBytes) throw new Error(`benchmark report exceeded ${maxReportBytes} bytes`);
-        pairedRows.push(row);
-        if (onRow) await onRow(row);
+  cases.forEach((trial, index) => { trial.outputIndex = index; });
+  await runTrials(cases, async trial => {
+    const { replicate, task, mode, executionMode, concurrency } = trial;
+    const common = { task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env };
+    const candidateFirst = trial.candidateFirst;
+    const runCandidate = () => runOne({ ...common, adapter: candidate, command: candidateCommand });
+    const runBaseline = () => runOne({ ...common, adapter: baseline, command: baselineCommand });
+    let candidateResult;
+    let baselineResult;
+    if (candidateFirst) {
+      candidateResult = await runCandidate();
+      baselineResult = await runBaseline();
+    } else {
+      baselineResult = await runBaseline();
+      candidateResult = await runCandidate();
     }
+    const row = { replicate, task_id: task.id, mode, execution_mode: executionMode, concurrency,
+      candidate_order: candidateFirst ? 'first' : 'second', candidate: candidateResult, baseline: baselineResult };
+    reportBytes += assertBoundedRow(row, true);
+    if (reportBytes > maxReportBytes) throw new Error(`benchmark report exceeded ${maxReportBytes} bytes`);
+    pairedRows[trial.outputIndex] = row;
+    await retainRow(row);
+  });
   const report = {
     schema_version: 2,
     track: config.track,

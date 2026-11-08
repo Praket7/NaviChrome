@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
+import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -191,6 +192,28 @@ test('runner resets, independently verifies, preserves paired failures, and emit
     assert.equal(row.candidate.authority_violations, 0);
     assert.equal(row.candidate.silent_stale_mutations, 0);
   }
+});
+
+test('runner measures configured concurrency instead of rejecting it or running it sequentially', async t => {
+  let active = 0, maximum = 0;
+  const server = createServer((req, res) => {
+    if (req.url === '/start') maximum = Math.max(maximum, ++active);
+    if (req.url === '/end') active--;
+    res.end('ok');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const overlapUrl = `http://127.0.0.1:${server.address().port}`;
+  const report = await runBenchmark({
+    baselineId: 'playwright-mcp', fixtureBaseUrl: 'https://fixtures.example.test/',
+    commands: { controlla: adapter('controlla', 80, 1), 'playwright-mcp': adapter('playwright-mcp', 120, 3) },
+    resetCommand: reset, verifierCommand: verifier, environment,
+    modes: ['warm_qualified_route'], executionModes: ['headless'], concurrencyLevels: [2],
+    repetitions: 1, warmupRepetitions: 0, deadlineMs: 5000,
+    env: { ...process.env, PHASE11_MOCK_OVERLAP_URL: overlapUrl },
+  });
+  assert.equal(report.paired_rows.length, (await loadPhase11Config()).tasks.length);
+  assert.equal(maximum, 2);
 });
 
 test('runner drops uncontracted adapter payloads before retaining report evidence', async () => {

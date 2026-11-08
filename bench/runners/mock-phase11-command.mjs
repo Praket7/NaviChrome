@@ -18,6 +18,12 @@ if (role === 'verify') {
 
 const wallMs = Number(wall);
 const modelRounds = Number(rounds);
+if (process.env.PHASE11_MOCK_OVERLAP_URL) {
+  const endpoint = process.env.PHASE11_MOCK_OVERLAP_URL;
+  await fetch(`${endpoint}/start`);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  await fetch(`${endpoint}/end`);
+}
 const promptSentNs = process.env.PHASE11_MOCK_TRACE ? process.hrtime.bigint().toString() : null;
 const tracePromptBoundary = process.env.PHASE11_MOCK_NO_PROMPT_BOUNDARY !== '1';
 const successful = process.env.PHASE11_MOCK_RAW_FAILURE !== '1';
