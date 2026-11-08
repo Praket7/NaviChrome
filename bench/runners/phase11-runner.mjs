@@ -18,6 +18,7 @@ const OPTIONAL_OUTPUT_FIELDS = [
   'metric_evidence', 'execution_tier', 'fallback_count', 'runner_error', 'prompt_to_final_ms',
   'codex_event_types', 'codex_error_class', 'codex_turn_failed', 'codex_failed_tool',
   'codex_tool_failure_status', 'codex_tool_failure_reason', 'codex_failed_action',
+  'codex_failure_diagnostic', 'codex_final_kind', 'upload_confirmation_status',
 ];
 
 export async function loadPhase11Config(configPath = 'bench/tasks/phase11-realistic.json') {
@@ -174,9 +175,16 @@ export function validateAdapterResult(result, contract, expected) {
   }
   if (result.codex_turn_failed !== undefined && typeof result.codex_turn_failed !== 'boolean') throw new Error('codex_turn_failed must be a boolean');
   if (result.codex_event_types !== undefined && (typeof result.codex_event_types !== 'string' || result.codex_event_types.length > 256)) throw new Error('codex_event_types must be a bounded string');
+  if (result.codex_final_kind !== undefined && !['done','failed','other','missing'].includes(result.codex_final_kind)) throw new Error('codex_final_kind is invalid');
+  if (result.upload_confirmation_status !== undefined && !['selection_duplicated','selection_missing','selection_identity_missing','workflow_contract_mismatch','workflow_not_completed','workflow_receipt_not_completed','click_receipt_missing','click_receipt_status_unverified','click_receipt_flag_mismatch','verified',null].includes(result.upload_confirmation_status)) throw new Error('upload_confirmation_status is invalid');
   if (result.codex_error_class !== undefined && !['rate_limit','quota','authentication','context_limit','mcp_startup','timeout','provider_unavailable','transport','unclassified_host_failure','mcp_tool_failure','actor_incomplete',null].includes(result.codex_error_class)) throw new Error('codex_error_class is invalid');
   for (const field of ['codex_failed_tool','codex_tool_failure_status','codex_tool_failure_reason','codex_failed_action']) {
     if (result[field] !== undefined && result[field] !== null && (typeof result[field] !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(result[field]))) throw new Error(`${field} must be a bounded identifier or null`);
+  }
+  if (result.codex_failure_diagnostic !== undefined && result.codex_failure_diagnostic !== null
+      && (typeof result.codex_failure_diagnostic !== 'object' || Array.isArray(result.codex_failure_diagnostic)
+        || Buffer.byteLength(JSON.stringify(result.codex_failure_diagnostic)) > 2048)) {
+    throw new Error('codex_failure_diagnostic must be a bounded object or null');
   }
   for (const field of [
     'wall_ms','model_round_trips','model_tokens','mcp_calls','browser_ops','observation_bytes','screenshot_bytes',
@@ -538,10 +546,11 @@ export async function runBenchmark({
     }
   }
   shuffle(warmupCases, random);
+  counterbalanceOrder(warmupCases, random);
   for (const trial of warmupCases) {
     const { replicate, task, mode, executionMode, concurrency } = trial;
     const common = { task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env };
-    const candidateFirst = random() < 0.5;
+    const candidateFirst = trial.candidateFirst;
     const candidatePromise = () => runOne({ ...common, adapter: candidate, command: candidateCommand });
     const baselinePromise = () => runOne({ ...common, adapter: baseline, command: baselineCommand });
     let candidateResult;
@@ -571,11 +580,12 @@ export async function runBenchmark({
     }
   }
   shuffle(cases, random);
+  counterbalanceOrder(cases, random);
   const pairedRows = [];
   for (const trial of cases) {
         const { replicate, task, mode, executionMode, concurrency } = trial;
         const common = { task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env };
-        const candidateFirst = random() < 0.5;
+        const candidateFirst = trial.candidateFirst;
         const runCandidate = () => runOne({ ...common, adapter: candidate, command: candidateCommand });
         const runBaseline = () => runOne({ ...common, adapter: baseline, command: baselineCommand });
         let candidateResult;
@@ -599,7 +609,7 @@ export async function runBenchmark({
     track: config.track,
     candidate_adapter: candidate.id,
     baseline_adapter: baseline.id,
-    randomization: { method: 'seeded_paired_order', seed: randomSeed },
+    randomization: { method: 'seeded_counterbalanced_paired_order', seed: randomSeed },
     environment,
     warmup_rows: warmupRows,
     paired_rows: pairedRows,
@@ -613,6 +623,24 @@ function shuffle(items, random) {
   for (let index = items.length - 1; index > 0; index--) {
     const other = Math.floor(random() * (index + 1));
     [items[index], items[other]] = [items[other], items[index]];
+  }
+}
+
+function counterbalanceOrder(trials, random) {
+  const groups = new Map();
+  for (const trial of trials) {
+    const key = JSON.stringify([trial.task.id, trial.mode, trial.executionMode, trial.concurrency]);
+    const group = groups.get(key) ?? [];
+    group.push(trial);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const firstCount = Math.floor(group.length / 2) + (group.length % 2 && random() < 0.5 ? 1 : 0);
+    const order = Array.from({ length: group.length }, (_, index) => index < firstCount);
+    shuffle(order, random);
+    group.sort((a, b) => a.replicate - b.replicate).forEach((trial, index) => {
+      trial.candidateFirst = order[index];
+    });
   }
 }
 

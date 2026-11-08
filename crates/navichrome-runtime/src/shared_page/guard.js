@@ -94,6 +94,26 @@ function(index, outcome, opts) {
     if (!labelChecked) { labelMiss = labelUnderPointer(); labelChecked = true; }
     return labelMiss;
   };
+  const authorityFailure = () => {
+    const action = (wantedLabel || this.name(e).replace(/\s+/g, ' ').trim().toLowerCase()).split(/\s+/)[0];
+    const sensitive = ['send','post','publish','submit','delete','remove','share'].includes(action);
+    const authority = opts?.authority;
+    if (!sensitive) return null;
+    if (!authority) return sensitive ? fail('mutation_authority_required') : null;
+    if (authority.action !== action) return fail('mutation_authority_mismatch');
+    const exact = check => {
+      if (!check || typeof check.selector !== 'string' || typeof check.expected !== 'string') return false;
+      let matches;
+      try { matches = Array.from(e.ownerDocument.querySelectorAll(check.selector)).filter(node => this.visible(node)); } catch (_) { return false; }
+      if (matches.length !== 1) return false;
+      return nameOfNode(matches[0]) === check.expected.replace(/\s+/g, ' ').trim().toLowerCase();
+    };
+    if (!exact(authority.account)) return fail('mutation_account_mismatch');
+    if (!exact(authority.destination)) return fail('mutation_destination_mismatch');
+    if (!Array.isArray(authority.objects) || !authority.objects.length || authority.objects.length > 4
+      || authority.objects.some(check => !exact(check))) return fail('mutation_object_mismatch');
+    return null;
+  };
   const ordered = [
     () => composedClosest(e, '[data-masked]') || e.querySelector('[data-masked]') ? fail('masked_boundary') : null,
     () => e.querySelector('[data-requires-trusted]') || trustedBoundary && (trustedBoundary !== e || !trustedText || outcome?.kind !== 'focused') ? fail('trusted_boundary', {self: trustedBoundary === e}) : null,
@@ -107,10 +127,9 @@ function(index, outcome, opts) {
     () => s.pointerEvents === 'none' ? fail('pointer_events_none') : null,
     () => (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) ? fail('outside_viewport', {rect: rectOf(b), viewport: {w: innerWidth, h: innerHeight}, scroll: align}) : null,
     () => !deepHit() ? fail('no_hit_target', {rect: rectOf(b)}) : null,
-    () => labelResult(),
     () => {
       const h = deepHit();
-      if (h === e || e.contains(h)) return null;
+      if (h === e || e.contains(h)) return labelResult();
       // A named label that resolves under the pointer means the pointer presses
       // exactly the words the click named. An overlay the agent just opened is
       // then the intended control, not an obstruction.
@@ -121,6 +140,7 @@ function(index, outcome, opts) {
       const ix = Math.max(0, Math.min(b.right, hb.right) - Math.max(b.left, hb.left)), iy = Math.max(0, Math.min(b.bottom, hb.bottom) - Math.max(b.top, hb.top));
       return fail('obscured', {blocker: {tag: h.tagName.toLowerCase(), position: hs.position, z_index: hs.zIndex, role: h.getAttribute('role'), rect: rectOf(hb), covers_percent: b.width * b.height > 0 ? Math.min(100, round(ix * iy * 100 / (b.width * b.height))) : 0}, rect: rectOf(b)});
     },
+    () => authorityFailure(),
   ];
   for (const check of ordered) { const r = check(); if (r) return r; }
   return {ok:true, x, y, viewport:JSON.stringify([innerWidth,innerHeight,scrollX,scrollY,visualViewport?.width,visualViewport?.height,visualViewport?.offsetLeft,visualViewport?.offsetTop,visualViewport?.scale])};

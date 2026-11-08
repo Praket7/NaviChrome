@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -42,23 +42,25 @@ if (['controlla','playwright-mcp'].includes(adapter) && fixtureKind && !input.sc
       if (pkg.name !== '@playwright/mcp' || pkg.version !== '0.0.83') throw new Error('Playwright MCP CLI package is not the pinned version');
       configured.config.push('-c',`mcp_servers.playwright-mcp.command=${JSON.stringify(process.execPath)}`,'-c',`mcp_servers.playwright-mcp.args=${JSON.stringify([directCli,'--browser','chrome','--headless','--isolated','--executable-path',chrome])}`);
     }
-    const file = join(dir,'benchmark.txt');
-    if (fixtureKind === 'upload') await writeFile(file,bytes,{flag:'wx'});
+    let file = join(dir,'benchmark.txt');
+    if (fixtureKind === 'upload') { await writeFile(file,bytes,{flag:'wx'}); file = await realpath(file); }
     const extractionSelector = '#records tbody tr:nth-child(42)';
     const extractionFunction = `() => { const row = document.querySelector('${extractionSelector}'); return row ? {url:location.href, value:Array.from(row.querySelectorAll('td'), cell => cell.textContent.trim()).join('|')} : null; }`;
     const controllaUploadGoal = [
-      `Call browser action=artifact_register with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","filename":"benchmark.txt","bytes_base64":"${bytes.toString('base64')}"}.`,
+      `Call browser action=artifact_register with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","filename":"benchmark.txt","file_path":"${file}","allow_local_file_path":true}. Do not reconstruct or send the file contents.`,
       `Use its artifact_handle in browser action=task with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","task":{"kind":"upload","artifact_handle":"<returned artifact_handle>","selector":"#upload","account_marker":["h1","Controlla Phase 11 · guarded-upload"]}}. Omit unused optional properties; do not send null.`,
       'A task result with status=incomplete and one receipt showing status=selected and chrome_selected_file=true is an intermediate selection. Confirm the selected receipt matches the benchmark filename, size, and SHA-256, then continue.',
-      'Call snapshot with only session_id and chrome_tab_id. Call act with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","reference":"<fresh @cN>","action":"click","outcome":{"kind":"text","selector":"#status","text":"Upload saved"}}.',
-      'If act returns status=verified, stop: do not click again or repeat the action. Release the private session exactly once.',
+      'Call workflow with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","steps":[{"kind":"find","query":"Register upload","role":"button","match_mode":"exact","max_matches":1,"selector":"#upload-action","save_as":"register_upload"},{"kind":"click","reference":"$register_upload","outcome":{"kind":"text","selector":"#status","text":"Upload saved"}}]}. Require workflow status=completed and a verified click receipt, then stop: do not click again or repeat the action.',
       'If a tool returns status=error with reason_code=invalid_tool_request and dispatch_may_have_occurred=false, follow next_action and correct the named argument once. For unknown or possibly dispatched writes, verify read-only and never replay.',
     ].join(' ');
-    const goal = fixtureKind === 'extraction' ? (adapter === 'controlla' ? `Use browser action=task with task {\"kind\":\"research\",\"urls\":[\"${url.href}\"],\"selector\":\"${extractionSelector}\"} and read the row snippet.` : `Use browser_evaluate with this exact function: ${extractionFunction}`) : fixtureKind === 'form' ? 'fill Name with "Benchmark User" and Notes with "Persisted benchmark form", click Save form, and verify the visible Saved status' : adapter === 'controlla' ? controllaUploadGoal : `Call browser_snapshot and use the fresh reference for the file input with browser_click to open its file chooser. Then call browser_file_upload with the synthetic file path ${file}. Call browser_snapshot again, use its fresh reference for Register upload with browser_click, then call browser_wait_for with text "Upload saved" and require it to succeed.`;
-    const route = adapter === 'controlla' ? `Start with browser action=launch and mode=headless. Use its returned session_id and target_ids[0] as chrome_tab_id. Navigate using browser action=task with that session_id and chrome_tab_id and task {"kind":"research","urls":["${url.href}"],"selector":"h1"}; then call snapshot with only session_id and chrome_tab_id, omitting all optional limits. Browser action=open is only for shared tabs; workflow has no navigate step.` : 'Start an isolated headless browser session.';
-    const cleanup = adapter === 'controlla' ? 'release the private session with browser action=release and its session_id' : 'close the browser with browser_close';
-    const finalInstruction = fixtureKind === 'extraction' ? 'If every step succeeded, return exactly the three observed cell values separated by |, otherwise return exactly FAILED.' : 'Return exactly DONE if every step succeeded, otherwise return exactly FAILED.';
-    const prompt = `Use only ${configured.server} browser tools. ${route} Navigate to ${url.href}, ${goal}, then ${cleanup}. Do not use shell commands, web search, direct HTTP requests, or other tools. ${finalInstruction}`;
+    const formGoal = adapter === 'controlla'
+      ? 'Call snapshot once with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","goal":{"query":"Name, Notes, and Save form controls on the current registration form"}}. If it returns status=error with reason_code=invalid_tool_request and dispatch_may_have_occurred=false, follow next_action and correct the snapshot arguments once. Use its fresh @c references for those controls. Then call browser action=task with arguments {"session_id":"<returned session_id>","chrome_tab_id":"<returned chrome_tab_id>","release_after_task":true,"task":{"kind":"form_draft","fields":[{"reference":"<Name @cN>","expected_value":"","value":"Benchmark User"},{"reference":"<Notes @cN>","expected_value":"","value":"Persisted benchmark form"}],"save_without_submit":true,"save_control":{"reference":"<Save form @cN>","confirmation_selector":"#status","confirmation_text":"Saved"}}}. Require the verified save result and private_session_released:true. Do not call act or use a target argument.'
+      : 'Call browser_snapshot once. For browser_fill_form, use each snapshot ref ID as target without the @ prefix and without adding its label (for example @e6 -> e6); pass fields [{"target":"eN","name":"Name","type":"textbox","value":"Benchmark User"},{"target":"eN","name":"Notes","type":"textbox","value":"Persisted benchmark form"}]. Click Save form with browser_click using its exact ref ID without @, wait for visible text Saved with browser_wait_for, require success.';
+    const goal = fixtureKind === 'extraction' ? (adapter === 'controlla' ? `Use the one-call private headless browser task with arguments {\"action\":\"task\",\"mode\":\"headless\",\"release_after_task\":true,\"task\":{\"kind\":\"research\",\"urls\":[\"${url.href}\"],\"selector\":\"${extractionSelector}\"}} and read the row snippet.` : `Use browser_evaluate with this exact function: ${extractionFunction}`) : fixtureKind === 'form' ? formGoal : adapter === 'controlla' ? controllaUploadGoal : `Call browser_snapshot and use the fresh reference for the file input with browser_click to open its file chooser. Then call browser_file_upload with the synthetic file path ${file}. Call browser_snapshot again, use its fresh reference for Register upload with browser_click, then call browser_wait_for with text "Upload saved" and require it to succeed.`;
+    const route = adapter !== 'controlla' ? 'Start an isolated headless browser session.' : fixtureKind === 'extraction' ? 'Do not launch a separate session.' : `Start with browser action=launch with mode=headless and url=${url.href}. Use its returned session_id and target_ids[0] as chrome_tab_id; it is already at the fixture URL, so skip browser action=open and any separate navigation task.`;
+    const cleanup = adapter === 'controlla' ? fixtureKind === 'form' ? 'After a successful form task require private_session_released:true. If the snapshot still fails after its one correction, release the session with browser action=release and require released:true before returning FAILED.' : fixtureKind === 'extraction' ? 'the task result must include private_session_released:true' : 'release the private session with browser action=release and require released:true' : 'close the browser with browser_close';
+    const finalInstruction = fixtureKind === 'extraction' ? 'You must make the browser call exactly once and wait for its result before returning. If it succeeds, read the one extract receipt snippet and return exactly its three cells joined by |: record-42|older| followed by the observed 32-character lowercase hexadecimal nonce. Do not infer the nonce or add commentary. Otherwise return exactly FAILED.' : 'Return exactly DONE if every step succeeded, otherwise return exactly FAILED.';
+    const prompt = `Use only ${configured.server} browser tools. ${route} ${adapter === 'controlla' ? '' : `Navigate once to ${url.href}. `}${goal} Then ${cleanup}. Do not use shell commands, web search, direct HTTP requests, or other tools. ${finalInstruction}`;
     const args = ['exec','--ephemeral','--json','--ignore-user-config','--disable','shell_tool','--disable','unified_exec','--disable','apps','--disable','plugins','--disable','remote_plugin','--approve-for-me','-c','web_search="disabled"','--skip-git-repo-check','-m',process.env.PHASE11_MODEL ?? 'gpt-6-luna','-C',dir,...configured.config,'-c',`mcp_servers.${configured.server}.startup_timeout_sec=120`,prompt];
     const env = Object.fromEntries(['PATH','HOME','USER','SHELL','TMPDIR','TEMP','TMP','LANG','LC_ALL','CODEX_HOME','SSL_CERT_FILE','SYSTEMROOT','USERPROFILE','APPDATA','LOCALAPPDATA'].filter(key=>process.env[key] !== undefined).map(key=>[key,process.env[key]]));
     const events = []; let text = '', stderr = '', oversized = false, timedOut = false;
@@ -109,13 +111,46 @@ if (['controlla','playwright-mcp'].includes(adapter) && fixtureKind && !input.sc
       const value = decoded(event);
       return typeof value?.status !== 'string' || !/(?:error|fail|blocked|not_dispatched|unknown|incomplete|inconclusive|unverified|uncertain)/i.test(value.status);
     };
+    const lastCall = calls.at(-1);
+    const launch = adapter === 'controlla' ? calls.find(event => event.item?.server === configured.server && event.item?.tool === 'browser' && event.item.arguments?.action === 'launch' && callSucceeded(event)) : null;
+    const sessionId = launch ? decoded(launch)?.session_id : null;
+    const lastResult = lastCall && decoded(lastCall);
+    const cleanupCompleted = adapter === 'controlla'
+      ? Boolean(lastCall?.item?.server === configured.server && callSucceeded(lastCall) && (sessionId && lastCall.item.arguments?.session_id === sessionId && (lastCall.item.arguments?.action === 'release' && lastResult?.released === true || lastCall.item.arguments?.action === 'task' && lastCall.item.arguments?.release_after_task === true && lastResult?.private_session_released === true) || !sessionId && fixtureKind === 'extraction' && lastCall.item.arguments?.action === 'task' && lastCall.item.arguments?.mode === 'headless' && lastCall.item.arguments?.release_after_task === true && lastCall.item.arguments?.task?.kind === 'research' && lastResult?.private_session_released === true))
+      : lastCall?.item?.server === configured.server && lastCall.item?.tool === 'browser_close' && callSucceeded(lastCall);
+    const cleanupOutcome = cleanupCompleted ? adapter === 'controlla' ? 'private_session_released' : 'browser_close_acknowledged' : 'missing_or_unverified';
     const intended = calls.filter(event => event.item?.server === configured.server && callSucceeded(event));
     const unrelated = events.some(event => ['item.started','item.completed'].includes(event.type) && (['command_execution','web_search'].includes(event.item?.type) || event.item?.type === 'mcp_tool_call' && event.item?.server !== configured.server));
     const final = events.filter(event => event.type === 'item.completed' && event.item?.type === 'agent_message').at(-1)?.item?.text?.trim();
     const selectionIndexes = calls.flatMap((event, index) => selectionOnly(event) ? [index] : []);
     const selectionIndex = selectionIndexes[0] ?? -1;
     const selectionArgs = selectionIndex < 0 ? null : calls[selectionIndex].item.arguments;
-    const selectionConfirmed = adapter !== 'controlla' || fixtureKind !== 'upload' || Boolean(selectionIndexes.length === 1 && selectionArgs?.session_id && selectionArgs?.chrome_tab_id && calls.slice(selectionIndex + 1).some(event => event.item?.server === configured.server && event.item?.tool === 'act' && event.item?.arguments?.session_id === selectionArgs.session_id && event.item?.arguments?.chrome_tab_id === selectionArgs.chrome_tab_id && event.item?.arguments?.action === 'click' && event.item?.arguments?.outcome?.kind === 'text' && event.item.arguments.outcome.selector === '#status' && event.item.arguments.outcome.text === 'Upload saved' && decoded(event)?.status === 'verified'));
+    const uploadConfirmationStatus = (() => {
+      if (adapter !== 'controlla' || fixtureKind !== 'upload') return null;
+      if (selectionIndexes.length !== 1) return selectionIndexes.length ? 'selection_duplicated' : 'selection_missing';
+      if (!selectionArgs?.session_id || !selectionArgs?.chrome_tab_id) return 'selection_identity_missing';
+      let matchingSteps = false;
+      let mismatch = 'workflow_contract_mismatch';
+      for (const event of calls.slice(selectionIndex + 1)) {
+        const item = event.item, args = item?.arguments;
+        if (item?.server !== configured.server || !(item.tool === 'workflow' || item.tool === 'browser' && args?.action === 'task')) continue;
+        if (args?.session_id !== selectionArgs.session_id || args?.chrome_tab_id !== selectionArgs.chrome_tab_id) continue;
+        const steps = Array.isArray(args.steps) ? args.steps : Array.isArray(args.program) ? args.program.filter(op => op?.op === 'step').map(op => op.step) : [];
+        if (steps.length !== 2 || steps[0]?.kind !== 'find' || steps[0].query !== 'Register upload' || steps[0].role !== 'button' || steps[0].match_mode !== 'exact' || steps[0].max_matches !== 1 || steps[0].selector !== '#upload-action' || steps[0].save_as !== 'register_upload'
+          || steps[1]?.kind !== 'click' || steps[1].reference !== '$register_upload' || steps[1].outcome?.kind !== 'text' || steps[1].outcome.selector !== '#status' || steps[1].outcome.text !== 'Upload saved') continue;
+        matchingSteps = true;
+        const value = decoded(event), workflow = value?.workflow ?? value;
+        if (value?.status !== 'completed') { mismatch = 'workflow_not_completed'; continue; }
+        if (workflow?.status !== 'completed') { mismatch = 'workflow_receipt_not_completed'; continue; }
+        const clickReceipt = workflow.receipts?.find(receipt => receipt.step === 'click');
+        if (!clickReceipt) { mismatch = 'click_receipt_missing'; continue; }
+        if (clickReceipt.status !== 'verified') { mismatch = 'click_receipt_status_unverified'; continue; }
+        if (Object.hasOwn(clickReceipt, 'verified') && clickReceipt.verified !== true) { mismatch = 'click_receipt_flag_mismatch'; continue; }
+        return 'verified';
+      }
+      return matchingSteps ? mismatch : 'workflow_contract_mismatch';
+    })();
+    const selectionConfirmed = adapter !== 'controlla' || fixtureKind !== 'upload' || uploadConfirmationStatus === 'verified';
     const extractionPattern = /^record-42\|older\|[a-f0-9]{32}$/;
     const observed = fixtureKind === 'extraction' && extractionPattern.test(final ?? '') && calls.filter(event => event.item?.server === configured.server && callSucceeded(event)).some(event => {
       const item = event.item, value = decoded(event);
@@ -129,7 +164,7 @@ if (['controlla','playwright-mcp'].includes(adapter) && fixtureKind && !input.sc
       }) === true;
     });
     const extracted = observed ? final : null;
-    const success = result === 0 && !oversized && !malformed && intended.length > 0 && intended.length === calls.length && !unrelated && selectionConfirmed && (fixtureKind === 'extraction' ? observed : final === 'DONE');
+    const success = result === 0 && !oversized && !malformed && intended.length > 0 && intended.length === calls.length && !unrelated && selectionConfirmed && cleanupCompleted && (fixtureKind === 'extraction' ? observed : final === 'DONE');
     const failedEvent = calls.find(event => !callSucceeded(event));
     const failedCall = failedEvent?.item;
     const failedTool = /^[a-zA-Z0-9_-]{1,80}$/.test(failedCall?.tool ?? '') ? failedCall.tool : 'unknown';
@@ -139,8 +174,46 @@ if (['controlla','playwright-mcp'].includes(adapter) && fixtureKind && !input.sc
     const failureReason = typeof failedResult?.reason_code === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(failedResult.reason_code) ? failedResult.reason_code : null;
     const reason = failedResult?.reason_code;
     const safeReason = typeof reason === 'string' && /^[a-z0-9_]{1,80}$/.test(reason) ? ` (${reason})` : '';
-    const failure = oversized || malformed ? 'Codex host returned invalid or oversized event output' : timedOut ? 'Codex host timed out' : result !== 0 ? `Codex host exited with code ${result ?? 'unknown'}` : unrelated ? 'Codex host used an unrelated tool' : calls.length === 0 ? 'Codex host made no MCP calls' : intended.length !== calls.length ? `Codex host MCP call failed: ${failedTool}${safeReason}` : 'Codex host did not report task completion';
-    output({success, mcp_calls:success ? calls.length : null, codex_event_types:codexEvents.join(','), codex_error_class:success ? null : failedEvent ? 'mcp_tool_failure' : codexErrorClass ?? 'actor_incomplete', codex_failed_tool:failedEvent ? failedTool : null, codex_failed_action:failedEvent ? failedAction : null, codex_tool_failure_status:failureStatus, codex_tool_failure_reason:failureReason, codex_turn_failed:events.some(event => event.type === 'turn.failed'), ...(fixtureKind === 'extraction' && extracted ? {extraction_value:extracted} : {}), runner_error:success ? undefined : failure});
+    const failure = oversized || malformed ? 'Codex host returned invalid or oversized event output' : timedOut ? 'Codex host timed out' : result !== 0 ? `Codex host exited with code ${result ?? 'unknown'}` : unrelated ? 'Codex host used an unrelated tool' : calls.length === 0 ? 'Codex host made no MCP calls' : intended.length !== calls.length ? `Codex host MCP call failed: ${failedTool}${safeReason}` : !cleanupCompleted ? 'Codex host did not confirm browser cleanup' : 'Codex host did not report task completion';
+    const failedArgs = failedCall?.arguments ?? {};
+    const failedVerification = failedResult?.verification ?? {};
+    const diagnosticErrorText = [failedCall?.error?.message, failedResult?.reason, failedResult?.error]
+      .filter(value=>typeof value==='string').join(' ').toLowerCase();
+    const diagnosticErrorKind = /\b(missing|required)\b/.test(diagnosticErrorText) ? 'missing_or_required'
+      : /\b(invalid|malformed)\b/.test(diagnosticErrorText) ? 'invalid'
+      : /\b(unknown|unsupported)\b/.test(diagnosticErrorText) ? 'unknown_or_unsupported' : null;
+    const diagnosticErrorFields = ['action','session_id','chrome_tab_id','filename','bytes','bytes_base64','artifact_handle','reference','expected_label','outcome','task','selector','max_bytes_reason']
+      .filter(field=>new RegExp(`\\b${field}\\b`).test(diagnosticErrorText));
+    const failureDiagnostic = failedEvent ? {
+      tool: failedTool,
+      action: failedAction,
+      status: failureStatus,
+      reason_code: failureReason,
+      error_kind: diagnosticErrorKind,
+      error_fields: diagnosticErrorFields,
+      argument_types: Object.fromEntries(Object.entries(failedArgs).sort(([a],[b])=>a.localeCompare(b)).slice(0,24).map(([key,value])=>[key,value===null?'null':Array.isArray(value)?'array':typeof value])),
+      outcome_kind: typeof failedArgs.outcome?.kind === 'string' && /^[a-z_]{1,32}$/.test(failedArgs.outcome.kind) ? failedArgs.outcome.kind : null,
+      task_kind: typeof failedArgs.task?.kind === 'string' && /^[a-z_]{1,32}$/.test(failedArgs.task.kind) ? failedArgs.task.kind : null,
+      task_field_count: Array.isArray(failedArgs.task?.fields) ? failedArgs.task.fields.length : null,
+      save_control_present: Boolean(failedArgs.task?.save_control),
+      expected_label_present: typeof failedArgs.expected_label === 'string' && failedArgs.expected_label.length > 0,
+      reference_kind: typeof failedArgs.reference === 'string' ? failedArgs.reference.startsWith('@c') ? '@c' : failedArgs.reference.startsWith('@e') ? '@e' : 'other' : null,
+      artifact_payload: failedArgs.action === 'artifact_register' && fixtureKind === 'upload' ? {
+        filename_matches_expected: failedArgs.filename === expected.filename,
+        file_path_matches_fixture: failedArgs.file_path === file,
+        allow_local_file_path: failedArgs.allow_local_file_path === true,
+        base64_length: typeof failedArgs.bytes_base64 === 'string' ? failedArgs.bytes_base64.length : null,
+        base64_valid: typeof failedArgs.bytes_base64 === 'string' && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(failedArgs.bytes_base64),
+        base64_matches_expected: failedArgs.bytes_base64 === bytes.toString('base64'),
+      } : null,
+      dispatch_acknowledged: typeof failedResult?.dispatch_acknowledged === 'boolean' ? failedResult.dispatch_acknowledged : null,
+      dispatch_may_have_occurred: typeof failedResult?.dispatch_may_have_occurred === 'boolean' ? failedResult.dispatch_may_have_occurred : null,
+      verification_status: typeof failedVerification.status === 'string' && /^[a-z_]{1,32}$/.test(failedVerification.status) ? failedVerification.status : null,
+      verification_attempts: Number.isSafeInteger(failedVerification.attempts) && failedVerification.attempts >= 0 ? failedVerification.attempts : null,
+      text_present: typeof failedVerification.observed?.text_present === 'boolean' ? failedVerification.observed.text_present : null,
+    } : undefined;
+    const finalKind = final === undefined ? 'missing' : final === 'DONE' ? 'done' : final === 'FAILED' ? 'failed' : 'other';
+    output({success, cleanup_completed:cleanupCompleted, cleanup_outcome:cleanupOutcome, mcp_calls:calls.length, model_turns:events.filter(event => event.type === 'turn.started').length, codex_event_types:codexEvents.join(','), codex_final_kind:finalKind, codex_error_class:success ? null : failedEvent ? 'mcp_tool_failure' : codexErrorClass ?? 'actor_incomplete', codex_failed_tool:failedEvent ? failedTool : null, codex_failed_action:failedEvent ? failedAction : null, codex_tool_failure_status:failureStatus, codex_tool_failure_reason:failureReason, codex_failure_diagnostic:failureDiagnostic, codex_turn_failed:events.some(event => event.type === 'turn.failed'), ...(fixtureKind === 'upload' ? {upload_confirmation_status:uploadConfirmationStatus} : {}), ...(fixtureKind === 'extraction' && extracted ? {extraction_value:extracted} : {}), runner_error:success ? undefined : failure});
   } finally { await rm(dir,{recursive:true,force:true}); }
   process.exit(0);
 }

@@ -880,7 +880,7 @@ These checks do not close the app-specific acceptance, performance, external-cli
 
 ## Source-audit repair queue A1–A8 — 2026-10-08
 
-Fixture-level repairs of the independent source-audit findings in `handoff.md` §6. These are code-level fixes with focused regression fixtures; none of them was reproduced live in Chrome, and none changes the app-save/persistence, external-client, benchmark, or release gates.
+Fixture-level repairs of the eight independent findings from the 2026-10-08 source audit. These are code-level fixes with focused regression fixtures; none of them was reproduced live in Chrome, and none changes the app-save/persistence, external-client, benchmark, or release gates.
 
 | Finding | Fix and test | Result |
 |---|---|---|
@@ -1197,3 +1197,15 @@ The isolated simulated-extension shared-download fixture passed with identity/ep
 | Shared-session warm-up | pass, extension harness | Native pairing still dispatches zero CDP commands. Runtime/Log/Network capture starts 10 ms after the pair response and after navigation reattachment, so events before the first explicit diagnostics read are retained. The harness asserts the warm domains and capture-before-read behavior. |
 | Regression suite | pass | `cargo test -p controlla-runtime --bin controlla-v2`: 353 passed, 0 failed, 5 ignored. `source_structure`: 4 passed. Extension harness: passed. `cargo fmt --all -- --check` and `git diff --check`: passed. |
 | Live installed extension and signed-in Chrome | unqualified | These runs use private headless Chrome and the extension contract harness. They do not prove installed-extension delivery, signed-in tabs, or HAR/network-body capture. The attached data remains a bounded, redacted event summary, not a crash dump or complete request archive. |
+
+### 2026-11-05 speed-and-safety continuation
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Full locked workspace tests | pass | `cargo test --workspace --locked`: all executed tests passed; ignored live/manual cases remain unqualified. |
+| Clippy and formatting | pass | `cargo clippy --workspace --all-targets --locked -- -D warnings`; `cargo fmt --all -- --check`. |
+| Click identity and authority | pass, fixtures | 32 background action fixtures cover target-under-pointer identity, obstruction, changed target name, exact account/destination/object checks, and no dispatch on missing authority. |
+| Owned-tab cleanup | pass, fixture | Extension helper requires exact creation receipt, lease, document, window, no conflicting session lease, and successful removal readback. No live tab was closed. Automatic per-task ownership ledger remains open. |
+| Compact tool schema | pass | `v2_stdio::compact_v3_advertises_task_route_and_guarded_tools`: 69,436 bytes against a 69,632-byte budget; `act`, `browser`, and `workflow` expose `mutation_authority` as an object. Rust request deserialization and mutation-authority validation remain strict. |
+| Installed reload and personal-account state | pass, partial read-only | The final `scripts/reinstall-local.sh agefmpphbpkiklipjpgbffjjhkmlhifd` build opened the extension reload page in background. Hotload `navichrome` revision 3/generation 6 was ready with six tools; native-bridge discovery and pairing worked. A post-reload targeted snapshot confirmed the Sent tab account marker `praketg1@gmail.com`; the earlier targeted Sent row showed the expected follow-up subject and “has attachment.” The list row truncated the recipient, so exact recipient/filename were not freshly verified. No message or post was sent. |
+| End-to-end speed target | not measured | Fixture integrity checks do not establish a speed improvement. A matched per-task baseline is still required. |

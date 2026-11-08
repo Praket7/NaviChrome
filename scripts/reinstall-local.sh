@@ -38,7 +38,7 @@ if [ -z "$EXTENSION_ID" ]; then
   exit 0
 fi
 
-PAGE="chrome-extension://$EXTENSION_ID/dev-reload.html"
+PAGE="chrome-extension://$EXTENSION_ID/dev-reload.html?close=1"
 if command -v open >/dev/null 2>&1; then
   open -g -a "Google Chrome" "$PAGE"
 elif command -v xdg-open >/dev/null 2>&1; then

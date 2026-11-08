@@ -1523,36 +1523,15 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       if (targetWindowId != null && (!Number.isSafeInteger(targetWindowId) || targetWindowId <= 0 || createBackgroundWindow)) throw new Error("target_window_id must identify an existing NaviChrome automation window and cannot be combined with create_background_window.");
       if (Object.values(placement).some(value => Math.abs(value) > 32768) || [placement.width, placement.height].some(value => value !== undefined && (value < 200 || value > 8192))) throw new Error("Background window placement is outside the supported bounds.");
       if (!createBackgroundWindow && Object.keys(placement).length) throw new Error("Window placement requires create_background_window.");
-      const result = await openNaviChromeTab(url, request.params?.idempotency_key, native, routeGeneration, waitUntil, active, createBackgroundWindow, placement, targetWindowId);
+      const result = await openNaviChromeTab(url, request.params?.idempotency_key, native, routeGeneration, waitUntil, active, createBackgroundWindow, placement, targetWindowId, request.lease_id);
       respond({ type: "result", id: request.id, result }); return;
     }
     if (request.method === "NaviChrome.closeOwnedTab") {
       const ownedTabId = Number(request.params?.owned_tab_id);
       if (!Number.isSafeInteger(ownedTabId) || ownedTabId <= 0 || String(ownedTabId) !== String(request.params?.owned_tab_id)) throw new Error("owned_tab_id must be a decimal Chrome tab ID.");
-      const saved = await chrome.storage.local.get(OPEN_RECEIPTS_KEY);
-      const receipts = saved[OPEN_RECEIPTS_KEY] || {};
-      const receiptEntry = Object.entries(receipts).find(([, receipt]) => receipt?.tab_id === String(ownedTabId));
-      if (!receiptEntry) throw new Error("This tab has no NaviChrome-owned open receipt; user-owned tabs cannot be closed by this operation.");
-      const [operationKey, receipt] = receiptEntry;
-      if (receipt.status === "closed") {
-        const stillOpen = await chrome.tabs.get(ownedTabId).then(() => true).catch(() => false);
-        if (stillOpen) throw new Error("Close was previously recorded but Chrome still reports the tab; inspect its lifecycle before retrying.");
-        respond({ type: "result", id: request.id, result: { status: "closed", tab_id: String(ownedTabId), window_id: receipt.window_id, document_id: receipt.document_id, topology_verified: true, idempotent_reuse: true } }); return;
-      }
-      if (receipt.status !== "complete" || !receipt.document_id) throw new Error("The NaviChrome open receipt is incomplete; refusing to close an unverified target.");
-      const identity = await nativePageIdentity(ownedTabId).catch(() => undefined);
-      if (!identity || identity.document_id !== receipt.document_id || identity.url !== receipt.url) throw new Error("The created tab's document changed after open; refusing to close the changed target.");
-      const tab = await chrome.tabs.get(ownedTabId);
-      await chrome.tabs.remove(ownedTabId);
-      const remainsOpen = await chrome.tabs.get(ownedTabId).then(() => true).catch(() => false);
-      if (remainsOpen) throw new Error("Chrome did not confirm that the NaviChrome-owned tab was removed.");
-      receipts[operationKey] = { ...receipt, status: "closed", closed_ms: Date.now() };
-      await chrome.storage.local.set({ [OPEN_RECEIPTS_KEY]: receipts });
-      // Closing the presenting tab frees the window for the next task. A slot
-      // owned by a different tab in the same window is left alone.
-      if (presentationSlots.owner(tab.windowId)?.tab_id === ownedTabId)
-        await presentationSlots.releaseWindow(tab.windowId, { reason: "owned_tab_closed" });
-      respond({ type: "result", id: request.id, result: { status: "closed", tab_id: String(ownedTabId), window_id: tab.windowId, document_id: identity.document_id, topology_verified: true, idempotent_reuse: false } }); return;
+      const requesterLease = typeof request.lease_id === "string" ? request.lease_id : undefined;
+      const result = await ownedTabOpener.closeOwnedTab(ownedTabId, requesterLease, nativeRoute);
+      respond({ type: "result", id: request.id, result }); return;
     }
     if (request.method === "NaviChrome.manageTabs") {
       if (!nativeRoute) throw new Error("Tab management requires a native session.");
@@ -1688,6 +1667,14 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
     }
     if (request.method === "NaviChrome.pointerClick") {
       const params = request.params || {}, objectId = params.object_id, index = params.index, outcome = params.outcome;
+      const timeoutMs = params.timeout_ms ?? 3000; if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10000) throw new Error("pointer click timeout must be within 100..10000ms.");
+      const deadline = performance.now() + timeoutMs; let releaseReserveMs = 0;
+      const sendPointerCommand = (target, method, commandParams) => {
+        const commandTimeoutMs = Math.floor(deadline - performance.now() - releaseReserveMs);
+        if (commandTimeoutMs < 1) throw new Error("pointer click deadline elapsed before the next command.");
+        return sendCdpCommand(target, method, commandParams, commandTimeoutMs);
+      };
+      const boundedPointerEngine = new PointerEngine({ send: sendPointerCommand });
       const watcherRefusal = watcherRevisionReceipt(tabId, params.expected_target_revision, params.expected_document_id);
       if (watcherRefusal) { respond({ type: "result", id: request.id, result: watcherRefusal }); return; }
       const clickKind = params.click_kind || "click";
@@ -1718,14 +1705,27 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
           }
         }
         // Final read: exact node, hit target, and named words. A moved scroll offset or screenshot is not a refusal.
-        const checked = await sendCdpCommand({tabId}, "Runtime.callFunctionOn", {objectId,
-          functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label}}], returnByValue:true});
+        const checked = await sendPointerCommand({tabId}, "Runtime.callFunctionOn", {objectId,
+          functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label,authority:params.mutation_authority}}], returnByValue:true});
         finalChecked = checked?.result?.value;
         if (!finalChecked?.ok || !Number.isFinite(finalChecked.x) || !Number.isFinite(finalChecked.y)) {
           respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,reason_code:"final_target_revalidation_failed",reason:finalChecked?.reason || "Target or viewport changed before pointer input."} }); return;
         }
         const point = {x:finalChecked.x,y:finalChecked.y};
-        await pointerEngine.move({tabId}, point);
+        await boundedPointerEngine.move({tabId}, point);
+        const afterMoveTarget = await chrome.tabs.get(tabId);
+        if (!isAuthorized(tabId) || (nativeRoute && resolveNativeLease(request.lease_id, tabId)?.generation !== generation) ||
+            pairedTabDocumentIds.get(tabId) !== documentId || activationEpoch !== activationEpochBefore || !afterMoveTarget.active) {
+          respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,dispatch_may_have_occurred:false,
+            reason_code:"post_move_identity_changed",reason:"Target document, lease, or active-tab identity changed during pointer movement."} }); return;
+        }
+        const afterMoveCheck = await sendPointerCommand({tabId}, "Runtime.callFunctionOn", {objectId,
+          functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label,authority:params.mutation_authority}}], returnByValue:true});
+        const afterMoveValue = afterMoveCheck?.result?.value;
+        if (!afterMoveValue?.ok || afterMoveValue.x !== point.x || afterMoveValue.y !== point.y) {
+          respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,dispatch_may_have_occurred:false,
+            reason_code:"post_move_target_revalidation_failed",reason:afterMoveValue?.reason || "The original target, hit point, or viewport changed during pointer movement."} }); return;
+        }
         const button = clickKind === "context_click" ? "right" : "left";
         const clicks = clickKind === "double_click" ? 2 : 1;
         for (let clickCount = 1; clickCount <= clicks; clickCount++) {
@@ -1736,23 +1736,30 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
               respond({ type:"result", id:request.id, result:{status:"unknown",dispatch_acknowledged:false,dispatch_may_have_occurred:true,
                 completed_clicks:1,reason_code:"double_click_target_changed",reason:"The first click was sent, but target identity or active-tab state changed before the second click. Inspect before retrying."} }); return;
             }
-            const secondCheck = await sendCdpCommand({tabId}, "Runtime.callFunctionOn", {objectId,
-              functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label}}], returnByValue:true});
+            const secondCheck = await sendPointerCommand({tabId}, "Runtime.callFunctionOn", {objectId,
+              functionDeclaration:guard, arguments:[{value:index},{value:outcome},{value:{label:params.expected_label,authority:params.mutation_authority}}], returnByValue:true});
             const secondTarget = secondCheck?.result?.value;
             if (!secondTarget?.ok || secondTarget.x !== point.x || secondTarget.y !== point.y) {
               respond({ type:"result", id:request.id, result:{status:"unknown",dispatch_acknowledged:false,dispatch_may_have_occurred:true,
                 completed_clicks:1,reason_code:"double_click_target_changed",reason:"The first click was sent, but the same target, viewport, or hit point could not be revalidated before the second click. Inspect before retrying."} }); return;
             }
           }
+          releaseReserveMs = 200;
+          if (Math.floor(deadline - performance.now() - releaseReserveMs) < 1) {
+            releaseReserveMs = 0;
+            throw new Error("pointer click deadline elapsed before mouse press.");
+          }
           activePress = {button, clickCount, ...point};
           pressAttempted = true;
-          await pointerEngine.press({tabId}, activePress);
-          await pointerEngine.release({tabId}, activePress);
+          await boundedPointerEngine.press({tabId}, activePress);
+          releaseReserveMs = 0;
+          await boundedPointerEngine.release({tabId}, activePress);
           activePress = undefined;
         }
         acknowledged = true;
       } catch (error) {
-        if (activePress) await pointerEngine.release({tabId}, activePress).catch(() => {});
+        releaseReserveMs = 0;
+        if (activePress) await boundedPointerEngine.release({tabId}, activePress).catch(() => {});
         respond({ type:"result", id:request.id, result:{status:pressAttempted?"unknown":"not_dispatched",dispatch_acknowledged:false,reason_code:pressAttempted?"pointer_delivery_unknown":"pointer_dispatch_failed",reason:safeNativeError(String(error))} });
         return;
       } finally {
@@ -2186,6 +2193,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
           } else if (!(await ownsPromptActivation())) {
             throw new Error("Active tab changed during password field revalidation; password was not dispatched.");
           }
+          pageDiagnostics.suppressConsole(tabId, expectedDocumentId);
           passwordDispatchStarted = true;
           const result = await sendCdpCommand(latest.route, "Runtime.callFunctionOn", { objectId: latest.objectId,
             functionDeclaration: "function(value){const e=this;if(!(e instanceof HTMLInputElement)||e.type!=='password'||!e.isConnected||e.value.length!==0||e.disabled||e.readOnly||e.hasAttribute('data-masked')||e.hasAttribute('data-requires-trusted'))return {ok:false,reason:'field_changed'};const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return {ok:false,reason:'setter_unavailable'};setter.call(e,value);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));e.dispatchEvent(new Event('change',{bubbles:true}));return {ok:e.value===value,credential_filled:e.value===value,length:e.value.length}}",
@@ -2950,6 +2958,7 @@ const ownedTabOpener = configureOwnedTabOpener({
   chrome, presentationSlots, withStateLock: withOwnedStateLock,
   identityOf: nativePageIdentity, waitForReady: waitForTabDOMContentLoaded,
   assertAutomationWindow: assertOwnedAutomationWindow, isTabLeased: tabId => nativeTabLeases.has(tabId),
+  leaseOwner: tabId => nativeTabLeases.get(tabId), isSessionLeaseTab: (leaseId, tabId) => nativeLeases.get(leaseId)?.tabs.has(tabId) === true,
   validateUrl: validateNavigationUrl, safeError: safeNativeError,
   receiptsKey: OPEN_RECEIPTS_KEY, maxAgeMs: OPEN_RECEIPT_MAX_AGE_MS, maxCount: OPEN_RECEIPT_MAX_COUNT,
 });
@@ -2979,12 +2988,13 @@ async function createNaviChromeTab(url, native, generation, tab, markerUrl, reus
   return { tab_id: String(tab.id), window_id: tab.windowId, ...identity, idempotent_reuse: reused, created_by_navichrome: true,
     created_background_window: createBackgroundWindow, placement, tab_active: !!currentTab.active, window_focused: !!currentWindow.focused };
 }
-async function openNaviChromeTab(url, clientKey, native, generation, waitUntil = "dom_content_loaded", active = true, createBackgroundWindow = false, placement = {}, targetWindowId) {
+async function openNaviChromeTab(url, clientKey, native, generation, waitUntil = "dom_content_loaded", active = true, createBackgroundWindow = false, placement = {}, targetWindowId, ownerLeaseId) {
   if (clientKey === undefined) throw new Error("idempotency_key is required so an open retry cannot create another tab.");
   if (typeof clientKey !== "string" || clientKey.length < 8 || clientKey.length > 256 || /[\u0000-\u001f\u007f]/.test(clientKey)) throw new Error("idempotency_key must be 8..256 bounded printable characters.");
   const pending = openTabInflight.get(clientKey);
   if (pending) {
     if (pending.url !== url) throw new Error("Idempotency key is already bound to a different URL.");
+    if (pending.ownerLeaseId !== ownerLeaseId) throw new Error("Idempotency key is already bound to a different session.");
     if (pending.active !== active) throw new Error("Idempotency key is already bound to a different activation mode.");
     if (pending.createBackgroundWindow !== createBackgroundWindow || JSON.stringify(pending.placement) !== JSON.stringify(placement)) throw new Error("Idempotency key is already bound to a different target/window policy.");
     if (pending.targetWindowId !== targetWindowId) throw new Error("Idempotency key is already bound to a different automation window.");
@@ -2999,6 +3009,7 @@ async function openNaviChromeTab(url, clientKey, native, generation, waitUntil =
     if (!receipts[clientKey] && Object.keys(receipts).length >= OPEN_RECEIPT_MAX_COUNT) throw new Error("Open receipt capacity is full; old active or recoverable opens must be resolved before creating another tab.");
     const markerUrl = `${chrome.runtime.getURL("open-recovery.html")}#${encodeURIComponent(clientKey)}`;
     let receipt = receipts[clientKey];
+    if (receipt && (receipt.alias_of ? receipt.request_lease_id : receipt.owner_lease_id) !== ownerLeaseId) throw new Error("Idempotency key is already bound to a different session.");
     if (receipt?.status === "failed") throw new Error(`Open attempt left NaviChrome-created tab ${receipt.tab_id} for recovery; rediscover and pair that tab before retrying.`);
     if (receipt?.status === "closed") throw new Error("This idempotency key belongs to a tab NaviChrome already closed; use a new key to create another tab.");
     if (receipt?.status === "complete" || receipt?.document_id) {
@@ -3040,7 +3051,7 @@ async function openNaviChromeTab(url, clientKey, native, generation, waitUntil =
         if (activation.ok) {
           // Persist the alias before returning: a retry of this key after a
           // worker restart must resolve to the same tab, not create a second.
-          const alias = aliasReceipt(reusableTab.record, { key: clientKey, url, active });
+          const alias = aliasReceipt(reusableTab.record, { key: clientKey, url, active, requestLeaseId: ownerLeaseId });
           alias.reuse_kind = reusableTab.kind;
           receipts[clientKey] = alias;
           pruneOpenReceipts(receipts, OPEN_RECEIPT_MAX_AGE_MS, OPEN_RECEIPT_MAX_COUNT);
@@ -3084,7 +3095,7 @@ async function openNaviChromeTab(url, clientKey, native, generation, waitUntil =
       if (slotToken) await presentationSlots.bind(slotToken, tab.id);
     } else if (!tab && Number.isSafeInteger(targetWindowId)) tab = await chrome.tabs.create({ windowId: targetWindowId, url: markerUrl, active });
     else if (!tab) tab = await chrome.tabs.create({ url: markerUrl, active });
-    receipt = { status: "creating", tab_id: String(tab.id), window_id: createdWindow?.id ?? tab.windowId, target_window_id: targetWindowId, url, requested_url: url, marker_url: markerUrl, active, create_background_window: createBackgroundWindow, placement, reused_background_window: reusedWindowId !== undefined, created_ms: receipt?.created_ms || Date.now(), durability: createBackgroundWindow ? TabDurability.EPHEMERAL : TabDurability.SESSION, last_used_ms: Date.now(), last_verified_ms: Date.now() };
+    receipt = { status: "creating", tab_id: String(tab.id), window_id: createdWindow?.id ?? tab.windowId, target_window_id: targetWindowId, owner_lease_id: ownerLeaseId, url, requested_url: url, marker_url: markerUrl, active, create_background_window: createBackgroundWindow, placement, reused_background_window: reusedWindowId !== undefined, created_ms: receipt?.created_ms || Date.now(), durability: createBackgroundWindow ? TabDurability.EPHEMERAL : TabDurability.SESSION, last_used_ms: Date.now(), last_verified_ms: Date.now() };
     receipts[clientKey] = receipt;
     pruneOpenReceipts(receipts, OPEN_RECEIPT_MAX_AGE_MS, OPEN_RECEIPT_MAX_COUNT);
     await chrome.storage.local.set({ [OPEN_RECEIPTS_KEY]: receipts });
@@ -3101,7 +3112,7 @@ async function openNaviChromeTab(url, clientKey, native, generation, waitUntil =
         await withReceiptLock(async () => {
           const saved = await chrome.storage.local.get(OPEN_RECEIPTS_KEY);
           const receipts = saved[OPEN_RECEIPTS_KEY] || {};
-          receipts[clientKey] = { status: "failed", tab_id: error.navichromeOrphanTabId, window_id: reservation.window_id, target_window_id: targetWindowId, url, requested_url: url, active, create_background_window: createBackgroundWindow, placement, created_ms: reservation.created_ms };
+          receipts[clientKey] = { status: "failed", tab_id: error.navichromeOrphanTabId, window_id: reservation.window_id, target_window_id: targetWindowId, owner_lease_id: ownerLeaseId, url, requested_url: url, active, create_background_window: createBackgroundWindow, placement, created_ms: reservation.created_ms };
           pruneOpenReceipts(receipts, OPEN_RECEIPT_MAX_AGE_MS, OPEN_RECEIPT_MAX_COUNT);
           await chrome.storage.local.set({ [OPEN_RECEIPTS_KEY]: receipts });
         });
@@ -3122,13 +3133,13 @@ async function openNaviChromeTab(url, clientKey, native, generation, waitUntil =
       const receipts = saved[OPEN_RECEIPTS_KEY] || {};
       const current = receipts[clientKey];
       if (current?.tab_id !== result.tab_id) throw new Error("Open receipt changed before completion; no second tab was opened.");
-      receipts[clientKey] = { status: "complete", tab_id: result.tab_id, window_id: result.window_id ?? reservation.window_id, target_window_id: targetWindowId, url: result.url, requested_url: url, document_id: result.document_id, active, create_background_window: createBackgroundWindow, reused_background_window: reservation.reused_background_window === true, placement, created_ms: reservation.created_ms, durability: createBackgroundWindow ? TabDurability.EPHEMERAL : TabDurability.SESSION, last_used_ms: Date.now(), last_verified_ms: Date.now() };
+      receipts[clientKey] = { status: "complete", tab_id: result.tab_id, window_id: result.window_id ?? reservation.window_id, target_window_id: targetWindowId, owner_lease_id: ownerLeaseId, url: result.url, requested_url: url, document_id: result.document_id, active, create_background_window: createBackgroundWindow, reused_background_window: reservation.reused_background_window === true, placement, created_ms: reservation.created_ms, durability: createBackgroundWindow ? TabDurability.EPHEMERAL : TabDurability.SESSION, last_used_ms: Date.now(), last_verified_ms: Date.now() };
       pruneOpenReceipts(receipts, OPEN_RECEIPT_MAX_AGE_MS, OPEN_RECEIPT_MAX_COUNT);
       await chrome.storage.local.set({ [OPEN_RECEIPTS_KEY]: receipts });
     });
     return result;
   })();
-  const inflight = { url, active, createBackgroundWindow, placement, targetWindowId, promise: operation };
+  const inflight = { url, active, createBackgroundWindow, placement, targetWindowId, ownerLeaseId, promise: operation };
   openTabInflight.set(clientKey, inflight);
   try { return await operation; } finally { if (openTabInflight.get(clientKey) === inflight) openTabInflight.delete(clientKey); }
 }

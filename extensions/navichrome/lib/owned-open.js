@@ -22,7 +22,40 @@ const inflight = new Map();
 
 export function configureOwnedTabOpener(next) {
   deps = next;
-  return { openOwnedTabFromNative };
+  return { openOwnedTabFromNative, closeOwnedTab };
+}
+
+async function closeOwnedTab(ownedTabId, requesterLease, nativeRoute) {
+  if (!Number.isSafeInteger(ownedTabId) || ownedTabId <= 0) throw new Error("owned_tab_id must be a positive Chrome tab ID.");
+  return deps.withStateLock(async () => {
+    const saved = await deps.chrome.storage.local.get(deps.receiptsKey);
+    const receipts = saved[deps.receiptsKey] || {};
+    const entry = Object.entries(receipts).find(([, receipt]) => receipt?.tab_id === String(ownedTabId) && !receipt.alias_of);
+    if (!entry) throw new Error("This tab has no NaviChrome-owned open receipt; user-owned tabs cannot be closed by this operation.");
+    const [key, receipt] = entry;
+    if (receipt.owner_lease_id !== undefined && receipt.owner_lease_id !== requesterLease) throw new Error("This NaviChrome-owned tab belongs to a different session.");
+    if (receipt.status === "closed") {
+      if (receipt.closed_by_lease_id !== requesterLease) throw new Error("The closed tab receipt belongs to a different session.");
+      const stillOpen = await deps.chrome.tabs.get(ownedTabId).then(() => true).catch(() => false);
+      if (stillOpen) throw new Error("Close was previously recorded but Chrome still reports the tab; inspect its lifecycle before retrying.");
+      return { status: "closed", tab_id: String(ownedTabId), window_id: receipt.window_id, document_id: receipt.document_id, topology_verified: true, idempotent_reuse: true };
+    }
+    if (nativeRoute && (!requesterLease || !deps.isSessionLeaseTab(requesterLease, ownedTabId))) throw new Error("The owned tab is not leased by this session.");
+    if (deps.leaseOwner(ownedTabId) && deps.leaseOwner(ownedTabId) !== requesterLease) throw new Error("The owned tab is leased by a different session.");
+    if (receipt.status !== "complete" || !receipt.document_id) throw new Error("The NaviChrome open receipt is incomplete; refusing to close an unverified target.");
+    const identity = await deps.identityOf(ownedTabId).catch(() => undefined);
+    if (!identity || identity.document_id !== receipt.document_id || identity.url !== receipt.url) throw new Error("The created tab's document changed after open; refusing to close the changed target.");
+    const tab = await deps.chrome.tabs.get(ownedTabId);
+    if (!Number.isSafeInteger(receipt.window_id) || tab.windowId !== receipt.window_id || (deps.leaseOwner(ownedTabId) && deps.leaseOwner(ownedTabId) !== requesterLease))
+      throw new Error("The owned tab's window or session lease changed; refusing to close it.");
+    await deps.chrome.tabs.remove(ownedTabId);
+    if (await deps.chrome.tabs.get(ownedTabId).then(() => true).catch(() => false)) throw new Error("Chrome did not confirm that the NaviChrome-owned tab was removed.");
+    receipts[key] = { ...receipt, status: "closed", closed_ms: Date.now(), closed_by_lease_id: requesterLease };
+    await deps.chrome.storage.local.set({ [deps.receiptsKey]: receipts });
+    if (deps.presentationSlots.owner(tab.windowId)?.tab_id === ownedTabId)
+      await deps.presentationSlots.releaseWindow(tab.windowId, { reason: "owned_tab_closed" });
+    return { status: "closed", tab_id: String(ownedTabId), window_id: tab.windowId, document_id: identity.document_id, topology_verified: true, idempotent_reuse: false };
+  });
 }
 
 // Pick an owned automation window whose presentation slot is free and reserve

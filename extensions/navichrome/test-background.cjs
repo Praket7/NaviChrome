@@ -25,6 +25,8 @@ const createdWindows = [];
 const pendingCommands = [];
 const commandDiagnostics = [];
 let rejectNextCommand;
+let delayNextCommand;
+let useRealPointerTimeoutTimers = false;
 let blockedDetach;
 let blockedFrame;
 let detachDuringInventory = false;
@@ -52,6 +54,7 @@ let changingFrameSwipeTransformFixture = false;
 let frameSwipeOwnerBoxReads = 0;
 let scrollToGuardReceipt = { ok: true, phase: "after", dispatch_may_have_occurred: true, target_visible: true, center_hit: true, viewport: { width: 100, height: 80 }, center: { x: 50, y: 40 } };
 let changePointerAfterFirstClickRelease = false;
+let obscureOnNextPointerMove = false;
 tabList.push({ id: 102, title: "Extension page", url: "chrome://extensions" });
 tabList.push({ title: "Invalid tab", url: "https://example.test/invalid" });
 let listener;
@@ -380,7 +383,16 @@ const chrome = {
     },
   async sendCommand(target, method, params) {
       debuggerCalls.push({ target, method, params });
+      if (delayNextCommand?.method === method && (!delayNextCommand.type || delayNextCommand.type === params?.type)) {
+        const { ms } = delayNextCommand;
+        delayNextCommand = undefined;
+        await new Promise(resolve => setTimeout(resolve, ms));
+      }
       if (method === "Test.never") await new Promise(() => {});
+      if (method === "Input.dispatchMouseEvent" && params?.type === "mouseMoved" && obscureOnNextPointerMove) {
+        obscureOnNextPointerMove = false;
+        pointerGuardValue = { ok: false, reason: "obscured" };
+      }
       if (rejectNextCommand === method) { rejectNextCommand = undefined; throw new Error("fixture rejection"); }
       if (method === "Runtime.evaluate" && blockNextTopologyCommand) {
         const blocked = blockNextTopologyCommand;
@@ -746,7 +758,7 @@ function runBackground() {
     performance: { now() { return mockNow; } },
     console: { debug(...args) { commandDiagnostics.push(args); } },
     setTimeout(callback, delay) {
-      if (delay === 10) return globalThis.setTimeout(callback, delay);
+      if (delay === 10 || useRealPointerTimeoutTimers) return globalThis.setTimeout(callback, delay);
       reconnectTimers.push({ callback, delay, owner });
       return reconnectTimers.length;
     },
@@ -1526,6 +1538,12 @@ async function waitFor(predicate, description) {
   assert.equal(JSON.stringify(sessionStorage).includes(passwordSentinel), false, "password is never persisted in extension session storage");
   assert.equal(tabList.some(tab => tab.url?.startsWith("chrome-extension://fixture/secure-input.html#")), false, "one-use prompt tab is closed");
   assert.equal(focusedWindowActiveTabId, 41, "original target tab is restored after secure entry");
+  debuggerEvent({ tabId: 41 }, "Runtime.consoleAPICalled", { type: "error", args: [{ type: "string", value: passwordSentinel }] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  native.hostMessage({ type: "command", id: "diagnostics-after-secure-fill", target_id: "41", method: "NaviChrome.pageDiagnostics", params: { limit: 8 } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const postSecureDiagnostics = native.sent.findLast(item => item.id === "diagnostics-after-secure-fill")?.result;
+  assert.doesNotMatch(JSON.stringify(postSecureDiagnostics), new RegExp(passwordSentinel), "raw console echoes after secure entry are suppressed from diagnostics");
   emitActivationEvents = true;
   focusedWindowActiveTabId = 41;
   const secureTargetWindowId = tabList.find(tab => tab.id === 41).windowId;
@@ -1841,14 +1859,14 @@ async function waitFor(predicate, description) {
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(native.sent.find(message => message.id === "close-user-tab")?.error || "", /no NaviChrome-owned open receipt/,
     "close_owned refuses any tab without a persisted NaviChrome open receipt");
-  native.hostMessage({ type: "command", id: "close-created-tab", target_id: "41", method: "NaviChrome.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
+  native.hostMessage({ type: "command", lease_id: "pair-1", id: "close-created-tab", target_id: "41", method: "NaviChrome.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
   await waitFor(() => native.sent.some(message => message.id === "close-created-tab"), "created tab close");
   const closedCreatedTab = native.sent.find(message => message.id === "close-created-tab")?.result;
   assert.equal(closedCreatedTab?.status, "closed");
   assert.equal(closedCreatedTab?.topology_verified, true);
   assert.equal(tabList.some(tab => String(tab.id) === firstOpen.tab_id), false,
     "close_owned verifies that Chrome no longer lists the created tab");
-  native.hostMessage({ type: "command", id: "close-created-tab-retry", target_id: "41", method: "NaviChrome.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
+  native.hostMessage({ type: "command", lease_id: "pair-1", id: "close-created-tab-retry", target_id: "41", method: "NaviChrome.closeOwnedTab", params: { owned_tab_id: firstOpen.tab_id } });
   await waitFor(() => native.sent.some(message => message.id === "close-created-tab-retry"), "created tab close retry");
   const repeatedClose = native.sent.find(message => message.id === "close-created-tab-retry");
   assert.equal(repeatedClose?.result?.idempotent_reuse, true,
@@ -1902,6 +1920,20 @@ async function waitFor(predicate, description) {
     ["mousePressed", "left", 2], ["mouseReleased", "left", 2],
   ], "double click is two trusted guarded mouse pairs with distinct click counts");
   pointerGuardValue = { ok: true, x: 10, y: 20, viewport: "fixture-viewport" };
+  obscureOnNextPointerMove = true;
+  const movedTargetStart = debuggerCalls.length;
+  native.hostMessage({ type: "command", id: "pointermove-obscures-target", target_id: "41", method: "NaviChrome.pointerClick", params: {
+    object_id: "fixture-target", function_declaration: "function(index,expected){return __fixturePointerGuard}",
+    index: 0, outcome: { kind: "focused" }, viewport: "fixture-viewport", click_kind: "click"
+  } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const movedTargetEvents = debuggerCalls.slice(movedTargetStart).filter(call => call.target?.tabId === 41 && call.method === "Input.dispatchMouseEvent");
+  assert.deepEqual(movedTargetEvents.map(call => call.params.type), ["mouseMoved"], "a target covered by pointermove is rechecked before press");
+  const movedTargetReceipt = native.sent.find(message => message.id === "pointermove-obscures-target")?.result;
+  assert.equal(movedTargetReceipt?.status, "not_dispatched");
+  assert.equal(movedTargetReceipt?.dispatch_may_have_occurred, false);
+  assert.equal(movedTargetReceipt?.reason_code, "post_move_target_revalidation_failed");
+  pointerGuardValue = { ok: true, x: 10, y: 20, viewport: "fixture-viewport" };
   changePointerAfterFirstClickRelease = true;
   const doubleStart = debuggerCalls.length;
   native.hostMessage({ type: "command", id: "double-pointer-click-changed", target_id: "41", method: "NaviChrome.pointerClick", params: {
@@ -1917,6 +1949,24 @@ async function waitFor(predicate, description) {
   assert.equal(stoppedDouble?.status, "unknown", "the first click may have taken effect even when the second is fenced");
   assert.equal(stoppedDouble?.reason_code, "double_click_target_changed");
   assert.equal(stoppedDouble?.completed_clicks, 1);
+  pointerGuardValue = { ok: true, x: 10, y: 20, viewport: "fixture-viewport" };
+  const timeoutStart = debuggerCalls.length;
+  const timeoutAt = Date.now();
+  delayNextCommand = { method: "Input.dispatchMouseEvent", type: "mousePressed", ms: 1800 };
+  useRealPointerTimeoutTimers = true;
+  native.hostMessage({ type: "command", id: "bounded-pointer-click-timeout", target_id: "41", method: "NaviChrome.pointerClick", params: {
+    object_id: "fixture-target", function_declaration: "function(index,expected){return __fixturePointerGuard}",
+    index: 0, outcome: { kind: "focused" }, viewport: "fixture-viewport", timeout_ms: 1000
+  } });
+  await waitFor(() => native.sent.some(message => message.id === "bounded-pointer-click-timeout"), "bounded pointer click timeout receipt");
+  useRealPointerTimeoutTimers = false;
+  const timedOutPointer = native.sent.findLast(message => message.id === "bounded-pointer-click-timeout")?.result;
+  assert.equal(timedOutPointer?.status, "unknown", "a press that exceeds its shared caller deadline is not reported as dispatched");
+  assert.equal(timedOutPointer?.dispatch_acknowledged, false);
+  assert.equal(timedOutPointer?.reason_code, "pointer_delivery_unknown");
+  assert.ok(Date.now() - timeoutAt < 1500, "the extension returns before an unbounded CDP command completes");
+  assert.ok(debuggerCalls.slice(timeoutStart).some(call => call.method === "Input.dispatchMouseEvent" && call.params.type === "mouseReleased"),
+    "a timed-out press still attempts a bounded release");
   pointerGuardValue = { ok: true, x: 10, y: 20, viewport: "fixture-viewport" };
   const contextStart = debuggerCalls.length;
   native.hostMessage({ type: "command", id: "context-pointer-click", target_id: "41", method: "NaviChrome.pointerClick", params: {
@@ -2327,6 +2377,15 @@ async function waitFor(predicate, description) {
   assert.equal(native.sent.find(message => message.request_id === "codex-a" && message.type === "paired")?.lease_id, "codex-a");
   assert.equal(native.sent.find(message => message.request_id === "codex-b" && message.type === "paired")?.lease_id, "codex-b");
   assert.equal(detached.includes(60), false, "a second Codex lease must preserve the first lease's tab");
+  native.hostMessage({ ...openRequest, id: "open-codex-a-owned", target_id: "60", lease_id: "codex-a", params: { url: "https://example.test/codex-a-owned", idempotency_key: "codex-a:owned-1234" } });
+  await waitFor(() => native.sent.some(message => message.id === "open-codex-a-owned"), "Codex A owned tab open");
+  const codexAOwned = native.sent.findLast(message => message.id === "open-codex-a-owned")?.result;
+  const crossSessionCloseTabCount = tabList.length;
+  native.hostMessage({ type: "command", lease_id: "codex-b", id: "cross-session-close-owned", target_id: "61", method: "NaviChrome.closeOwnedTab", params: { owned_tab_id: codexAOwned.tab_id } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(native.sent.findLast(message => message.id === "cross-session-close-owned")?.error || "", /different session|not leased by this session/i,
+    "an owned tab leased to one MCP session cannot be closed by another session");
+  assert.equal(tabList.length, crossSessionCloseTabCount, "cross-session close refusal leaves the owned tab open");
   const overlapAttachCount = attached.filter(tabId => tabId === 60).length;
   native.hostMessage({ type: "pair", request_id: "codex-c-overlap", lease_id: "codex-c", tab_ids: [60], expected_urls: expectedUrls([60]), expected_document_ids: expectedDocuments([60]) });
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -3258,7 +3317,7 @@ async function waitFor(predicate, description) {
   slowMediaNextNavigation = true;
   restartPort.hostMessage({ type: "command", id: "open-before-slow-media", target_id: "41", method: "NaviChrome.openTab",
     params: { url: "https://example.test/slow-media", idempotency_key: "client-fixture:slow-media-1234" } });
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await waitFor(() => restartPort.sent.some(message => message.id === "open-before-slow-media"), "DOMContentLoaded before late media");
   const slowMediaOpen = restartPort.sent.find(message => message.id === "open-before-slow-media");
   assert.ok(slowMediaOpen?.result, JSON.stringify(slowMediaOpen));
   assert.equal(tabList.find(tab => String(tab.id) === slowMediaOpen.result.tab_id)?.status, "loading",
@@ -3267,7 +3326,7 @@ async function waitFor(predicate, description) {
   slowMediaNextNavigation = true;
   restartPort.hostMessage({ type: "command", id: "open-at-document-commit", target_id: "41", method: "NaviChrome.openTab",
     params: { url: "https://example.test/committed", idempotency_key: "client-fixture:document-commit-1234", wait_until: "document_committed" } });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => restartPort.sent.some(message => message.id === "open-at-document-commit"), "document-commit open");
   const committedOpen = restartPort.sent.find(message => message.id === "open-at-document-commit");
   assert.ok(committedOpen?.result, JSON.stringify(committedOpen));
   assert.equal(tabList.find(tab => String(tab.id) === committedOpen.result.tab_id)?.status, "loading",

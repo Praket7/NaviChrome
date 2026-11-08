@@ -80,7 +80,7 @@ export async function runFullSuite({
     schema_version: retainRows ? 2 : 3,
     track: config.track,
     candidate_adapter: candidateId,
-    randomization: { method: 'seeded_paired_order', seed: config.random_seed },
+    randomization: { method: 'seeded_counterbalanced_paired_order', seed: config.random_seed },
     ...(retainRows ? {} : { results_storage: 'comparison_files' }),
     environment,
     comparisons,

@@ -1,6 +1,8 @@
 /target/
 /dist/
 /node_modules/
+**/.DS_Store
+/apps/client-mcp-contract-results.json
 # Legacy generated binaries may remain after upgrading; never add them to source control.
 /packages/navichrome/bin/controlla-core*
 /packages/navichrome/bin/controlla-v2-core*

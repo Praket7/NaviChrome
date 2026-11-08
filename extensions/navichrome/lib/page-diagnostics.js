@@ -11,7 +11,7 @@ export function createPageDiagnostics({ sendCommand, documentIdForTab }) {
     let state = states.get(tabId);
     if (!state) {
       state = { entries: [], requests: new Map(), dropped: 0, documentId: undefined, frameId: undefined,
-        domains: { runtime: "not_enabled", log: "not_enabled", network: "not_enabled" }, captureErrors: [], enablePromise: undefined };
+        domains: { runtime: "not_enabled", log: "not_enabled", network: "not_enabled" }, captureErrors: [], enablePromise: undefined, suppressConsole: false };
       states.set(tabId, state);
     }
     return state;
@@ -22,6 +22,7 @@ export function createPageDiagnostics({ sendCommand, documentIdForTab }) {
     state.requests.clear();
     state.dropped = 0;
     state.documentId = documentId;
+    state.suppressConsole = false;
   }
 
   function record(tabId, method, params) {
@@ -63,6 +64,10 @@ export function createPageDiagnostics({ sendCommand, documentIdForTab }) {
     if (method === "Runtime.consoleAPICalled") {
       const level = params?.type;
       if (!["error", "warning", "assert"].includes(level)) return;
+      if (state.suppressConsole) {
+        push(state, { kind: "console", level, source: "runtime", text: "console text suppressed after secure input" });
+        return;
+      }
       const text = (Array.isArray(params?.args) ? params.args : []).slice(0, 8).map(argument => {
         if (typeof argument?.value === "string") return argument.value;
         if (["number", "boolean"].includes(typeof argument?.value)) return String(argument.value);
@@ -121,6 +126,13 @@ export function createPageDiagnostics({ sendCommand, documentIdForTab }) {
 
   function clear(tabId) { states.delete(tabId); }
 
+  function suppressConsole(tabId, expectedDocumentId) {
+    const state = stateFor(tabId);
+    if (state.documentId && expectedDocumentId && state.documentId !== expectedDocumentId) reset(state, expectedDocumentId);
+    state.documentId = expectedDocumentId || state.documentId;
+    state.suppressConsole = true;
+  }
+
   function warm(tabId) { return ensure(tabId); }
 
   function warmSoon(tabIds, delayMs = 10) {
@@ -136,7 +148,7 @@ export function createPageDiagnostics({ sendCommand, documentIdForTab }) {
     return true;
   }
 
-  return { record, snapshot, clear, warm, warmSoon, handleCommand };
+  return { record, snapshot, clear, warm, warmSoon, handleCommand, suppressConsole };
 }
 
 export function boundedUploadUrl(value) {

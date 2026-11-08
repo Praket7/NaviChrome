@@ -96,6 +96,7 @@ pub(super) async fn upload_click(
             chrome_tab_id: tab_id.to_owned(),
             action: "click".into(),
             reference: Some(reference.to_owned()),
+            mutation_authority: None,
             expected_value: None,
             value: None,
             key: None,

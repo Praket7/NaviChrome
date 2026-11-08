@@ -151,7 +151,7 @@ function completeReport() {
     schema_version: 2,
     track: 'phase11-realistic',
     candidate_adapter: 'controlla',
-    randomization: { method: 'seeded_paired_order', seed: phase11.random_seed },
+    randomization: { method: 'seeded_counterbalanced_paired_order', seed: phase11.random_seed },
     environment: {
       candidate_source_sha: 'a'.repeat(40),
       dirty_tree_patch_sha256: 'b'.repeat(64),
@@ -172,7 +172,7 @@ function completeReport() {
     },
     comparisons: structuredBaselines.map(baselineId => ({
       baseline_adapter: baselineId,
-      randomization: { method: 'seeded_paired_order', seed: phase11.random_seed },
+      randomization: { method: 'seeded_counterbalanced_paired_order', seed: phase11.random_seed },
       warmup_rows: makeRows(baselineId, true),
       paired_rows: makeRows(baselineId, false)
     }))

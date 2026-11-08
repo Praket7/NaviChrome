@@ -224,7 +224,7 @@ assert.ok([2, 3].includes(results.schema_version), 'broad superiority claims req
 if (results.schema_version === 3) assert.equal(results.results_storage, 'comparison_files', 'schema 3 reports must use comparison evidence files');
 assert.equal(results.track, 'phase11-realistic');
 assert.equal(results.candidate_adapter, 'controlla');
-assert.deepEqual(results.randomization, { method: 'seeded_paired_order', seed: phase11.random_seed },
+assert.deepEqual(results.randomization, { method: 'seeded_counterbalanced_paired_order', seed: phase11.random_seed },
   'broad superiority claims require the preregistered seeded paired-order');
 requireEnvironment(results.environment);
 assert.ok(Array.isArray(results.comparisons), 'claim evidence requires comparisons');

@@ -884,6 +884,8 @@ struct SharedClickArgs {
     /// The words this click intends to press (for example `Insert`). The guard
     /// refuses only when those words are not on the element under the pointer.
     expected_label: Option<String>,
+    #[serde(default)]
+    mutation_authority: Option<Value>,
     /// Revision returned by the watcher-backed tab inventory. When supplied,
     /// the extension refuses dispatch if topology changed after discovery.
     expected_target_revision: Option<u64>,
@@ -4966,7 +4968,8 @@ impl App {
             let mut recovered_via: Option<&'static str> = None;
             let mut ledger: Option<crate::action_recovery::RecoveryLedger> = None;
             let mut active_reason: Option<crate::guard_reason::GuardReason> = None;
-            let mut guard_opts = json!({"label": args.expected_label});
+            let mut guard_opts =
+                json!({"label": args.expected_label, "authority": args.mutation_authority});
             let mut value = Value::Null;
             for _ in 0..=crate::recovery_exec::MAX_LADDER_STEPS {
                 let response=connection.command(registry,&shared.handle,&args.chrome_tab_id,"Runtime.callFunctionOn",json!({"objectId":snapshot.object_id,"functionDeclaration":guard,"arguments":[{"value":index},{"value":outcome},{"value":guard_opts}],"returnByValue":true})).await.map_err(|e|e.to_string())?;
@@ -4998,7 +5001,7 @@ impl App {
                 executed.record(operation);
                 match operation {
                     crate::recovery_exec::RungOperation::Rescroll { block } => {
-                        guard_opts = json!({"scroll": block, "label": args.expected_label});
+                        guard_opts = json!({"scroll": block, "label": args.expected_label, "authority": args.mutation_authority});
                     }
                     crate::recovery_exec::RungOperation::Settle { delay_ms } => {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
@@ -5215,6 +5218,21 @@ impl App {
             && input_mode == "mouse"
             && shared.handle.mode == navichrome_browser::sessions::SessionMode::Shared
         {
+            let pointer_timeout_ms = deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .as_millis()
+                .saturating_sub(250)
+                .min(10_000) as u64;
+            if pointer_timeout_ms < 100 {
+                return Ok(rmcp::handler::server::wrapper::Json(json!({
+                    "status":"not_dispatched",
+                    "dispatch_acknowledged":false,
+                    "dispatch_may_have_occurred":false,
+                    "reason_code":"pointer_deadline_exhausted",
+                    "reason":"The guarded preflight left too little time for bounded pointer delivery. Take a fresh snapshot before another attempt.",
+                    "next_action":"take_one_fresh_snapshot"
+                })));
+            }
             let dispatch = tokio::time::timeout_at(
                 deadline,
                 connection.command(
@@ -5224,7 +5242,9 @@ impl App {
                     "NaviChrome.pointerClick",
                     json!({"object_id":snapshot.object_id,"index":index,"outcome":outcome,
                     "function_declaration":guard,"click_kind":click_kind,
+                    "timeout_ms":pointer_timeout_ms,
                     "expected_label":args.expected_label,
+                    "mutation_authority":args.mutation_authority,
                     "expected_target_revision":args.expected_target_revision}),
                 ),
             )
@@ -6667,6 +6687,15 @@ impl App {
                 .connection
                 .as_ref()
                 .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
+            if !connection
+                .selected_targets()
+                .iter()
+                .any(|selected| selected.as_str() == target)
+            {
+                return Err(invalid(
+                    "close_owned target is not selected in this shared session",
+                ));
+            }
             let source = connection.selected_targets().iter().find(|candidate| candidate.as_str() != target)
                 .cloned()
                 .ok_or_else(|| invalid("close_owned needs another still-open tab in this session to verify the target lifecycle"))?;
@@ -11318,6 +11347,12 @@ mod tests {
                         json!({"type":"result","id":request["id"],"result":{"result":{"type":"object","value":{"ok":true,"x":10.0,"y":20.0,"viewport":"[1280,800,0,0,1280,800,0,0,1]"}}}})
                     }
                     "NaviChrome.pointerClick" => {
+                        assert!(
+                            params["timeout_ms"]
+                                .as_u64()
+                                .is_some_and(|ms| (100..=1000).contains(&ms)),
+                            "pointer click must receive only the bounded time left before the shared deadline: {params}"
+                        );
                         dispatches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         json!({"type":"result","id":request["id"],"result":{"status":"unknown","dispatch_acknowledged":false,"dispatch_may_have_occurred":true,"completed_clicks":1,"reason_code":"double_click_target_changed","reason":"The first click was sent, but the target changed before the second click."}})
                     }

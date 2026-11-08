@@ -1,4 +1,4 @@
-function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
+function(index, action, expected, next, key, outcomeKind, expectedLabelArg, authorityArg) {
   const nodes = Array.isArray(this?.nodes) ? this.nodes : null;
   let e = nodes ? nodes[index] : this;
   let rebound = false;
@@ -17,9 +17,39 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
     if (!node) return '';
     const labelled = (node.getAttribute?.('aria-labelledby') || '').split(/\s+/).filter(Boolean)
       .map(id => node.ownerDocument?.getElementById(id)?.innerText || '').join(' ').trim();
-    return norm(labelled || node.getAttribute?.('aria-label') || node.innerText || node.textContent
-      || (typeof node.value === 'string' ? node.value : '') || node.getAttribute?.('title')
-      || node.getAttribute?.('placeholder') || '');
+    const labels = Array.from(node.labels || []).map(label => label.innerText || '').join(' ').trim();
+    return norm(labelled || node.getAttribute?.('aria-label') || node.innerText || node.getAttribute?.('alt') || labels || node.getAttribute?.('title') || '');
+  };
+  const roleOf = node => node?.getAttribute?.('role') || (node?.isContentEditable ? 'textbox'
+    : ({ A: 'link', BUTTON: 'button', INPUT: 'input', TEXTAREA: 'textbox', SELECT: 'combobox', SUMMARY: 'button' }[tagOf(node)] || 'control'));
+  const authorityError = () => {
+    const label = norm(expectedLabelArg || e.__navichromeIdentity?.name || accessibleName(e)).toLowerCase();
+    const action = label.split(/\s+/)[0];
+    const requiresAuthority = ['send', 'post', 'publish', 'submit', 'delete', 'remove', 'share'].includes(action);
+    if (!requiresAuthority) return null;
+    if (!authorityArg) return requiresAuthority ? 'mutation_authority_required' : null;
+    if (authorityArg.action !== action) return 'mutation_authority_mismatch';
+    const exactVisibleText = check => {
+      if (!check || typeof check.selector !== 'string' || typeof check.expected !== 'string') return false;
+      let matches;
+      try { matches = deepQueryAll(e.ownerDocument, check.selector).filter(visible); } catch (_) { return false; }
+      if (matches.length !== 1) return false;
+      const actual = norm(accessibleName(matches[0]) || matches[0].innerText || matches[0].textContent || matches[0].value || '');
+      return actual === norm(check.expected);
+    };
+    if (!exactVisibleText(authorityArg.account)) return 'mutation_account_mismatch';
+    if (!exactVisibleText(authorityArg.destination)) return 'mutation_destination_mismatch';
+    if (!Array.isArray(authorityArg.objects) || !authorityArg.objects.length || authorityArg.objects.length > 4
+      || authorityArg.objects.some(check => !exactVisibleText(check))) return 'mutation_object_mismatch';
+    return null;
+  };
+  const identityMismatch = () => {
+    const identity = e.__navichromeIdentity;
+    if (!identity) return null;
+    return identity.tag !== tagOf(e).toLowerCase() || identity.role !== roleOf(e) || identity.name !== accessibleName(e)
+      || identity.href && identity.href !== e.href || identity.type && identity.type !== e.type
+      || identity.test_id && identity.test_id !== (e.getAttribute('data-testid') || e.getAttribute('data-test') || e.getAttribute('data-qa'))
+      ? 'target_identity_changed' : null;
   };
   // The click names the words it intends to press. They must be on the target
   // or on a control that contains it; a mismatched name is a real objection.
@@ -81,6 +111,20 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
     if (identity.name && accessibleName(node) !== identity.name) return false;
     return true;
   };
+  const clickTargetError = () => {
+    if (!e?.isConnected || !e.ownerDocument?.documentElement) return 'target_replaced';
+    const mismatch = identityMismatch();
+    if (mismatch) return mismatch;
+    const rect = e.getBoundingClientRect(), view = e.ownerDocument.defaultView;
+    const style = view.getComputedStyle(e);
+    if (rect.width <= 0 || rect.height <= 0 || rect.left < 0 || rect.top < 0
+      || rect.right > view.innerWidth || rect.bottom > view.innerHeight
+      || style.display === 'none' || style.visibility !== 'visible' || Number.parseFloat(style.opacity || '1') <= 0
+      || style.pointerEvents === 'none') return 'outside_viewport';
+    const hit = e.ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (!hit || (hit !== e && !e.contains(hit))) return 'obscured';
+    return authorityError();
+  };
   const reacquire = () => {
     // A replaced document detaches every node from it; fall back to the live
     // execution-context document so the new render can still be rebound.
@@ -126,6 +170,10 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
     || e.closest('[data-masked],[data-requires-trusted]');
   if (sensitive()) return refuse('sensitive_or_trusted_target');
   if (e.matches(':disabled,[aria-disabled="true"],[inert]') || e.closest('[inert]')) return refuse('blocked');
+  if (['click', 'double_click', 'context_click'].includes(action)) {
+    const reason = clickTargetError();
+    if (reason) return refuse(reason);
+  }
   if (expectedLabel && !labelMatches(e, expectedLabel)) return refuse('label_not_under_pointer');
   const valueOf = () => {
     if (!e.isConnected || sensitive()) return undefined;
@@ -255,12 +303,21 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg) {
         });
       } catch (_) {}
       try {
-        dispatched = true;
-        if (action === 'context_click') e.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, view: window }));
+        if (action === 'context_click') {
+          const reason = clickTargetError();
+          if (reason) return refuse(reason);
+          dispatched = true;
+          e.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, view: window }));
+        }
         else {
           try { focusTarget?.focus({ preventScroll: true }); } catch (_) {}
+          const reason = clickTargetError();
+          if (reason) return refuse(reason);
+          dispatched = true;
           e.click();
           if (action === 'double_click') {
+            const secondReason = clickTargetError();
+            if (secondReason) return { ok: false, verified: false, dispatched: true, reason: secondReason, rebound };
             e.click();
             e.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, detail: 2, view: window }));
           }

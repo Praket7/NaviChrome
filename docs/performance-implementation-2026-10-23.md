@@ -1,7 +1,7 @@
 # Performance implementation ledger — 2026-10-23
 
 Base: 34924239529bdc6bf2cfa389d933a0bb75d828a4. Branch: codex/performance-and-qualification.
-Plan: docs/superpowers/plans/2026-10-23-performance.md.
+Plan: removed in the 2026-11-04 stale-plan cleanup.
 
 - Baseline: 31 benchmark-analysis/V3 release-gate tests passed.
 - Ruling: use an isolated clone because the earlier review directory was a hash-verified source snapshot without Git history.

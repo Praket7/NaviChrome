@@ -238,6 +238,129 @@ pub fn verify_canva_active_slide_v1(
     ))
 }
 
+/// Verifies a caller-declared exact message in Gmail's Sent view. This is
+/// visible UI evidence for the recipient, subject, and attachment, not a claim
+/// about mail-server delivery.
+pub fn verify_google_gmail_sent_attachment_v1(
+    predicate: &Value,
+    items: &BTreeMap<String, Value>,
+    scope_complete: bool,
+    page_url: &str,
+) -> Result<(bool, Value), &'static str> {
+    if predicate["version"].as_u64() != Some(1) {
+        return Err("Gmail sent-message predicate version must be 1");
+    }
+    let sent_url = predicate["sent_url"]
+        .as_str()
+        .filter(|url| is_exact_https_url(url))
+        .ok_or("Gmail sent-message predicate requires an exact HTTPS Sent URL")?;
+    let hash_route = url::Url::parse(sent_url)
+        .ok()
+        .and_then(|url| url.fragment().map(str::to_owned))
+        .is_some_and(|fragment| fragment == "sent" || fragment.starts_with("sent/"));
+    let account = identity_item(&predicate["account"], items, "account")?;
+    let recipient = identity_item(&predicate["recipient"], items, "recipient")?;
+    let subject = identity_item(&predicate["subject"], items, "subject")?;
+    let attachment_ref = bounded_ref(predicate["attachment"]["reference"].as_str())
+        .ok_or("Gmail attachment requires a bounded visible reference")?;
+    let filename = predicate["attachment"]["filename"]
+        .as_str()
+        .filter(|name| !name.trim().is_empty() && name.len() <= 512)
+        .ok_or("Gmail attachment requires an exact filename")?;
+    let size = predicate["attachment"]["size"]
+        .as_u64()
+        .ok_or("Gmail attachment requires an exact nonnegative size")?;
+    let attachment = items.get(attachment_ref);
+    let observed_filename =
+        attachment.and_then(|item| item["filename"].as_str().or_else(|| item["name"].as_str()));
+    let observed_size = attachment.and_then(|item| item["size"].as_u64());
+    let role = attachment
+        .and_then(|item| item["role"].as_str())
+        .unwrap_or_default();
+    let attachment_matches = matches!(role, "attachment" | "listitem")
+        && observed_filename == Some(filename)
+        && observed_size == Some(size);
+    let refs_unique = [account.0, recipient.0, subject.0, attachment_ref]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == 4;
+    let passed = scope_complete
+        && page_url == sent_url
+        && hash_route
+        && refs_unique
+        && account.1
+        && recipient.1
+        && subject.1
+        && attachment_matches;
+    Ok((
+        passed,
+        json!({
+            "adapter":"google_gmail_sent_attachment_v1","evidence_scope":"caller_visible_sent_ui_only",
+            "scope_complete":scope_complete,"sent_url":sent_url,"page_url":page_url,
+            "gmail_sent_route":hash_route,"account":account.2,"recipient":recipient.2,"subject":subject.2,
+            "attachment":{"reference":attachment_ref,"filename":observed_filename,"size":observed_size,"role":role,"matched":attachment_matches},
+            "delivery_proven":false,"server_acceptance_proven":false
+        }),
+    ))
+}
+
+/// Verifies the exact caller-declared post and attachment in a fresh Classroom
+/// class view. It proves the visible post state only, not server persistence.
+pub fn verify_classroom_post_v1(
+    predicate: &Value,
+    items: &BTreeMap<String, Value>,
+    scope_complete: bool,
+) -> Result<(bool, Value), &'static str> {
+    if predicate["version"].as_u64() != Some(1) {
+        return Err("Classroom post predicate version must be 1");
+    }
+    let account = identity_item(&predicate["account"], items, "account")?;
+    let class = identity_item(&predicate["class"], items, "class")?;
+    let post = identity_item(&predicate["post"], items, "post")?;
+    let post_item = items.get(post.0);
+    let post_role = post_item
+        .and_then(|item| item["role"].as_str())
+        .unwrap_or_default();
+    let post_visible = matches!(post_role, "article" | "listitem") && post.1;
+    let attachment_ref = bounded_ref(predicate["attachment"]["reference"].as_str())
+        .ok_or("Classroom post requires a bounded attachment reference")?;
+    let filename = predicate["attachment"]["filename"]
+        .as_str()
+        .filter(|name| !name.trim().is_empty() && name.len() <= 512)
+        .ok_or("Classroom post requires an exact attachment filename")?;
+    let size = predicate["attachment"]["size"]
+        .as_u64()
+        .ok_or("Classroom post requires an exact attachment size")?;
+    let attachment = items.get(attachment_ref);
+    let observed_filename =
+        attachment.and_then(|item| item["filename"].as_str().or_else(|| item["name"].as_str()));
+    let observed_size = attachment.and_then(|item| item["size"].as_u64());
+    let attachment_role = attachment
+        .and_then(|item| item["role"].as_str())
+        .unwrap_or_default();
+    let attachment_matches = matches!(attachment_role, "attachment" | "listitem" | "option")
+        && observed_filename == Some(filename)
+        && observed_size == Some(size);
+    let refs_unique = [account.0, class.0, post.0, attachment_ref]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == 4;
+    let passed =
+        scope_complete && refs_unique && account.1 && class.1 && post_visible && attachment_matches;
+    Ok((
+        passed,
+        json!({
+            "adapter":"google_classroom_post_v1","evidence_scope":"caller_visible_classroom_ui_only",
+            "scope_complete":scope_complete,"account":account.2,"class":class.2,
+            "post":{"reference":post.0,"name":post_item.and_then(|item|item["name"].as_str()),"role":post_role,"published_visible":post_visible},
+            "attachment":{"reference":attachment_ref,"filename":observed_filename,"size":observed_size,"role":attachment_role,"matched":attachment_matches},
+            "server_acceptance_proven":false,"persistence_proven":false
+        }),
+    ))
+}
+
 /// Checks caller-visible class, assignment, account, and attachment references
 /// in a fresh complete semantic snapshot. This is not server acceptance or proof
 /// that an upload was persisted.
@@ -1521,6 +1644,116 @@ mod semantic_adapter_tests {
         mismatch.get_mut("@c4").unwrap()["size"] = json!(43);
         assert!(
             !verify_classroom_attachment_v1(&predicate, &mismatch, true)
+                .unwrap()
+                .0
+        );
+    }
+
+    #[test]
+    fn gmail_sent_attachment_requires_exact_sent_route_account_recipient_subject_and_file() {
+        let url = "https://mail.google.com/mail/u/0/#sent/thread123";
+        let predicate = json!({"version":1,"sent_url":url,
+            "account":{"reference":"@account","name":"praketg1@gmail.com","id_field":"href","stable_id":"https://mail.google.com/mail/u/0/#inbox"},
+            "recipient":{"reference":"@recipient","name":"praket.gauri1234@gmail.com","id_field":"id","stable_id":"recipient-chip"},
+            "subject":{"reference":"@subject","name":"NaviChrome test","id_field":"id","stable_id":"subject-line"},
+            "attachment":{"reference":"@attachment","filename":"navichrome-testing-upload.txt","size":74}});
+        let items = BTreeMap::from([
+            (
+                "@account".into(),
+                json!({"role":"button","name":"praketg1@gmail.com","href":"https://mail.google.com/mail/u/0/#inbox"}),
+            ),
+            (
+                "@recipient".into(),
+                json!({"role":"generic","name":"praket.gauri1234@gmail.com","id":"recipient-chip"}),
+            ),
+            (
+                "@subject".into(),
+                json!({"role":"heading","name":"NaviChrome test","id":"subject-line"}),
+            ),
+            (
+                "@attachment".into(),
+                json!({"role":"attachment","name":"navichrome-testing-upload.txt","filename":"navichrome-testing-upload.txt","size":74}),
+            ),
+        ]);
+        let (passed, evidence) =
+            verify_google_gmail_sent_attachment_v1(&predicate, &items, true, url).unwrap();
+        assert!(passed);
+        assert_eq!(evidence["delivery_proven"], false);
+        assert!(
+            !verify_google_gmail_sent_attachment_v1(
+                &predicate,
+                &items,
+                true,
+                "https://mail.google.com/mail/u/0/#drafts"
+            )
+            .unwrap()
+            .0
+        );
+        assert!(
+            !verify_google_gmail_sent_attachment_v1(&predicate, &items, false, url)
+                .unwrap()
+                .0
+        );
+        let mut wrong_recipient = items.clone();
+        wrong_recipient.get_mut("@recipient").unwrap()["name"] = json!("other@example.test");
+        assert!(
+            !verify_google_gmail_sent_attachment_v1(&predicate, &wrong_recipient, true, url)
+                .unwrap()
+                .0
+        );
+        let mut missing_attachment = items;
+        missing_attachment.get_mut("@attachment").unwrap()["size"] = json!(75);
+        assert!(
+            !verify_google_gmail_sent_attachment_v1(&predicate, &missing_attachment, true, url)
+                .unwrap()
+                .0
+        );
+    }
+
+    #[test]
+    fn classroom_published_post_requires_exact_class_content_and_attachment() {
+        let predicate = json!({"version":1,
+            "account":{"reference":"@account","name":"praketg1@gmail.com","id_field":"href","stable_id":"https://classroom.google.com/u/0/"},
+            "class":{"reference":"@class","name":"Testing class","id_field":"href","stable_id":"https://classroom.google.com/c/123"},
+            "post":{"reference":"@post","name":"Testing announcement","id_field":"id","stable_id":"post-123"},
+            "attachment":{"reference":"@attachment","filename":"navichrome-testing-upload.txt","size":74}});
+        let items = BTreeMap::from([
+            (
+                "@account".into(),
+                json!({"role":"button","name":"praketg1@gmail.com","href":"https://classroom.google.com/u/0/"}),
+            ),
+            (
+                "@class".into(),
+                json!({"role":"link","name":"Testing class","href":"https://classroom.google.com/c/123"}),
+            ),
+            (
+                "@post".into(),
+                json!({"role":"article","name":"Testing announcement","id":"post-123"}),
+            ),
+            (
+                "@attachment".into(),
+                json!({"role":"attachment","name":"navichrome-testing-upload.txt","filename":"navichrome-testing-upload.txt","size":74}),
+            ),
+        ]);
+        let (passed, evidence) = verify_classroom_post_v1(&predicate, &items, true).unwrap();
+        assert!(passed);
+        assert_eq!(evidence["persistence_proven"], false);
+        assert!(
+            !verify_classroom_post_v1(&predicate, &items, false)
+                .unwrap()
+                .0
+        );
+        let mut draft = items.clone();
+        draft.get_mut("@post").unwrap()["role"] = json!("textbox");
+        assert!(
+            !verify_classroom_post_v1(&predicate, &draft, true)
+                .unwrap()
+                .0
+        );
+        let mut wrong_class = items;
+        wrong_class.get_mut("@class").unwrap()["name"] = json!("Different class");
+        assert!(
+            !verify_classroom_post_v1(&predicate, &wrong_class, true)
                 .unwrap()
                 .0
         );

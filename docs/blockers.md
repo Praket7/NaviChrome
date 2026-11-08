@@ -353,3 +353,10 @@ The download path now coalesces two identity/epoch checks, but its qualification
 - Structured extraction is an experimental loopback task; its first paired smoke failed at host exit, and server acceptance does not by itself prove browser use by arbitrary adapters.
 - Latest release package build/check/lifecycle passed on darwin/arm64; the exact extension ID is registered and Hotload is refreshed. Extension reload and dedicated example.com pairing, Codex refresh for direct-client qualification, and live account-bound qualification for Classroom/Slides, Canva, and CapCut remain pending.
 - The verifier and actor outcomes are now stored separately, as required by their distinct provenance. A corrected three-pair diagnostic produced 2/3 Controlla app acceptances and 1/3 client completions, versus Playwright 3/3 and 2/3; this is too small to establish a higher rate. Run the corrected 30-pair cohort before reporting the application acceptance rate.
+
+### 2026-11-05 speed-and-safety continuation
+
+- No paired, live end-to-end timing cohort was run; “significantly faster” is not established. The 30-matched-run target remains open.
+- `close_owned` is provenance-guarded, but automatic task-local tab ownership/retention tracking is not implemented. Existing or user-owned tabs cannot be cleaned up from screenshot evidence.
+- Named-client qualification is not run: Claude Code is unavailable, while Freebuff and ChatGPT Desktop require interactive host drivers.
+- Live Google inspection is limited to `praketg1@gmail.com`; only the personal Gmail account marker and a Sent row were reconciled. Classroom, Slides, and Forms were not opened because the tab inventory did not prove their signed-in account. No sending, posting, or other Google write was performed in this continuation.

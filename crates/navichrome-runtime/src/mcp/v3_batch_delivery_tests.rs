@@ -5017,7 +5017,7 @@ async fn shared_extension_marked_control_defaults_to_verified_trusted_fast_keys(
                 break;
             }
         });
-        eval(r##"document.body.innerHTML='<span id="account">fixture-account</span><input id="file" type="file" style="display:none"><button id="upload" aria-label="Upload file">Upload file</button><button id="status" aria-label="Upload status">Waiting</button><button id="metric-click" aria-label="Metric click" aria-expanded="false" onclick="this.setAttribute(\'aria-expanded\',\'true\')">Metric click</button><a id="metric-story" href="#metric-article">Metric story</a><article id="metric-article">Extracted story body</article><input id="trusted" aria-label="Trusted keys" type="text" data-requires-trusted value="before"><input id="other" aria-label="Other" type="text">';document.querySelector('#upload').addEventListener('click',()=>document.querySelector('#file').click());document.querySelector('#file').addEventListener('change',()=>setTimeout(()=>document.querySelector('#status').innerText='Accepted',300));window.events=[];window.otherEvents=[];const input=document.querySelector('#trusted');for(const type of ['keydown','beforeinput','input','keyup'])input.addEventListener(type,event=>{window.events.push({type,trusted:event.isTrusted});if(type==='keydown'&&window.blurOnKeydown){window.blurOnKeydown=false;input.blur();document.querySelector('#other').focus();}});document.querySelector('#other').addEventListener('keyup',event=>window.otherEvents.push({type:event.type,key:event.key,trusted:event.isTrusted}));"##.into()).await;
+        eval(r##"document.body.innerHTML='<span id="account">fixture-account</span><input id="file" type="file" style="display:none"><button id="upload" aria-label="Upload file">Upload file</button><button id="status" aria-label="Upload status">Waiting</button><button id="metric-click" aria-label="Metric click" aria-expanded="false" onclick="this.setAttribute(\'aria-expanded\',\'true\')">Metric click</button><button id="metric-async" aria-label="Delayed status" onclick="setTimeout(()=>this.textContent=\'Upload saved\',500)">Wait for status</button><a id="metric-story" href="#metric-article">Metric story</a><article id="metric-article">Extracted story body</article><input id="trusted" aria-label="Trusted keys" type="text" data-requires-trusted value="before"><input id="other" aria-label="Other" type="text">';document.querySelector('#upload').addEventListener('click',()=>document.querySelector('#file').click());document.querySelector('#file').addEventListener('change',()=>setTimeout(()=>document.querySelector('#status').innerText='Accepted',300));window.events=[];window.otherEvents=[];const input=document.querySelector('#trusted');for(const type of ['keydown','beforeinput','input','keyup'])input.addEventListener(type,event=>{window.events.push({type,trusted:event.isTrusted});if(type==='keydown'&&window.blurOnKeydown){window.blurOnKeydown=false;input.blur();document.querySelector('#other').focus();}});document.querySelector('#other').addEventListener('keyup',event=>window.otherEvents.push({type:event.type,key:event.key,trusted:event.isTrusted}));"##.into()).await;
         let receipt_url_js = serde_json::to_string(&receipt_url).unwrap();
         eval(format!("document.querySelector('#file').addEventListener('change',()=>{{const f=document.querySelector('#file').files[0];fetch({receipt_url_js},{{method:'POST',mode:'no-cors',headers:{{'Content-Type':'text/plain'}},body:f}})}});")).await;
         let download_url_js = serde_json::to_string(&download_url).unwrap();
@@ -5286,10 +5286,24 @@ async fn shared_extension_marked_control_defaults_to_verified_trusted_fast_keys(
         assert_eq!(accepted["accepted"],true);
         let download_only=std::env::var_os("NAVICHROME_SHARED_DOWNLOAD_ONLY").is_some();
         if !download_only {
+        let delayed_snapshot=client.call_tool(call("snapshot",json!({"session_id":session,"chrome_tab_id":"123"}))).await.unwrap().structured_content.unwrap();
+        let delayed_ref=delayed_snapshot["items"].as_array().unwrap().iter().find(|item|item["name"]=="Delayed status").unwrap()["reference"].clone();
+        let delayed_click=client.call_tool(call("act",json!({"session_id":session,"chrome_tab_id":"123","action":"click","reference":delayed_ref,"outcome":{"kind":"text","selector":"#metric-async","text":"Upload saved"},"timeout_ms":3000}))).await.unwrap().structured_content.unwrap();
+        assert_eq!(delayed_click["status"],"verified","asynchronous text postconditions must be polled within the caller's bounded timeout: {delayed_click}");
+        assert_eq!(delayed_click["verification"]["observed"]["text_present"],true,"{delayed_click}");
+        if std::env::var_os("NAVICHROME_SHARED_TEXT_OUTCOME_ONLY").is_some() {
+            proxy.abort(); let _=proxy.await;
+            receipt_server.abort(); let _=receipt_server.await;
+            let _=client.cancel().await;
+            server_task.abort(); let _=server_task.await;
+            return;
+        }
         let snapshot=client.call_tool(call("snapshot",json!({"session_id":session,"chrome_tab_id":"123"}))).await.unwrap().structured_content.unwrap();
         let target_ref=snapshot["items"].as_array().unwrap().iter().find(|item|item["name"]=="Trusted keys").unwrap()["reference"].clone();
         let clicked=client.call_tool(call("act",json!({"session_id":session,"chrome_tab_id":"123","action":"click","reference":target_ref,"outcome":{"kind":"focused"}}))).await.unwrap().structured_content.unwrap();
-        assert_eq!(clicked["status"],"verified","{clicked}");
+        assert_eq!(clicked["status"],"not_dispatched","protected input focus must fail closed: {clicked}");
+        assert_eq!(clicked["reason_code"],"sensitive_or_trusted_target","{clicked}");
+        assert_eq!(clicked["dispatch_may_have_occurred"],false,"{clicked}");
         let metric_snapshot=client.call_tool(call("snapshot",json!({"session_id":session,"chrome_tab_id":"123"}))).await.unwrap().structured_content.unwrap();
         let metric_click_ref=metric_snapshot["items"].as_array().unwrap().iter().find(|item|item["name"]=="Metric click").unwrap()["reference"].clone();
         let click_start=host_round_trips.load(Ordering::Relaxed);
@@ -5769,7 +5783,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     assert_eq!(filled_form["receipts"][0]["status"], "verified", "{filled_form}");
     assert_eq!(filled_form["receipts"][0]["completed_fields"], 2, "{filled_form}");
     let stale_reuse = super::workflow_fill_form(&app, &super::V3WorkflowArgs {
-        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
+        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, mutation_authority:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
     }, vec![super::V3WorkflowFillField { reference:name_ref.as_str().unwrap().into(), expected_value:"form".into(), value:"replayed".into(), select:false }], &std::collections::BTreeMap::new()).await;
     assert!(stale_reuse.is_err(), "a separate workflow must not reuse a consumed snapshot generation");
     let compiled_snapshot = client.call_tool(call("snapshot", json!({"session_id":session_id,"chrome_tab_id":target_id}))).await.unwrap().structured_content.unwrap();
@@ -5850,7 +5864,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
         })).await.unwrap();
     }
     let hidden_fill = super::workflow_fill_form(&app, &super::V3WorkflowArgs {
-        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
+        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, mutation_authority:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
     }, vec![super::V3WorkflowFillField {
         reference:guarded_ref, expected_value:"tasked".into(), value:"must-not-fill".into(), select:false,
     }], &std::collections::BTreeMap::new()).await.unwrap();
@@ -5879,7 +5893,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
         })).await.unwrap();
     }
     let readback_mismatch = super::workflow_fill_form(&app, &super::V3WorkflowArgs {
-        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
+        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, mutation_authority:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
     }, vec![super::V3WorkflowFillField {
         reference:post_guard_ref, expected_value:"tasked".into(), value:"rewrite-me".into(), select:false,
     }], &std::collections::BTreeMap::new()).await.unwrap();
@@ -5913,7 +5927,7 @@ fn v3_headless_launch_list_snapshot_fill_verify_and_release() {
     let first_field_ref = before_cross_field["items"].as_array().unwrap().iter().find(|item|item["name"]=="Name").unwrap()["reference"].as_str().unwrap().to_owned();
     let second_field_ref = before_cross_field["items"].as_array().unwrap().iter().find(|item|item["name"]=="Next").unwrap()["reference"].as_str().unwrap().to_owned();
     let cross_field_change = super::workflow_fill_form(&app, &super::V3WorkflowArgs {
-        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
+        session_id:session_id.clone(), chrome_tab_id:target_id.clone(), operation_id:None, cancel:false, steps:vec![], program:None, client_id:None, mutation_authority:None, dag:None, max_bytes:None, max_bytes_reason:None, retain_text_evidence:false,
     }, vec![
         super::V3WorkflowFillField { reference:first_field_ref, expected_value:"first-before".into(), value:"first-after".into(), select:false },
         super::V3WorkflowFillField { reference:second_field_ref, expected_value:"second-before".into(), value:"second-after".into(), select:false },

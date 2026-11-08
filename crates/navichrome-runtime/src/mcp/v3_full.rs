@@ -1384,6 +1384,7 @@ mod route_telemetry_tests {
             steps,
             program,
             client_id: None,
+            mutation_authority: None,
             dag,
             max_bytes: None,
             retain_text_evidence: false,
@@ -2972,16 +2973,26 @@ impl AppV3 {
             let encode = |value: serde_json::Value| {
                 serde_json::to_string(&value).unwrap_or_else(|_| "null".to_owned())
             };
-            let expression = include_str!("../shared_page/background_action_registry.js")
-                .replace("__TOKEN__", &encode(json!(token)))
-                .replace("__INDEX__", &index.to_string())
-                .replace("__ACTION_NAME__", &encode(json!(action)))
-                .replace("__EXPECTED__", &encode(json!(args.expected_value)))
-                .replace("__NEXT__", &encode(json!(args.value)))
-                .replace("__KEY__", &encode(json!(args.key)))
-                .replace("__OUTCOME__", &encode(json!(outcome_kind)))
-                .replace("__LABEL__", &encode(json!(args.expected_label)))
-                .replace("__ACTION__", include_str!("../shared_page/background_action.js"));
+            let authority = args
+                .mutation_authority
+                .as_ref()
+                .map(V3MutationAuthority::value)
+                .unwrap_or(Value::Null);
+            let expression = replace_template_markers(
+                include_str!("../shared_page/background_action_registry.js"),
+                &[
+                    ("__TOKEN__", encode(json!(token))),
+                    ("__INDEX__", index.to_string()),
+                    ("__ACTION_NAME__", encode(json!(action))),
+                    ("__EXPECTED__", encode(json!(args.expected_value))),
+                    ("__NEXT__", encode(json!(args.value))),
+                    ("__KEY__", encode(json!(args.key))),
+                    ("__OUTCOME__", encode(json!(outcome_kind))),
+                    ("__LABEL__", encode(json!(args.expected_label))),
+                    ("__AUTHORITY__", encode(authority)),
+                    ("__ACTION__", include_str!("../shared_page/background_action.js").to_owned()),
+                ],
+            );
             let response = connection
                 .command(
                     live.registry().ok()?,
@@ -3002,7 +3013,8 @@ impl AppV3 {
             "objectId":snapshot.object_id,
             "functionDeclaration":include_str!("../shared_page/background_action.js"),
             "arguments":[{"value":index},{"value":action},{"value":args.expected_value},
-                {"value":args.value},{"value":args.key},{"value":outcome_kind},{"value":args.expected_label}], "returnByValue":true,"awaitPromise":true
+                {"value":args.value},{"value":args.key},{"value":outcome_kind},{"value":args.expected_label},
+                {"value":args.mutation_authority.as_ref().map(V3MutationAuthority::value)}], "returnByValue":true,"awaitPromise":true
         })).await;
         let result = match response {
             Ok(response) => match super::super::shared_value(&response) {
@@ -3727,6 +3739,39 @@ fn click_outcome_basis(outcome: Option<&BrowserClickOutcome>) -> &'static str {
     }
 }
 
+fn replace_template_markers(template: &str, replacements: &[(&str, String)]) -> String {
+    let mut output = String::with_capacity(template.len());
+    let mut remaining = template;
+    while let Some((index, marker, value)) = replacements
+        .iter()
+        .filter_map(|(marker, value)| remaining.find(marker).map(|index| (index, *marker, value)))
+        .min_by_key(|(index, _, _)| *index)
+    {
+        output.push_str(&remaining[..index]);
+        output.push_str(value);
+        remaining = &remaining[index + marker.len()..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+#[cfg(test)]
+mod template_marker_tests {
+    use super::replace_template_markers;
+
+    #[test]
+    fn inserted_values_are_never_reinterpreted_as_template_markers() {
+        let value = replace_template_markers(
+            "prefix __FIRST__ then __SECOND__",
+            &[
+                ("__FIRST__", "literal __SECOND__".to_owned()),
+                ("__SECOND__", "replaced".to_owned()),
+            ],
+        );
+        assert_eq!(value, "prefix literal __SECOND__ then replaced");
+    }
+}
+
 fn click_outcome_not_observed_reason(outcome: Option<&BrowserClickOutcome>) -> Value {
     match outcome {
         Some(BrowserClickOutcome::Navigation { .. }) => json!("navigation_not_observed"),
@@ -4130,6 +4175,12 @@ struct V3BrowserArgs {
     evidence_limit: Option<usize>,
     encoding: Option<String>,
     client_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
+        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
+    )]
+    mutation_authority: Option<V3MutationAuthority>,
     #[schemars(description = "Required for open.")]
     idempotency_key: Option<String>,
     #[schemars(description = "one call")]
@@ -4271,6 +4322,12 @@ struct V3ActArgs {
         description = "The words this click intends to press, for example Insert. The guard refuses only when those words are not on the element under the pointer; omit it for coordinate and visual clicks."
     )]
     expected_label: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
+        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
+    )]
+    mutation_authority: Option<V3MutationAuthority>,
     #[schemars(
         description = "Fresh @cN reference, or an exact role/name such as link ‘Buffalo Bills’ resolved on the selected tab before the action."
     )]
@@ -4344,6 +4401,7 @@ impl V3ActArgs {
             desktop_mode: None,
             expected_visual_revision: None,
             expected_label: None,
+            mutation_authority: args.mutation_authority.clone(),
             expected_value: None,
             value: None,
             allow_password: None,
@@ -4372,6 +4430,89 @@ impl V3ActArgs {
             end_distance: None,
         }
     }
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct V3MutationAuthority {
+    action: String,
+    account: V3MutationUiCheck,
+    destination: V3MutationUiCheck,
+    objects: Vec<V3MutationUiCheck>,
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct V3MutationUiCheck {
+    selector: String,
+    expected: String,
+}
+
+impl V3MutationAuthority {
+    fn validate(&self, label: &str) -> Result<(), &'static str> {
+        let action = self.action.trim().to_ascii_lowercase();
+        let label = mutation_action(label);
+        if !matches!(action.as_str(), "send" | "post" | "publish" | "submit" | "delete" | "remove" | "share")
+            || label != Some(action.as_str()) || self.objects.is_empty() || self.objects.len() > 4
+        {
+            return Err("mutation authority action or object scope does not match the click");
+        }
+        for check in std::iter::once(&self.account).chain(std::iter::once(&self.destination)).chain(self.objects.iter()) {
+            if check.selector.trim().is_empty() || check.selector.len() > 512 || check.selector.chars().any(char::is_control)
+                || check.expected.trim().is_empty() || check.expected.len() > 512 || check.expected.chars().any(char::is_control)
+            {
+                return Err("mutation authority requires bounded selectors and exact expected text");
+            }
+        }
+        Ok(())
+    }
+
+    fn value(&self) -> Value {
+        serde_json::to_value(self).unwrap_or(Value::Null)
+    }
+}
+
+fn consequential_click_label(label: Option<&str>) -> bool {
+    label.is_some_and(|label| mutation_action(label).is_some())
+}
+
+fn mutation_action(label: &str) -> Option<&'static str> {
+    match label.split_whitespace().next()?.to_ascii_lowercase().as_str() {
+        "send" => Some("send"),
+        "post" => Some("post"),
+        "publish" => Some("publish"),
+        "submit" => Some("submit"),
+        "delete" => Some("delete"),
+        "remove" => Some("remove"),
+        "share" => Some("share"),
+        _ => None,
+    }
+}
+
+fn mutation_authority_refusal(args: &V3ActArgs, label: Option<&str>) -> Option<Value> {
+    let label = match label {
+        Some(label) => mutation_action(label),
+        None if args.mutation_authority.is_some() => {
+            return Some(json!({"status":"not_dispatched","verified":false,"effect_verified":false,
+                "action":args.action,"reason_code":"mutation_target_label_unavailable","dispatch_acknowledged":false,
+                "dispatch_may_have_occurred":false,"replay_safe":true,
+                "next_action":"refresh the target and provide its exact label before dispatch"}));
+        }
+        None => None,
+    };
+    let label = label?;
+    let authority = args.mutation_authority.as_ref();
+    let reason = match authority {
+        None if consequential_click_label(Some(label)) => Some("mutation_authority_required"),
+        Some(authority) if consequential_click_label(Some(label)) && authority.validate(label).is_err() => Some("mutation_authority_invalid"),
+        _ => None,
+    }?;
+    Some(json!({
+        "status":"not_dispatched","verified":false,"effect_verified":false,
+        "action":args.action,"reason_code":reason,"dispatch_acknowledged":false,
+        "dispatch_may_have_occurred":false,"replay_safe":true,
+        "next_action":"refresh the exact account, destination, object, and action evidence before dispatch"
+    }))
 }
 
 #[derive(Clone, serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -4403,6 +4544,12 @@ struct V3WorkflowArgs {
     #[serde(default)]
     program: Option<Vec<V3WorkflowOp>>,
     client_id: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
+        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
+    )]
+    mutation_authority: Option<V3MutationAuthority>,
     #[serde(default)]
     dag: Option<Vec<V3WorkflowDagNode>>,
     #[serde(default)]
@@ -4465,6 +4612,12 @@ struct V3TaskArgs {
     task: crate::v3_tasks::TaskPrimitive,
     client_id: Option<String>,
     account_marker: Option<super::SecureAccountMarker>,
+    #[serde(default)]
+    #[schemars(
+        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
+        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
+    )]
+    mutation_authority: Option<V3MutationAuthority>,
     #[schemars(
         description = "Optional key for explicit-tab Research or guarded fill/click/save tasks with exact live postconditions; stores write-ahead mutation markers and digests, never page content. Unresolved click/save markers require reconciliation and are never replayed."
     )]
@@ -13949,6 +14102,7 @@ async fn shared_browser_download_lifecycle(
             chrome_tab_id: tab_id.to_owned(),
             action: "click".into(),
             reference: Some(short_ref.to_owned()),
+            mutation_authority: None,
             expected_value: None,
             value: None,
             key: None,
@@ -14275,6 +14429,30 @@ fn resolve_workflow_predicate(
                 }
                 "google_classroom_attachment_v1" => {
                     for key in ["account", "class", "assignment", "attachment"] {
+                        if let Some(object) = predicate.get_mut(key).and_then(Value::as_object_mut)
+                            && let Some(reference) = object
+                                .get("reference")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        {
+                            object.insert("reference".into(), json!(resolve(reference)?));
+                        }
+                    }
+                }
+                "google_classroom_post_v1" => {
+                    for key in ["account", "class", "post", "attachment"] {
+                        if let Some(object) = predicate.get_mut(key).and_then(Value::as_object_mut)
+                            && let Some(reference) = object
+                                .get("reference")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        {
+                            object.insert("reference".into(), json!(resolve(reference)?));
+                        }
+                    }
+                }
+                "google_gmail_sent_attachment_v1" => {
+                    for key in ["account", "recipient", "subject", "attachment"] {
                         if let Some(object) = predicate.get_mut(key).and_then(Value::as_object_mut)
                             && let Some(reference) = object
                                 .get("reference")
@@ -16058,6 +16236,8 @@ async fn block_type(app: &AppV3, args: &V3ActArgs) -> Result<Value, rmcp::ErrorD
             value: Some(final_value),
             expected_origin: None,
             account_marker: None,
+            expected_label: None,
+            mutation_authority: None,
             outcome: None,
             timeout_ms: args.timeout_ms,
         },
@@ -18803,6 +18983,7 @@ impl AppV3 {
                 chrome_tab_id: tab_id.to_owned(),
                 action: "page_tool".into(),
                 reference: None,
+                mutation_authority: None,
                 expected_value: None,
                 value: None,
                 allow_password: None,
@@ -19010,6 +19191,7 @@ impl AppV3 {
                     chrome_tab_id: tab_id.to_owned(),
                     action: "fill".into(),
                     reference: Some(field.reference.clone()),
+                    mutation_authority: None,
                     expected_value: Some(field.expected_value.clone()),
                     value: Some(field.value.clone()),
                     allow_password: None,
@@ -19068,6 +19250,7 @@ impl AppV3 {
                     chrome_tab_id: tab_id.to_owned(),
                     action: "click".into(),
                     reference: Some(control.reference.clone()),
+                    mutation_authority: None,
                     expected_value: None,
                     value: None,
                     allow_password: None,
@@ -19256,6 +19439,7 @@ impl AppV3 {
                     chrome_tab_id: tab_id.to_owned(),
                     action: "click".into(),
                     reference: Some(reference.clone()),
+                    mutation_authority: None,
                     expected_value: None,
                     value: None,
                     allow_password: None,
@@ -19432,6 +19616,7 @@ impl AppV3 {
                         chrome_tab_id: tab_id.to_owned(),
                         action: "fill".into(),
                         reference: Some(reference.clone()),
+                        mutation_authority: None,
                         expected_value: Some(expected_value.clone()),
                         value: Some(value.clone()),
                         allow_password: None,
@@ -19477,6 +19662,7 @@ impl AppV3 {
                         chrome_tab_id: tab_id.to_owned(),
                         action: "click".into(),
                         reference: Some(reference.clone()),
+                        mutation_authority: None,
                         expected_value: None,
                         value: None,
                         expected_origin: None,
@@ -20330,6 +20516,7 @@ impl AppV3 {
                         steps: args.steps.take().unwrap_or_default(),
                         program: args.program.take(),
                         client_id: args.client_id.clone(),
+                        mutation_authority: args.mutation_authority.clone(),
                         dag: None,
                         max_bytes: args.max_bytes,
                         max_bytes_reason: args.max_bytes_reason.clone(),
@@ -20487,6 +20674,7 @@ impl AppV3 {
                     task,
                     client_id: args.client_id,
                     account_marker: args.account_marker,
+                    mutation_authority: args.mutation_authority.clone(),
                     resume_key: args.resume_key,
                 }))
                 .await;
@@ -21492,6 +21680,7 @@ impl AppV3 {
                         steps,
                         program: args.program,
                         client_id: args.client_id,
+                        mutation_authority: args.mutation_authority.clone(),
                         dag: None,
                         max_bytes: None,
                         max_bytes_reason: None,
@@ -22065,6 +22254,7 @@ impl AppV3 {
                     steps,
                     program: None,
                     client_id: args.client_id,
+                    mutation_authority: args.mutation_authority.clone(),
                     dag: None,
                     max_bytes: args.max_bytes,
                     max_bytes_reason: args.max_bytes_reason,
@@ -22665,7 +22855,23 @@ impl AppV3 {
                     semantic_widget_pointer(self, &args, &item, None, true, None, None).await
                 }
                 "click" | "double_click" | "context_click" | "touch" => {
+                    let reference = args.reference.as_deref();
+                    let item = if let Some(reference) = reference {
+                        self.core.semantic.lock().await
+                            .get(&super::tab_key(&args.session_id, &args.chrome_tab_id))
+                            .and_then(|state| state.page_ordered_items().into_iter().find(|item| item["reference"] == reference))
+                            .cloned()
+                    } else { None };
+                    let target_label = args.expected_label.as_deref().or_else(|| item.as_ref().and_then(|item| item["name"].as_str()));
+                    if let Some(refusal) = mutation_authority_refusal(&args, target_label) {
+                        return Ok(refusal);
+                    }
                     if args.reference.is_none() {
+                        if args.expected_label.is_none() {
+                            return Ok(json!({"status":"not_dispatched","action":args.action,
+                                "reason_code":"click_label_required","dispatch_may_have_occurred":false,
+                                "next_action":"use a fresh semantic reference or provide the exact label for a guarded coordinate click"}));
+                        }
                         let (Some(x), Some(y)) = (args.center_x, args.center_y) else {
                             return Err(invalid("click requires either a fresh reference or center_x and center_y"));
                         };
@@ -22677,26 +22883,21 @@ impl AppV3 {
                             .as_deref()
                             .is_some_and(|reference| reference.starts_with("@f:"))
                     {
+                        if args.mutation_authority.is_some() {
+                            return Ok(json!({"status":"not_dispatched","action":"click",
+                                "reason_code":"mutation_authority_frame_route_unsupported","dispatch_may_have_occurred":false,
+                                "next_action":"use a root-document target so account, destination, and object evidence can be checked before dispatch"}));
+                        }
                         return click_frame_reference(self, &args).await;
                     }
                     if background_mutation && matches!(args.action.as_str(), "click" | "double_click" | "context_click") {
-                        let reference = args.reference.as_deref().ok_or_else(|| invalid("click requires reference"))?;
-                        let item = self.core.semantic.lock().await
-                            .get(&super::tab_key(&args.session_id, &args.chrome_tab_id))
-                            .and_then(|state| state.page_ordered_items().into_iter().find(|item| item["reference"] == reference))
-                            .cloned();
+                        let reference = reference.ok_or_else(|| invalid("click requires reference"))?;
                         let outcome = browser_click_outcome_for_observed_target(
                             args.outcome.take(),
                             item.as_ref(),
                         );
                         return Box::pin(self.background_dom_action(&args, reference, outcome.as_ref())).await;
                     }
-                    let item = if let Some(reference) = args.reference.as_deref() {
-                        self.core.semantic.lock().await
-                            .get(&super::tab_key(&args.session_id, &args.chrome_tab_id))
-                            .and_then(|state| state.page_ordered_items().into_iter().find(|item| item["reference"] == reference))
-                            .cloned()
-                    } else { None };
                     let outcome = browser_click_outcome_for_observed_target(
                         args.outcome.take().or_else(|| {
                             crate::guard_reason::unrestricted_mode()
@@ -22723,6 +22924,8 @@ impl AppV3 {
                         account_marker: None,
                         outcome: outcome.clone(),
                         timeout_ms: args.timeout_ms,
+                        expected_label: target_label.map(str::to_owned),
+                        mutation_authority: args.mutation_authority.as_ref().map(V3MutationAuthority::value),
                     })).await.map(|Json(v)| v)
                 }
                 "fill" if args.reference.as_deref().is_some_and(|reference| reference.starts_with("@f:")) => {
@@ -22733,7 +22936,8 @@ impl AppV3 {
                     self.core.browser_act(Parameters(BrowserActArgs {
                         session_id: args.session_id.clone(), chrome_tab_id: args.chrome_tab_id.clone(), action: "secure_fill".into(),
                         reference: Some(reference.to_owned()), expected_value: None, value: args.value.take(),
-                        expected_origin: args.expected_origin.take(), account_marker: args.account_marker.take(), outcome: None, timeout_ms: args.timeout_ms,
+                        expected_origin: args.expected_origin.take(), account_marker: args.account_marker.take(),
+                        expected_label: None, mutation_authority: None, outcome: None, timeout_ms: args.timeout_ms,
                     })).await.map(|Json(value)| value)
                 }
                 "fill" | "select" | "slider" => {
@@ -22762,6 +22966,8 @@ impl AppV3 {
                             value: args.value.clone(),
                             expected_origin: None,
                             account_marker: None,
+                            expected_label: None,
+                            mutation_authority: None,
                             outcome: None,
                             timeout_ms: args.timeout_ms,
                         },
@@ -23850,6 +24056,7 @@ impl AppV3 {
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "fill".into(),
                             reference: Some(start_ref.clone()),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: Some(start_expected),
                             value: Some(start.to_owned()),
                             allow_password: None,
@@ -23912,6 +24119,7 @@ impl AppV3 {
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "fill".into(),
                             reference: Some(end_ref.clone()),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: Some(end_expected),
                             value: Some(end.to_owned()),
                             allow_password: None,
@@ -24024,6 +24232,7 @@ impl AppV3 {
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "click".into(),
                             reference: Some(node),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: None,
                             value: None,
                             allow_password: None,
@@ -24076,6 +24285,7 @@ impl AppV3 {
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: action.into(),
                         reference: Some(reference.clone()),
+                        mutation_authority: args.mutation_authority.clone(),
                         expected_value: (!is_click).then_some(expected),
                         value: (!is_click).then_some(desired.clone()),
                         allow_password: None,
@@ -24160,6 +24370,7 @@ impl AppV3 {
                             chrome_tab_id: args.chrome_tab_id.clone(),
                             action: "click".into(),
                             reference: Some(option),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: None,
                             value: None,
                             allow_password: None,
@@ -24676,6 +24887,7 @@ impl AppV3 {
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: "click".into(),
                         reference: Some(reference),
+                        mutation_authority: args.mutation_authority.clone(),
                         expected_value: None,
                         value: None,
                         key: None,
@@ -24789,6 +25001,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "scroll".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: None,
                     value: None,
                     key: None,
@@ -24830,6 +25043,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "scroll_to".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: None,
                     value: None,
                     key: None,
@@ -25066,6 +25280,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "fill".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: Some(expected_value),
                     value: Some(value),
                     key: None,
@@ -25112,6 +25327,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "select".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: Some(expected_value),
                     value: Some(value),
                     key: None,
@@ -25162,6 +25378,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "type".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: Some(expected_value),
                     value: Some(value),
                     key: None,
@@ -25204,6 +25421,7 @@ impl AppV3 {
                     chrome_tab_id: args.chrome_tab_id.clone(),
                     action: "press".into(),
                     reference: Some(reference),
+                    mutation_authority: args.mutation_authority.clone(),
                     expected_value: None,
                     value: None,
                     key: Some(key),
@@ -25380,6 +25598,7 @@ impl AppV3 {
                         chrome_tab_id: args.chrome_tab_id.clone(),
                         action: "page_tool".into(),
                         reference: None,
+                        mutation_authority: args.mutation_authority.clone(),
                         expected_value: None,
                         value: None,
                         key: None,
@@ -25599,6 +25818,7 @@ impl AppV3 {
                     let base_session = args.session_id.clone();
                     let client_id = args.client_id.clone();
                     let operation_id = args.operation_id.clone();
+                    let mutation_authority = args.mutation_authority.clone();
                     let signature = dag_node_signature(&args.session_id, &node.steps);
                     async move {
                         let node_started = std::time::Instant::now();
@@ -25610,6 +25830,7 @@ impl AppV3 {
                             steps: node.steps,
                             program: None,
                             client_id,
+                            mutation_authority,
                             dag: None,
                             max_bytes: None,
                             max_bytes_reason: None,
@@ -25669,6 +25890,7 @@ impl AppV3 {
                         steps: node.steps,
                         program: None,
                         client_id: args.client_id.clone(),
+                        mutation_authority: args.mutation_authority.clone(),
                         dag: None,
                         max_bytes: None,
                         max_bytes_reason: None,
@@ -26105,6 +26327,7 @@ impl AppV3 {
                 steps: Vec::new(),
                 program: Some(ops),
                 client_id: args.client_id.clone(),
+                mutation_authority: args.mutation_authority.clone(),
                 dag: None,
                 max_bytes: args.max_bytes,
                 max_bytes_reason: args.max_bytes_reason.clone(),
@@ -27542,6 +27765,7 @@ impl AppV3 {
                             chrome_tab_id: active_tab_id.clone(),
                             action: "fill".into(),
                             reference: Some(reference.clone()),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: Some(expected_value),
                             value: Some(value.clone()),
                             key: None,
@@ -27629,6 +27853,7 @@ impl AppV3 {
                             chrome_tab_id: active_tab_id.clone(),
                             action: "click".into(),
                             reference: Some(reference.clone()),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: None,
                             value: None,
                             key: None,
@@ -27690,6 +27915,7 @@ impl AppV3 {
                             chrome_tab_id: active_tab_id.clone(),
                             action: "click".into(),
                             reference: Some(control.reference.clone()),
+                            mutation_authority: args.mutation_authority.clone(),
                             expected_value: None,
                             value: None,
                             key: None,

@@ -256,18 +256,26 @@ pub(super) async fn verify_click_outcome(
     let Some(predicate) = click_outcome_predicate(outcome) else {
         return false;
     };
-    match verify_impl(
-        &app.core,
-        &BrowserVerifyArgs {
-            session_id: args.session_id.clone(),
-            chrome_tab_id: args.chrome_tab_id.clone(),
-            predicate,
-        },
-    )
-    .await
-    {
-        Ok(value) => super::workflow_verification_passed(&value),
-        Err(_) => false,
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_millis(args.timeout_ms.unwrap_or(3_000).clamp(1_000, 10_000));
+    loop {
+        if verify_impl(
+            &app.core,
+            &BrowserVerifyArgs {
+                session_id: args.session_id.clone(),
+                chrome_tab_id: args.chrome_tab_id.clone(),
+                predicate: predicate.clone(),
+            },
+        )
+        .await
+        .is_ok_and(|value| super::workflow_verification_passed(&value))
+        {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
 

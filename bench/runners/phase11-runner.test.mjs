@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { analyzePaired, evaluateClaimGate } from '../analysis/phase11-analysis.mjs';
@@ -62,6 +64,32 @@ test('validateAdapterResult rejects identity drift', async () => {
   assert.throws(() => validateAdapterResult(result, contract, {
     adapter: 'controlla', task_id: 'task', mode: 'cold_browser', execution_mode: 'headless', concurrency: 1
   }), /identity/);
+});
+
+test('Codex final response diagnostics accept only redacted outcome kinds', async () => {
+  const contract = await loadAdapterContract();
+  const result = completeMetricResult(contract);
+  result.codex_final_kind = 'failed';
+  assert.doesNotThrow(() => validateAdapterResult(result, contract, {
+    adapter: 'controlla', task_id: 'task', mode: 'cold_browser', execution_mode: 'headless', concurrency: 1
+  }));
+  result.codex_final_kind = 'private response text';
+  assert.throws(() => validateAdapterResult(result, contract, {
+    adapter: 'controlla', task_id: 'task', mode: 'cold_browser', execution_mode: 'headless', concurrency: 1
+  }), /codex_final_kind is invalid/);
+});
+
+test('upload confirmation diagnostics accept only redacted contract outcomes', async () => {
+  const contract = await loadAdapterContract();
+  const result = completeMetricResult(contract);
+  result.upload_confirmation_status = 'verified';
+  assert.doesNotThrow(() => validateAdapterResult(result, contract, {
+    adapter: 'controlla', task_id: 'task', mode: 'cold_browser', execution_mode: 'headless', concurrency: 1
+  }));
+  result.upload_confirmation_status = 'private receipt text';
+  assert.throws(() => validateAdapterResult(result, contract, {
+    adapter: 'controlla', task_id: 'task', mode: 'cold_browser', execution_mode: 'headless', concurrency: 1
+  }), /upload_confirmation_status is invalid/);
 });
 
 test('metric evidence accepts complete observed values including measured zero', async () => {
@@ -139,7 +167,7 @@ test('runner resets, independently verifies, preserves paired failures, and emit
     deadlineMs: 5000
   });
   assert.equal(report.schema_version, 2);
-  assert.deepEqual(report.randomization, { method: 'seeded_paired_order', seed: 20261015 });
+  assert.deepEqual(report.randomization, { method: 'seeded_counterbalanced_paired_order', seed: 20261015 });
   assert.equal(report.candidate_adapter, 'controlla');
   assert.equal(report.baseline_adapter, 'playwright-mcp');
   assert.deepEqual(checkpointed, report.paired_rows);
@@ -225,6 +253,29 @@ test('paired trial ordering is reproducible and randomized from the matrix order
   assert.deepEqual(first.paired_rows.map(row => [row.task_id, row.mode, row.execution_mode]), second.paired_rows.map(row => [row.task_id, row.mode, row.execution_mode]));
   assert.notDeepEqual(first.paired_rows.slice(0, 5).map(row => [row.task_id, row.mode, row.execution_mode]),
     (await loadPhase11Config()).tasks.slice(0, 5).map(task => [task.id, 'cold_browser']));
+});
+
+test('paired adapter order is counterbalanced for each task', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'phase11-counterbalance-'));
+  try {
+    const config=await loadPhase11Config();
+    config.tasks=config.tasks.slice(0,1);
+    config.modes=['cold_browser'];
+    config.execution_modes=['headless'];
+    config.concurrency=[1];
+    const configPath=join(dir,'config.json');
+    await writeFile(configPath,JSON.stringify(config));
+    const report=await runBenchmark({
+      baselineId:'playwright-mcp',fixtureBaseUrl:'https://fixtures.example.test/',
+      commands:{controlla:adapter('controlla',80,1),'playwright-mcp':adapter('playwright-mcp',120,3)},
+      resetCommand:reset,verifierCommand:verifier,environment,configPath,
+      modes:['cold_browser'],executionModes:['headless'],concurrencyLevels:[1],
+      repetitions:4,warmupRepetitions:0,deadlineMs:5000,
+    });
+    assert.equal(report.randomization.method,'seeded_counterbalanced_paired_order');
+    assert.equal(report.paired_rows.filter(row=>row.candidate_order==='first').length,2);
+    assert.equal(report.paired_rows.filter(row=>row.candidate_order==='second').length,2);
+  } finally { await rm(dir,{recursive:true,force:true}); }
 });
 
 test('warmup trials are recorded separately from measured paired trials', async () => {

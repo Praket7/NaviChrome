@@ -248,7 +248,7 @@ export function openTelemetry({ created = false, windowCreated = false, reuseKin
 // Receipts used for reuse must be written before the result is returned, so a
 // client or worker restart retries the same idempotency key against the same
 // tab instead of creating a second one.
-export function aliasReceipt(existing, { key, url, active = false, createdMs = Date.now() } = {}) {
+export function aliasReceipt(existing, { key, url, active = false, createdMs = Date.now(), requestLeaseId } = {}) {
   return {
     status: "complete",
     tab_id: String(existing.tab_id),
@@ -261,6 +261,7 @@ export function aliasReceipt(existing, { key, url, active = false, createdMs = D
     reused_background_window: true,
     reused_open_tab: true,
     alias_of: existing.keys?.[0] ?? null,
+    request_lease_id: requestLeaseId,
     durability: existing.durability ?? TabDurability.EPHEMERAL,
     created_ms: createdMs,
     last_used_ms: createdMs,

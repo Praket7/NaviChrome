@@ -17,21 +17,19 @@ proves the outcome. Start a bounded goal with `browser(action="task")` and
 
 ## Speed rules
 
-Every extra tool call costs a model turn. Collapse deterministic work.
+Each call costs a model turn; collapse deterministic work.
 
-- Open the exact destination, not a homepage. One `open` with
-  `ready_when: {kind: "document_committed"}`.
-- One targeted `snapshot` with `goal` or `href_hint` beats a broad read. The
-  targeted default is 32 KiB; do not pass `max_bytes` unless it still overflows.
-- A page that rerenders after each keystroke (Gmail, Forms, Docs) invalidates
-  refs. Use one `workflow` with `find` + `fill`/`type`, or re-snapshot once
-  between fields. A unique readable match is accepted even when cross-origin
-  frames leave `scope_complete` false.
-- Upload in one call: `artifact_register`, then one `workflow` upload step.
-  `account_marker` reads visible text, `aria-label`, `title`, and `alt`, so an
-  icon button is valid evidence.
-- A timed-out `open` can leave a usable tab. Rediscover that tab before
-  retrying; never create a duplicate.
+- Open the exact URL with `ready_when: {kind: "document_committed"}`.
+- Prefer one goal- or href-targeted `snapshot` (32 KiB default) over a broad
+  read. A `max_bytes` override is only for a real overflow.
+- Gmail, Forms, and Docs may rerender after typing. Use one `workflow` with
+  `find` + `fill`/`type`; otherwise reacquire once between fields. A unique
+  readable match can pass when cross-origin frames make scope incomplete.
+- Register an artifact, then upload in one `workflow`. `account_marker` checks
+  visible text, `aria-label`, `title`, or `alt`.
+- After a timed-out `open`, rediscover before retrying; never create a duplicate.
+- Bind each write to the approved account, destination, and object. Verify the
+  required file before Send/Post. After `unknown`, inspect once; never replay.
 
 ## Execution contract
 
@@ -40,7 +38,7 @@ scroll container, and rebind. `execution_policy` defaults to
 `execution_first`; `strict` surfaces those steps. Background is default for
 click, fill, select, type, press, scroll, snapshot, and trusted keys while the
 tab or Chrome is inactive; `foreground` asks to show Chrome. Reuse the opaque
-`context`; never copy IDs. Success is compact: `status`, `context`, `result`,
+`context`; never copy IDs. Success returns `status`, `context`, `result`,
 `verified`, `trace_id`.
 
 - `not_dispatched` + `automatic_recovery`: the runtime chose the route.
@@ -54,13 +52,11 @@ tab or Chrome is inactive; `foreground` asks to show Chrome. Reuse the opaque
 
 ## Task and typing
 
-`action=task` with `mode="headless"` runs a read-only `Research` task with no session or tab IDs: NaviChrome launches, navigates, verifies, and releases per call. Form drafts, mutations, and repeat actions need an existing session. For
-multi-step work: `action=launch`, then use `target_ids[0]` directly with
-`action=task`, and pass `release_after_task: true`; skip `list` and standalone `snapshot`. `open` accepts `foreground` or `background`; page tools take `session_id`, not `mode`.
+Use `action=task` with `mode=headless` for a read-only `Research` task (no session or tab IDs). NaviChrome launches, navigates, verifies, and releases. Form drafts need an existing session. Multi-step: use `action=launch`, then `target_ids[0]` directly with `action=task`; set `release_after_task: true`; skip `list` and standalone `snapshot`. `open` accepts `foreground` and `background`; page tools take `session_id`, not `mode`.
 
-Omit `typing_mode`; NaviChrome selects insertion, keys, IME, or an editor
-adapter. Use `human_keys` for human-paced input. Canvas editors such as
-Google Docs need a visible tab in an unfocused window, never a hidden tab.
+Omit `typing_mode` to select the best insertion, key, IME, or editor route.
+Use `human_keys` for human pacing. Google Docs canvas needs a visible tab in an
+unfocused window.
 
 ## Safety
 
@@ -69,6 +65,9 @@ secret in a snapshot, workflow, trace, log, or memory; secret entry needs
 `secure_fill`, authorization, and a foreground session. Pointer input to an
 inactive user-owned tab is refused; use an observed `href` or an owned window.
 `local_unrestricted` is temporary: read `references/advanced.md` first.
+After success, close only exact NaviChrome-created tabs from this task that are
+not needed for the result. Preserve reused/user tabs and tabs with an unknown
+write; use the creation receipt and `close_owned`, never a screenshot.
 
 ## Detail
 

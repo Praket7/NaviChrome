@@ -184,6 +184,16 @@ async fn compact_v3_advertises_task_route_and_guarded_tools() {
         );
     }
     let act = schema("act");
+    for name in ["act", "browser", "workflow"] {
+        let authority = schema(name)["properties"]["mutation_authority"].clone();
+        assert!(
+            authority["type"] == "object"
+                || authority["type"]
+                    .as_array()
+                    .is_some_and(|types| types.iter().any(|kind| kind == "object")),
+            "{name} exposes mutation authority as an object"
+        );
+    }
     let snapshot_description = tools
         .tools
         .iter()

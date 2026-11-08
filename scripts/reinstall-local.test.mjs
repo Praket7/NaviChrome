@@ -28,7 +28,7 @@ test('reinstall reloads the supplied extension without bringing Chrome to the fo
     });
 
     assert.deepEqual(readFileSync(openArgs, 'utf8').trim().split('\n'), [
-      '-g', '-a', 'Google Chrome', 'chrome-extension://agefmpphbpkiklipjpgbffjjhkmlhifd/dev-reload.html',
+      '-g', '-a', 'Google Chrome', 'chrome-extension://agefmpphbpkiklipjpgbffjjhkmlhifd/dev-reload.html?close=1',
     ]);
     assert.equal(readFileSync(join(hostDir, 'navichrome')).length, readFileSync(join(root, 'target/release/navichrome')).length);
 
@@ -38,7 +38,7 @@ test('reinstall reloads the supplied extension without bringing Chrome to the fo
       stdio: 'pipe',
     });
     assert.deepEqual(readFileSync(openArgs, 'utf8').trim().split('\n'), [
-      '-g', '-a', 'Google Chrome', 'chrome-extension://agefmpphbpkiklipjpgbffjjhkmlhifd/dev-reload.html',
+      '-g', '-a', 'Google Chrome', 'chrome-extension://agefmpphbpkiklipjpgbffjjhkmlhifd/dev-reload.html?close=1',
     ]);
   } finally {
     rmSync(temp, { recursive: true, force: true });

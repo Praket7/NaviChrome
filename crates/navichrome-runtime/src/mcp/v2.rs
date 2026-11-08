@@ -251,6 +251,10 @@ struct BrowserActArgs {
     account_marker: Option<SecureAccountMarker>,
     outcome: Option<BrowserClickOutcome>,
     timeout_ms: Option<u64>,
+    #[serde(default)]
+    expected_label: Option<String>,
+    #[serde(default)]
+    mutation_authority: Option<serde_json::Value>,
 }
 
 #[derive(Clone, serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -2497,7 +2501,8 @@ async fn retained_click_once(
             timeout_ms: args.timeout_ms,
             input_mode: (args.action == "touch").then(|| "touch".to_owned()),
             click_kind: Some(args.action.as_str().to_owned()).filter(|kind| kind != "touch"),
-            expected_label: None,
+            expected_label: args.expected_label.clone(),
+            mutation_authority: args.mutation_authority.clone(),
             expected_target_revision: None,
         }))
         .await?;
@@ -3506,6 +3511,23 @@ async fn verify_impl_unmeasured(
                 )
                 .map_err(invalid)?;
                 (passed, observed, state.scope_complete)
+            } else if adapter == "google_classroom_post_v1" {
+                let (passed, observed) = crate::apps::verify_classroom_post_v1(
+                    predicate,
+                    &state.items,
+                    state.scope_complete,
+                )
+                .map_err(invalid)?;
+                (passed, observed, state.scope_complete)
+            } else if adapter == "google_gmail_sent_attachment_v1" {
+                let (passed, observed) = crate::apps::verify_google_gmail_sent_attachment_v1(
+                    predicate,
+                    &state.items,
+                    state.scope_complete,
+                    snapshot["url"].as_str().unwrap_or_default(),
+                )
+                .map_err(invalid)?;
+                (passed, observed, state.scope_complete)
             } else if adapter == "google_drive_picker_v1" {
                 let (passed, observed) = crate::apps::verify_google_drive_picker_v1(
                     predicate,
@@ -4115,6 +4137,8 @@ impl AppV2 {
                             account_marker: None,
                             outcome: None,
                             timeout_ms: None,
+                            expected_label: None,
+                            mutation_authority: None,
                         },
                         &reference,
                         false,
@@ -4141,6 +4165,8 @@ impl AppV2 {
                             account_marker: None,
                             outcome: None,
                             timeout_ms: None,
+                            expected_label: None,
+                            mutation_authority: None,
                         },
                         &reference,
                         false,
@@ -4168,6 +4194,7 @@ impl AppV2 {
                             input_mode: None,
                             click_kind: None,
                             expected_label: None,
+                            mutation_authority: None,
                             expected_target_revision: None,
                         }))
                         .await?;
