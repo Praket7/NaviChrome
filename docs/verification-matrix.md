@@ -1305,5 +1305,6 @@ The isolated simulated-extension shared-download fixture passed with identity/ep
 | --- | --- | --- |
 | Nested editor/root/semantic/frame scroll targeting | Pass, local browser fixtures | `npm run check:background-dom`: 44/44 passed; a visual point or exact semantic descriptor selects the nearest movable scroller, frame refs fail closed, stale targets do not dispatch, and only signed movement verifies. |
 | Live Google Docs scroll | Pass, read-only via Hotload NaviChrome | After reloading the native bridge/extension and refreshing Hotload NaviChrome to revision 7, a fresh visual point scroll returned `verified`; a follow-up screenshot showed the prior text in view and `Saved to Drive`. No document text changed. The older direct MCP process initially refused before dispatch. |
+| Packaged six-client MCP contracts | Pass, packaged binary | `./scripts/package-build.sh` followed by `npm run smoke:client-mcp-contracts` verified all six launch/schema handshakes against the updated exact schema fingerprints. This does not claim live behavioral client qualification. |
 
 [Probe timings and limits](audit-2026-11-20-input-reliability.md#installed-chrome-evidence)

@@ -995,3 +995,10 @@ document point binding; a follow-up screenshot showed prior document text in
 view and the Saved to Drive indicator. No document text was changed. The
 older direct MCP process first refused this action before dispatch; the live
 check passed after using the refreshed Hotload child.
+
+The first hosted run caught stale expected fingerprints in the packaged
+six-client MCP launch check after the scroll schema changed. Updated the
+shared V3 and ChatGPT Desktop schema pins to the exact built-tool hashes;
+`npm run smoke:client-mcp-contracts` now verifies all six packaged launch
+contracts. This is protocol/schema compatibility evidence, not behavioral
+qualification of six live client applications.
