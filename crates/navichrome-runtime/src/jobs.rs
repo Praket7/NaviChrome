@@ -438,6 +438,15 @@ impl Journal {
         self.get(principal, session, id)
     }
 
+    pub fn has_unresolved_operations(&self) -> Result<bool, JournalError> {
+        let connection = self.0.lock().expect("journal mutex poisoned");
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM operations WHERE status IN ('accepted','running','unknown') OR delivery='unknown')",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn get(
         &self,
         principal: &str,
@@ -556,6 +565,32 @@ fn expire_one(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn unresolved_operations_detects_only_nonterminal_or_unknown_delivery() {
+        let journal = Journal::open(":memory:").unwrap();
+        assert!(!journal.has_unresolved_operations().unwrap());
+
+        let completed = journal
+            .admit("p", "s", "completed", &json!({"op":"observe"}))
+            .unwrap()
+            .operation;
+        assert!(journal.start("p", "s", &completed.id).unwrap());
+        journal
+            .complete("p", "s", &completed.id, json!({"ok":true}))
+            .unwrap();
+        assert!(!journal.has_unresolved_operations().unwrap());
+
+        let unresolved = journal
+            .admit("p", "s", "unknown", &json!({"op":"click"}))
+            .unwrap()
+            .operation;
+        assert!(journal.start("p", "s", &unresolved.id).unwrap());
+        journal
+            .record_dispatch("p", "s", &unresolved.id, "dispatch-1")
+            .unwrap();
+        assert!(journal.has_unresolved_operations().unwrap());
+    }
 
     #[test]
     fn cancel_running_pre_dispatch_job_fences_late_dispatch() {

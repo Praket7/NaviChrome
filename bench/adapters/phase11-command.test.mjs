@@ -63,7 +63,7 @@ test('extraction actor requires an exact bound observed row', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase11-extraction-'));
   try {
     const executable=join(dir,'codex');
-    const input={task_id:'structured-extraction',task_class:'extraction',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/records-table?task=structured-extraction',acceptance:{kind:'extraction',row:'record-42',status:'older'},deadline_ms:60000};
+    const input={task_id:'structured-extraction',run_id:'extraction-run',task_class:'extraction',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/records-table?task=structured-extraction&run=extraction-run',acceptance:{kind:'extraction',row:'record-42',status:'older'},deadline_ms:60000};
     const nonce='a'.repeat(32), answer=`record-42|older|${nonce}`;
     for (const scenario of ['valid','wrong_url','no_observation','wrong_final','no_tool_call']) {
       const url=scenario==='wrong_url'?'http://127.0.0.1:1234/other':input.fixture_url;
@@ -85,11 +85,53 @@ test('extraction actor requires an exact bound observed row', async () => {
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 
+test('50k extraction actor receives the exact run and scenario URL', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'phase11-50k-actor-'));
+  try {
+    const executable=join(dir,'codex');
+    const url='http://127.0.0.1:1234/records-table?task=50k-node-targeted-control&scenario=50000_nodes_one_requested_control&run=wide-run';
+    const nonce='b'.repeat(32);
+    const event={type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'task',mode:'headless',release_after_task:true,task:{kind:'research',selector:'#records tbody tr:nth-child(42)',urls:[url]}},result:{structured_content:{status:'completed',private_session_released:true,receipts:[{kind:'extract',url,snippet:`record-42 older ${nonce}`}]}}}};
+    await writeFile(executable, `#!/usr/bin/env node\nconst prompt=process.argv.at(-1); if (!prompt.includes(${JSON.stringify(url)}) || !prompt.includes('one-call private headless')) process.exit(9);\nconsole.log(JSON.stringify({type:'turn.started'}));\nconsole.log(JSON.stringify(${JSON.stringify(event)}));\nconsole.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'record-42|older|${nonce}'}}));\n`,{mode:0o755});
+    const input={task_id:'50k-node-targeted-control',run_id:'wide-run',task_class:'extraction',scenario:'50000_nodes_one_requested_control',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:url,acceptance:{kind:'extraction',row:'record-42',status:'older'},deadline_ms:60000};
+    const output=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'controlla'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(input));});
+    assert.equal(output.success,true,JSON.stringify(output));
+    assert.equal(output.cleanup_completed,true);
+    assert.equal(output.extraction_value,`record-42|older|${nonce}`);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
+test('newest-ranking actors must observe all 50 unique candidates and return the run-bound winner', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'phase11-ranking-actor-'));
+  try {
+    const executable=join(dir,'codex');
+    const url='http://127.0.0.1:1234/records-table?task=newest-ranking-50-candidates&scenario=50_candidates_staged_freshness_frontier&run=rank-run';
+    const nonce='c'.repeat(32);
+    const allCandidates=Array.from({length:50},(_,index)=>({row:`record-${index+1}`,published_at:index===41?'2024-01-01T23:59:00Z':`2023-12-01T00:${String(index).padStart(2,'0')}:00Z`,nonce:index===41?nonce:''}));
+    const rankingFunction="() => { const candidates = Array.from(document.querySelectorAll('#records tbody tr'), row => ({row:row.cells[0]?.textContent.trim(),published_at:row.cells[1]?.textContent.trim(),nonce:row.cells[2]?.textContent.trim()})); return {url:location.href,candidates}; }";
+    for (const adapter of ['controlla','playwright-mcp']) for (const scenario of ['valid','partial_candidates','wrong_final']) {
+      const candidates=scenario==='partial_candidates'?allCandidates.slice(0,49):allCandidates;
+      const final=scenario==='wrong_final'?`record-41|2023-12-01T00:40:00Z|`:`record-42|2024-01-01T23:59:00Z|${nonce}`;
+      const call=adapter==='controlla'
+        ? {type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'task',mode:'headless',release_after_task:true,task:{kind:'research',selector:'#records tbody',urls:[url]}},result:{structured_content:{status:'completed',private_session_released:true,receipts:[{kind:'extract',url,snippet:candidates.map(candidate=>`${candidate.row} ${candidate.published_at} ${candidate.nonce}`).join(' ')}]}}}}
+        : {type:'item.completed',item:{type:'mcp_tool_call',server:'playwright-mcp',tool:'browser_evaluate',status:'completed',arguments:{function:rankingFunction},result:{content:[{type:'text',text:`### Result\n${JSON.stringify({url,candidates})}\n`}]}}};
+      const events=[{type:'turn.started'},call,...(adapter==='playwright-mcp'?[{type:'item.completed',item:{type:'mcp_tool_call',server:'playwright-mcp',tool:'browser_close',status:'completed',result:{structured_content:{status:'closed'}}}}]:[]),{type:'item.completed',item:{type:'agent_message',text:final}}];
+      await writeFile(executable,`#!/usr/bin/env node\nconst prompt=process.argv.at(-1);if(!prompt.includes(${JSON.stringify(url)})||!prompt.includes('all 50 unique candidate rows')||!prompt.includes('greatest timestamp')||!prompt.includes('2024-01-01T23:59:00Z')||${adapter==='playwright-mcp'?'!prompt.includes('+JSON.stringify(rankingFunction)+')':'!prompt.includes(\'"selector":"#records tbody"\')'})process.exit(9);for(const e of ${JSON.stringify(events)})console.log(JSON.stringify(e));\n`,{mode:0o755});
+      const input={task_id:'newest-ranking-50-candidates',run_id:'rank-run',task_class:'extraction',scenario:'50_candidates_staged_freshness_frontier',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:url,acceptance:{kind:'ranking',row:'record-42',published_at:'2024-01-01T23:59:00Z'},deadline_ms:60000};
+      const output=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,adapter],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(input));});
+      assert.equal(output.success,scenario==='valid',`${adapter}/${scenario}: ${output.runner_error}`);
+      assert.equal(output.cleanup_completed,true);
+      assert.equal(output.cleanup_outcome,adapter==='controlla'?'private_session_released':'browser_close_acknowledged');
+      assert.equal(output.extraction_value,scenario==='valid'?`record-42|2024-01-01T23:59:00Z|${nonce}`:undefined);
+    }
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
 test('cold adapter distinguishes host exit from deadline', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase11-host-failure-'));
   try {
     const executable = join(dir, 'codex');
-    const input = {task_id:'form-guarded-fill', task_class:'forms', mode:'cold_browser', execution_mode:'headless', concurrency:1, fixture_url:'http://127.0.0.1:1234/registration-form?task=form-guarded-fill', acceptance:{kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'}, deadline_ms:3000};
+    const input = {task_id:'form-guarded-fill', run_id:'form-run', task_class:'forms', mode:'cold_browser', execution_mode:'headless', concurrency:1, fixture_url:'http://127.0.0.1:1234/registration-form?task=form-guarded-fill&run=form-run', acceptance:{kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'}, deadline_ms:3000};
     for (const [script, expected] of [['process.exit(7);', 'Codex host exited with code 7'], ['setInterval(() => {}, 1000);', 'Codex host timed out']]) {
       await writeFile(executable, `#!/usr/bin/env node\n${script}\n`, {mode:0o755});
       const output = await new Promise((resolveOutput, reject) => {
@@ -131,7 +173,7 @@ test('failed MCP diagnostics retain a bounded redacted receipt and argument shap
       {type:'item.completed',item:{type:'agent_message',text:'FAILED'}},
     ];
     await writeFile(executable, `#!/usr/bin/env node\nfor(const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));\n`,{mode:0o755});
-    const input={task_id:'guarded-upload',task_class:'upload',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/file-input?task=guarded-upload',acceptance:{kind:'upload',filename:'benchmark.txt',size:20,sha256:'e6cd2f3dd6fbc01ec2f9b8f1578535ab325cd7a884a14d1170cb50dc744a0231'},deadline_ms:60000};
+    const input={task_id:'guarded-upload',run_id:'upload-run',task_class:'upload',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/file-input?task=guarded-upload&run=upload-run',acceptance:{kind:'upload',filename:'benchmark.txt',size:20,sha256:'e6cd2f3dd6fbc01ec2f9b8f1578535ab325cd7a884a14d1170cb50dc744a0231'},deadline_ms:60000};
     const output=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'controlla'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(input));});
     assert.equal(output.codex_failed_tool,'act');
     assert.equal(output.codex_failed_action,'click');
@@ -154,7 +196,7 @@ test('artifact registration diagnostics report byte and filename matches without
   const dir=await mkdtemp(join(tmpdir(),'phase11-artifact-diagnostic-'));
   try {
     const executable=join(dir,'codex');
-    const input={task_id:'guarded-upload',task_class:'upload',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/file-input?task=guarded-upload',acceptance:{kind:'upload',filename:'benchmark.txt',size:20,sha256:'e6cd2f3dd6fbc01ec2f9b8f1578535ab325cd7a884a14d1170cb50dc744a0231'},deadline_ms:60000};
+    const input={task_id:'guarded-upload',run_id:'upload-run',task_class:'upload',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:'http://127.0.0.1:1234/file-input?task=guarded-upload&run=upload-run',acceptance:{kind:'upload',filename:'benchmark.txt',size:20,sha256:'e6cd2f3dd6fbc01ec2f9b8f1578535ab325cd7a884a14d1170cb50dc744a0231'},deadline_ms:60000};
     const events=[
       {type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'launch'},result:{structured_content:{session_id:'s',target_ids:['t']}}}},
       {type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'artifact_register',session_id:'s',chrome_tab_id:'t',filename:'private.txt',bytes_base64:Buffer.from('private body').toString('base64')},error:{message:'invalid field bytes_base64 private body'},result:{structured_content:{status:'error',reason_code:'invalid_tool_request'}}}},
@@ -190,6 +232,19 @@ test('cold form adapter requires browser-close acknowledgement', async () => {
       if (cleanup) assert.equal(output.mcp_calls, 2);
       else assert.equal(output.runner_error, 'Codex host did not confirm browser cleanup');
     }
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
+test('slow-media form actor receives only its scenario-bound fixture URL', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'phase11-slow-media-actor-'));
+  try {
+    const executable=join(dir,'codex');
+    const url='http://127.0.0.1:1234/registration-form?task=slow-media-early-form&scenario=form_ready_before_slow_media_completes&run=slow-run';
+    await writeFile(executable, `#!/usr/bin/env node\nif (!process.argv.at(-1).includes(${JSON.stringify(url)})) process.exit(9);\nconsole.log(JSON.stringify({type:'item.completed',item:{type:'mcp_tool_call',server:'playwright-mcp',tool:'browser_navigate',status:'completed',result:{content:[{type:'text',text:'ok'}]}}}));\nconsole.log(JSON.stringify({type:'item.completed',item:{type:'mcp_tool_call',server:'playwright-mcp',tool:'browser_close',status:'completed',result:{content:[{type:'text',text:'closed'}]}}}));\nconsole.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'DONE'}}));\n`,{mode:0o755});
+    const input={task_id:'slow-media-early-form',run_id:'slow-run',task_class:'forms',scenario:'form_ready_before_slow_media_completes',mode:'cold_browser',execution_mode:'headless',concurrency:1,fixture_url:url,acceptance:{kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'},deadline_ms:60000};
+    const output=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'playwright-mcp'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(input));});
+    assert.equal(output.success,true,JSON.stringify(output));
+    assert.equal(output.cleanup_completed,true);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 
@@ -281,6 +336,18 @@ test('Controlla form actor releases its private headless session with the task',
     assert.equal(output.independently_verified_success,false);
     assert.equal(output.cleanup_completed,true);
     assert.equal(output.cleanup_outcome,'private_session_released');
+
+    const repeatedInput={...input,task_id:'repeat-qualified-flow',task_class:'repeated_workflow',fixture_url:'http://127.0.0.1:1234/registration-form?task=repeat-qualified-flow'};
+    const repeatedOutput=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'controlla'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(repeatedInput));});
+    assert.equal(repeatedOutput.success,true,JSON.stringify({runner_error:repeatedOutput.runner_error,codex_error_class:repeatedOutput.codex_error_class,codex_failed_tool:repeatedOutput.codex_failed_tool}));
+    assert.equal(repeatedOutput.cleanup_completed,true);
+    assert.equal(repeatedOutput.cleanup_outcome,'private_session_released');
+
+    const fiveFieldInput={...input,task_id:'five-field-single-workflow',task_class:'repeated_workflow',scenario:'five_fields_one_workflow',fixture_url:'http://127.0.0.1:1234/registration-form?task=five-field-single-workflow&scenario=five_fields_one_workflow',acceptance:{kind:'form',name:'Benchmark User',email:'benchmark@example.invalid',company:'NaviChrome',role:'QA',notes:'Persisted benchmark form'}};
+    const fiveFieldOutput=await new Promise((resolveOutput,reject)=>{const child=spawn(process.execPath,[adapterPath,'controlla'],{cwd:root,env:{...process.env,PHASE11_FIXTURE_BASE_URL:'http://127.0.0.1:1234',PHASE11_CODEX_PATH:executable,PHASE11_CHROME_PATH:'/chrome',PHASE11_CONTROLLA_BINARY:'/controlla'},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.once('error',reject);child.once('close',code=>code===0?resolveOutput(JSON.parse(stdout)):reject(new Error(stderr)));child.stdin.end(JSON.stringify(fiveFieldInput));});
+    assert.equal(fiveFieldOutput.success,true,JSON.stringify({runner_error:fiveFieldOutput.runner_error,codex_error_class:fiveFieldOutput.codex_error_class,codex_failed_tool:fiveFieldOutput.codex_failed_tool}));
+    assert.equal(fiveFieldOutput.cleanup_completed,true);
+    assert.equal(fiveFieldOutput.cleanup_outcome,'private_session_released');
 
     const failedSnapshots=[1,2].map(attempt=>({type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'snapshot',status:'completed',arguments:{session_id:'s',chrome_tab_id:'t',max_items:attempt},result:{structured_content:{status:'error',reason_code:'invalid_tool_request',dispatch_may_have_occurred:false,next_action:'correct_snapshot_argument_once'}}}}));
     const failureEvents=[{type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'launch'},result:{structured_content:{session_id:'s',target_ids:['t']}}}},...failedSnapshots,{type:'item.completed',item:{type:'mcp_tool_call',server:'chrome-controlla',tool:'browser',status:'completed',arguments:{action:'release',session_id:'s'},result:{structured_content:{released:true}}}},{type:'item.completed',item:{type:'agent_message',text:'FAILED'}}];

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
@@ -6,6 +6,7 @@ const payload = JSON.parse(input || '{}');
 const [role = 'adapter', adapter = 'controlla', wall = '100', rounds = '2'] = process.argv.slice(2);
 
 if (role === 'reset') {
+  if (process.env.PHASE11_MOCK_RESET_LOG) appendFileSync(process.env.PHASE11_MOCK_RESET_LOG, `${JSON.stringify(payload)}\n`);
   process.stdout.write(JSON.stringify({ ok: true }));
   process.exit(0);
 }

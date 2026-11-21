@@ -300,6 +300,11 @@ export function actingAdapterEnvironment(env) {
 }
 
 export function phase11Acceptance(task) {
+  if (task.id === 'five-field-single-workflow' && task.scenario !== 'five_fields_one_workflow') return undefined;
+  if (task.id === 'slow-media-early-form' && task.scenario !== 'form_ready_before_slow_media_completes') return undefined;
+  if (task.id === '50k-node-targeted-control' && task.scenario !== '50000_nodes_one_requested_control') return undefined;
+  if (task.id === 'newest-ranking-50-candidates' && task.scenario !== '50_candidates_staged_freshness_frontier') return undefined;
+  if (task.id === 'five-field-single-workflow') return {kind:'form',name:'Benchmark User',email:'benchmark@example.invalid',company:'NaviChrome',role:'QA',notes:'Persisted benchmark form'};
   if (task.id === 'form-guarded-fill' || task.id === 'slow-media-early-form' || task.id === 'repeat-qualified-flow') {
     return {kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'};
   }
@@ -307,7 +312,8 @@ export function phase11Acceptance(task) {
     const bytes=Buffer.from('Controlla benchmark\n');
     return {kind:'upload',filename:'benchmark.txt',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
   }
-  if (task.id === 'structured-extraction') return {kind:'extraction',row:'record-42',status:'older'};
+  if (task.id === 'structured-extraction' || task.id === '50k-node-targeted-control') return {kind:'extraction',row:'record-42',status:'older'};
+  if (task.id === 'newest-ranking-50-candidates') return {kind:'ranking',row:'record-42',published_at:'2024-01-01T23:59:00Z'};
   const editorSource={
     'rich-editor-1000-char-fastkeys':'root',
     'root-1000-char-transaction':'root',
@@ -322,9 +328,10 @@ export function phase11Acceptance(task) {
 }
 
 async function runOne({ adapter, command, task, mode, executionMode, concurrency, fixtureBaseUrl, deadlineMs, resetCommand, verifierCommand, contract, environment, env }) {
-  const fixtureUrl = task.url ? liveTaskUrl(task) : (() => { const url = new URL(task.fixture, fixtureBaseUrl); url.searchParams.set('task', task.id); if (task.scenario) url.searchParams.set('scenario', task.scenario); return url.toString(); })();
+  const runId=randomUUID();
+  const fixtureUrl = task.url ? liveTaskUrl(task) : (() => { const url = new URL(task.fixture, fixtureBaseUrl); url.searchParams.set('task', task.id); if (task.scenario) url.searchParams.set('scenario', task.scenario); url.searchParams.set('run',runId); return url.toString(); })();
   const acceptance=phase11Acceptance(task);
-  const input = { run_id:randomUUID(), ...(acceptance?{acceptance}:{}), task_id: task.id, task_class: task.class, scenario: task.scenario, mode, execution_mode: executionMode, concurrency, fixture_url: fixtureUrl, site_urls: task.site_urls ?? [fixtureUrl], deadline_ms: deadlineMs, source_ref: adapter.source_ref ?? null };
+  const input = { run_id:runId, ...(acceptance?{acceptance}:{}), task_id: task.id, task_class: task.class, scenario: task.scenario, mode, execution_mode: executionMode, concurrency, fixture_url: fixtureUrl, site_urls: task.site_urls ?? [fixtureUrl], deadline_ms: deadlineMs, source_ref: adapter.source_ref ?? null };
   await resetFixture(resetCommand, input, deadlineMs, env);
   const adapterRequestStartedNs = process.hrtime.bigint();
   const invocationMetrics = {};

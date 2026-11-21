@@ -31,6 +31,45 @@ test('configured suite rejects unsupported Phase 11 rows before launching browse
   }),/rejected before browser startup.*warm-session lifecycle binding.*more unsupported cases/);
 });
 
+test('configured suite accepts the slow-media form only with its independent oracle scenario', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === 'slow-media-early-form');
+  const matrix = {adapters:['controlla','playwright-mcp'],tasks:[task],modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(matrix), []);
+  assert.ok(configuredMatrixBlockers({...matrix,tasks:[{...task,scenario:'wrong_scenario'}]}).length > 0);
+});
+
+test('configured suite accepts repeat-qualified form workflow with its independent oracle', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === 'repeat-qualified-flow');
+  const matrix = {adapters:['controlla','playwright-mcp'],tasks:[task],modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(matrix), []);
+});
+
+test('configured suite accepts five-field form workflow only with its declared scenario', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === 'five-field-single-workflow');
+  const matrix = {adapters:['controlla','playwright-mcp'],tasks:[task],modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(matrix), []);
+  assert.ok(configuredMatrixBlockers({...matrix,tasks:[{...task,scenario:'wrong_scenario'}]}).length > 0);
+});
+
+test('configured suite accepts 50k extraction only with its independent oracle scenario', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === '50k-node-targeted-control');
+  const matrix = {adapters:['controlla','playwright-mcp'],tasks:[task],modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(matrix), []);
+  assert.ok(configuredMatrixBlockers({...matrix,tasks:[{...task,scenario:'wrong_scenario'}]}).length > 0);
+});
+
+test('configured suite accepts newest-candidate ranking only with its declared scenario', async () => {
+  const config=await loadPhase11Config();
+  const task=config.tasks.find(item=>item.id==='newest-ranking-50-candidates');
+  const matrix={adapters:['controlla','playwright-mcp'],tasks:[task],modes:['cold_browser'],executionModes:['headless'],concurrency:[1]};
+  assert.deepEqual(configuredMatrixBlockers(matrix),[]);
+  assert.ok(configuredMatrixBlockers({...matrix,tasks:[{...task,scenario:'wrong_scenario'}]}).length>0);
+});
+
 test('adapter provenance requires explicit exact versions for every configured client', () => {
   assert.throws(() => parseAdapterVersions('', ['one']), /must provide exact observed versions/);
   assert.throws(() => parseAdapterVersions('{"one":"local-command-adapter-v1"}', ['one']), /exact observed client adapter version required/);

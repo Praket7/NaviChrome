@@ -80,8 +80,7 @@ pub fn publish_stdio_runtime(state_dir: &Path, version: &str) -> Result<(), Stri
 }
 
 fn probe_stdio_runtime(state_dir: &Path, report: &mut DoctorReport) {
-    let path = state_dir.join("stdio-runtime.json");
-    let Ok(bytes) = std::fs::read(&path) else {
+    let Some(bytes) = latest_stdio_runtime(state_dir) else {
         report.errors.push(format!(
             "no HTTP or stdio runtime record in {}",
             state_dir.display()
@@ -144,6 +143,30 @@ fn probe_stdio_runtime(state_dir: &Path, report: &mut DoctorReport) {
     report.live_round_trip = State::Unknown;
 }
 
+fn latest_stdio_runtime(state_dir: &Path) -> Option<Vec<u8>> {
+    let mut records = Vec::new();
+    if let Ok(bytes) = std::fs::read(state_dir.join("stdio-runtime.json")) {
+        records.push(bytes);
+    }
+    if let Ok(entries) = std::fs::read_dir(state_dir.join("sessions")) {
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|kind| kind.is_dir())
+                && let Ok(bytes) = std::fs::read(entry.path().join("stdio-runtime.json"))
+            {
+                records.push(bytes);
+            }
+        }
+    }
+    records
+        .into_iter()
+        .filter_map(|bytes| {
+            let runtime: StdioRuntime = serde_json::from_slice(&bytes).ok()?;
+            Some((runtime.heartbeat_unix_seconds, bytes))
+        })
+        .max_by_key(|(heartbeat, _)| *heartbeat)
+        .map(|(_, bytes)| bytes)
+}
+
 #[cfg(test)]
 mod stdio_tests {
     use super::*;
@@ -167,6 +190,28 @@ mod stdio_tests {
             report.extension_build_id.is_some(),
             "doctor must expose the extension build identity"
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn doctor_finds_per_process_session_heartbeat() {
+        let dir = std::env::temp_dir().join(format!(
+            "navichrome-stdio-session-doctor-{}",
+            std::process::id()
+        ));
+        let session = dir.join("sessions/1-test");
+        std::fs::create_dir_all(&session).unwrap();
+        publish_stdio_runtime(&dir, "test-version").unwrap();
+        let stale_root = dir.join("stdio-runtime.json");
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&stale_root).unwrap()).unwrap();
+        old["heartbeat_unix_seconds"] = serde_json::json!(0);
+        std::fs::write(&stale_root, serde_json::to_vec(&old).unwrap()).unwrap();
+        publish_stdio_runtime(&session, "test-version").unwrap();
+        let report = report(&dir, "test-version");
+        assert_eq!(report.configured, State::Healthy);
+        assert_eq!(report.process, State::Healthy);
+        assert_eq!(report.heartbeat, State::Healthy);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

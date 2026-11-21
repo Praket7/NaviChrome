@@ -58,7 +58,7 @@ fn fixture_server() -> (String, thread::JoinHandle<()>, Arc<AtomicBool>) {
                         "/" => ("200 OK", include_str!("../../../bench/fixtures/espn_bills_latest_story/index.html").to_owned()),
                         "/live-shaped" => {
                             let scoreboard = (0..96).map(|index| format!("<a href='/game/{index}'>Gamecast Game {index}</a>")).collect::<String>();
-                            ("200 OK", format!("<html><head><title>Buffalo Bills latest stories</title></head><body><main><h1>Buffalo Bills</h1><nav>{scoreboard}</nav><section id='news'><article><a href='/nfl/story/older-relative'>Bills look ahead to Sunday</a><time>3h</time></article><article><a href='/nfl/story/newest-relative'>Josh Allen: Buffalo's latest injury update</a><time>2h</time></article></section><iframe src='https://ads.example.test/embed'></iframe></main></body></html>"))
+                            ("200 OK", format!("<html><head><title>Buffalo Bills latest stories</title></head><body><main><h1>Buffalo Bills</h1><nav>{scoreboard}</nav><section id='news'><article><a href='/nfl/story/older-relative'>Bills look ahead to Sunday</a><time>3h</time></article><article><a href='/nfl/story/newest-relative'>Josh Allen: Buffalo Bills' latest injury update</a><time>2h</time></article></section><iframe src='https://ads.example.test/embed'></iframe></main></body></html>"))
                         },
                         "/nfl/story/older" => ("200 OK", r#"<html><head><script type="application/ld+json">{"@type":"NewsArticle","url":"/nfl/story/older","datePublished":"2026-10-09T16:30:00Z"}</script></head><body><h1>Bills look ahead to Sunday</h1></body></html>"#.to_owned()),
                         "/nfl/story/newest" => ("200 OK", r#"<html><head><script type="application/ld+json">{"@type":"NewsArticle","url":"/nfl/story/newest","datePublished":"2026-10-11T12:00:00Z"}</script></head><body><h1>Josh Allen: Buffalo's latest injury update</h1></body></html>"#.to_owned()),
@@ -484,7 +484,9 @@ async fn live_espn_headless_latest_story_smoke() {
     )
     .await;
     eprintln!(
-        "live ESPN headless evidence: mcp_calls={} total_elapsed_ms={} workflow_elapsed_ms={} workflow_steps={} startup_us={} workflow_metrics={}",
+        "live ESPN headless evidence: selected_story={} freshness={} mcp_calls={} total_elapsed_ms={} workflow_elapsed_ms={} workflow_steps={} startup_us={} workflow_metrics={}",
+        result["result"]["receipts"][2]["selected"],
+        result["result"]["receipts"][2]["freshness_evidence"],
         result["mcp_calls"],
         result["elapsed_ms"],
         result["result"]["elapsed_ms"],
@@ -501,6 +503,20 @@ async fn live_espn_headless_latest_story_smoke() {
     assert_eq!(
         execution["receipts"][4]["status"], "passed",
         "live ESPN article destination must be independently verified: {result}"
+    );
+    assert_eq!(
+        execution["receipts"][1]["coverage_complete"], true,
+        "the selected story must come from a complete ESPN story-link scope: {result}"
+    );
+    assert!(
+        execution["receipts"][2]["freshness_evidence"]["candidate_count"]
+            .as_u64()
+            .is_some_and(|count| count >= 2),
+        "newest-story selection needs at least two timestamped candidates: {result}"
+    );
+    assert_eq!(
+        execution["receipts"][2]["selected"]["freshness_source"], "relative_age_label",
+        "selection must be ordered by observed page freshness evidence: {result}"
     );
     assert!(
         execution["receipts"][2]["selected"]["href"]

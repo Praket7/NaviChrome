@@ -2936,6 +2936,33 @@ fn compact_surface_routes_tasks_and_receipts_do_not_dump_page_state() {
     assert_eq!(receipt["url"], "https://example.test/a");
 }
 
+#[test]
+fn mutation_authority_schema_matches_the_runtime_action_contract() {
+    let action_values = json!(["send", "post", "publish", "submit", "delete", "remove", "share"]);
+    fn find_authority_schema<'a>(schema: &'a Value, expected: &Value) -> Option<&'a Value> {
+        if schema["properties"]["action"]["enum"] == *expected {
+            return Some(schema);
+        }
+        match schema {
+            Value::Array(items) => items.iter().find_map(|item| find_authority_schema(item, expected)),
+            Value::Object(properties) => properties.values().find_map(|item| find_authority_schema(item, expected)),
+            _ => None,
+        }
+    }
+
+    let tools = AppV3::tool_router().list_all();
+    for tool_name in ["browser", "act", "workflow"] {
+        let tool = tools.iter().find(|tool| tool.name.as_ref() == tool_name).unwrap();
+        let schema = serde_json::to_value(&tool.input_schema).unwrap();
+        let authority = find_authority_schema(&schema, &action_values)
+            .unwrap_or_else(|| panic!("{tool_name} must advertise the exact mutation_authority actions"));
+        assert!(authority["properties"]["account"].is_object());
+        assert!(authority["properties"]["destination"].is_object());
+        assert_eq!(authority["properties"]["objects"]["minItems"], 1);
+        assert_eq!(authority["properties"]["objects"]["maxItems"], 4);
+    }
+}
+
 #[tokio::test]
 async fn v3_actions_require_a_session_created_through_the_v3_browser_route() {
     let app = AppV3::new(super::super::AppV2::new(super::super::App::default()));

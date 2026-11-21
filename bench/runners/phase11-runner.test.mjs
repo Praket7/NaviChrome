@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
@@ -66,6 +66,32 @@ test('editor fixtures carry bounded independent text acceptance contracts', () =
     assert.ok(acceptance.length <= 12000);
   }
   assert.equal(phase11Acceptance({id:'unqualified-scenario'}), undefined);
+});
+
+test('slow-media form acceptance is bound to its declared scenario', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === 'slow-media-early-form');
+  assert.deepEqual(phase11Acceptance(task), {kind:'form',name:'Benchmark User',notes:'Persisted benchmark form'});
+  assert.equal(phase11Acceptance({...task,scenario:'wrong_scenario'}), undefined);
+});
+
+test('five-field form acceptance is bound to its declared workflow scenario', () => {
+  const task={id:'five-field-single-workflow',scenario:'five_fields_one_workflow'};
+  assert.deepEqual(phase11Acceptance(task), {kind:'form',name:'Benchmark User',email:'benchmark@example.invalid',company:'NaviChrome',role:'QA',notes:'Persisted benchmark form'});
+  assert.equal(phase11Acceptance({...task,scenario:'wrong_scenario'}), undefined);
+});
+
+test('50k extraction acceptance is bound to its declared scenario', async () => {
+  const config = await loadPhase11Config();
+  const task = config.tasks.find(item => item.id === '50k-node-targeted-control');
+  assert.deepEqual(phase11Acceptance(task), {kind:'extraction',row:'record-42',status:'older'});
+  assert.equal(phase11Acceptance({...task,scenario:'wrong_scenario'}), undefined);
+});
+
+test('newest ranking acceptance is bound to its declared candidate scenario', () => {
+  const task={id:'newest-ranking-50-candidates',scenario:'50_candidates_staged_freshness_frontier'};
+  assert.deepEqual(phase11Acceptance(task),{kind:'ranking',row:'record-42',published_at:'2024-01-01T23:59:00Z'});
+  assert.equal(phase11Acceptance({...task,scenario:'wrong_scenario'}),undefined);
 });
 
 test('live site URLs require HTTPS and exact host allowlists', () => {
@@ -163,7 +189,10 @@ function completeMetricResult(contract) {
   return result;
 }
 
-test('runner resets, independently verifies, preserves paired failures, and emits full matrix subset', async () => {
+test('runner resets, independently verifies, preserves paired failures, and emits full matrix subset', async t => {
+  const temp = await mkdtemp(join(tmpdir(), 'phase11-run-token-'));
+  const resetLog = join(temp, 'resets.ndjson');
+  t.after(() => rm(temp, { recursive: true, force: true }));
   const checkpointed = [];
   const report = await runBenchmark({
     baselineId: 'playwright-mcp',
@@ -180,7 +209,7 @@ test('runner resets, independently verifies, preserves paired failures, and emit
     concurrencyLevels: [1],
     repetitions: 1,
     warmupRepetitions: 0,
-    env: {...process.env, PHASE11_MOCK_OUTPUT_UNAVAILABLE:'1'},
+    env: {...process.env, PHASE11_MOCK_OUTPUT_UNAVAILABLE:'1', PHASE11_MOCK_RESET_LOG:resetLog},
     onRow: async row => checkpointed.push(row),
     deadlineMs: 5000
   });
@@ -188,6 +217,11 @@ test('runner resets, independently verifies, preserves paired failures, and emit
   assert.deepEqual(report.randomization, { method: 'seeded_counterbalanced_paired_order', seed: 20261015 });
   assert.equal(report.candidate_adapter, 'controlla');
   assert.equal(report.baseline_adapter, 'playwright-mcp');
+  const resetInputs = (await readFile(resetLog, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(new Set(resetInputs.map(input => input.run_id)).size, resetInputs.length);
+  const fixtureInputs = resetInputs.filter(input => new URL(input.fixture_url).origin === 'https://fixtures.example.test');
+  assert.ok(fixtureInputs.length > 0);
+  for (const input of fixtureInputs) assert.equal(new URL(input.fixture_url).searchParams.get('run'), input.run_id);
   assert.deepEqual(checkpointed, report.paired_rows);
   assert.equal(report.paired_rows.length, (await loadPhase11Config()).tasks.length);
   assert.ok(report.paired_rows.every(row => row.execution_mode === 'headless' && row.candidate.execution_mode === 'headless'));

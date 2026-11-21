@@ -48,6 +48,24 @@ concurrency telemetry are absent. No full matrix or 30-repetition result was
 fabricated. Hosted CI is green for `d9fb24a`; this does not qualify the full
 matrix or a speed claim.
 
+## Google Form and ESPN live check — 2026-11-08
+
+Using NaviChrome on the personal `praketg1@gmail.com` session, the supplied
+Google Form's answers were populated and Submit was dispatched with a verified
+navigation receipt. The page changed to `/formResponse`, but the readback did
+not show Google's normal “Your response has been recorded” confirmation, so
+submission persistence remains unverified and the action was not replayed. The
+text attachment was visibly selected before Submit; its upload receipt was
+`unknown` after a browser event reported `SyntaxError: Identifier 'topSites' has
+already been declared`. The source of that error is unassigned. The temporary
+source file was removed after selection; no duplicate upload or submit was
+attempted.
+
+NaviChrome read the ESPN Buffalo Bills team page and observed a 6–1 record, the
+Vikings game listed for Nov. 9 at 8:15 pm, and the newest Bills-specific feed
+item labeled “2d”. This verifies the visible team page and relative-age feed
+ordering only; no absolute story timestamp or article-page content was read.
+
 ## Unicode typing and Phase 11 verifier continuation — 2026-11-08
 
 Fixed two live-relevant correctness gaps. Plain Unicode text now follows the
@@ -144,8 +162,8 @@ it reports ready with six tools at generation 4 and no last error.
 
 Live results use only the personal testing account and the NaviChrome route:
 
-- The Google Form and ESPN results remain verified from the prior live handoff;
-  neither was resubmitted or rewritten here.
+- The prior handoff reported a submitted Google Form and verified Bills story;
+  neither was freshly reconciled here, so those reports are not current proof.
 - Gmail's generic follow-up was already sent with one attachment and verified
   in Sent; it was not resent.
 - The Slides deck now contains `NaviChrome live demo text edit`. A fresh canvas
@@ -881,3 +899,17 @@ The V3 `act(type)` path previously refused every child-frame `@f:` reference, an
 ### 2026-11-05 speed-and-safety implementation checkpoint
 
 Shared click routes now carry exact page authority for account, destination, action, and object checks; the extension revalidates the pointer target immediately before dispatch. `close_owned` now requires the exact NaviChrome creation receipt, same session lease/document/window, and confirmed tab removal. The browser-control skill requires the attachment to be verified before Send/Post, refuses blind replay after `unknown`, and closes only task-created tabs not needed in the final result. Gmail Sent and Classroom post verifiers now bind account, destination, object, and accepted attachment. Local validation passed: `cargo test --workspace --locked`, warnings-denied Clippy, 32 background-action fixtures, extension command harness, 19 owned-resource/presentation fixtures, and release/V3/topology/presentation/background/snapshot/benchmark contracts. The headless schema test is 69,436 bytes under the 69,632-byte limit, and `act`, `browser`, and `workflow` expose mutation authority as an object while Rust enforces its strict shape. The latest native host and extension reload were exercised through Hotload `navichrome` revision 3/generation 6 with six tools ready. A post-reload read-only snapshot again verified the Sent tab account marker `praketg1@gmail.com`. The follow-up subject row showed “has attachment,” but the recipient was truncated in that row, so exact recipient and filename were not freshly verified. No Google write was sent during this checkpoint. No paired performance measurement was run.
+
+### 2026-11-08 Phase 11 fixture isolation
+
+The realistic benchmark fixture server previously stored acceptance by task ID alone, so overlapping runs of the same task could overwrite each other and contaminate independent verification. It now keys state by `(task_id, run_id)`, threads that run ID into fixture URLs, and migrates prior persisted fixture entries. Regression coverage exercises overlapping runs, server readback, and runner-to-fixture URL binding. `npm run check:bench` passed 118 tests plus its held-out, realistic-matrix, live-site-matrix, fault-matrix, and fixture-analysis checks. The configured runner still rejects most Phase 11 rows before browser startup, so this is not full-matrix or latency evidence. A private headless ESPN smoke passed with three MCP calls and selected the uniquely newest relative-age item from six visible NFL-story links; it opened `Efton Chism III welcomes back Mack Hollins to lead NFL Week 9 arrivals` at the verified ESPN story URL. That confirms ESPN navigation and freshness handling, but the headline is not demonstrably Bills-specific. The Google Form remains blocked pending an unlocked Mac and fresh NaviChrome shared-tab inventory; no form action was dispatched.
+
+Timing diagnosis from the four-task run: Gmail took 44m09 across 95 `functions.exec` calls, Classroom 13m02 across 51, ESPN 14m46 across 34, and the first Form pass 32m38 across 97. The recorded cumulative wrapper times were 16m32, 5m36, 6m06, and 5m07 respectively; 10–20 second `write_stdin` yield windows made up 92–99% of those wrapper totals. This is evidence of serial orchestration and long polling windows, not per-browser or per-Controlla latency. The trace records no Controlla calls. Hotload `controlla4` initially failed with `Connection closed` and no stderr; a manual Hotload reload at 21:55 UTC restored six tools, but the startup cause remains unknown.
+
+The configured runner now accepts `slow-media-early-form` only with its declared `form_ready_before_slow_media_completes` scenario. The fixture serves form controls before a run-bound image that completes after 300 ms, and the adapter actor must receive the exact scenario URL. `npm run check:bench` now passes 132 tests plus all structural checks; this does not establish full-matrix or live latency evidence.
+
+The declared `50k-node-targeted-control` case was also miswired: its scenario uses `50000_nodes`, while the fixture only recognized `50k`, so it rendered 50 rows and had no nonce for the independent verifier. Runner acceptance, verifier support, suite preflight, actor dispatch, and the fixture now bind to the exact `50000_nodes_one_requested_control` scenario. The fixture renders 50,000 rows and injects the run-bound nonce into record 42. All five focused regressions and `npm run check:bench` (132 tests plus held-out, realistic-matrix, live-site-matrix, fault-matrix, and fixture-analysis checks) pass. No full-matrix or latency result is claimed here.
+
+The `five-field-single-workflow` row also had a label only: its fixture rendered two fields and the actor/oracle rejected the declared scenario. The fixture now renders Name, Email, Company, Role, and Notes together; runner acceptance, independent persisted-state comparison, preflight, and both configured actor prompts bind to `five_fields_one_workflow`. Its local end-to-end fixture path passes, but no paired latency row is measured.
+
+The user supplied a direct Google Form URL titled `testing`, distinct from the earlier MIT application. Current Chrome inventory shows that exact viewform tab and a separate older `formResponse` tab, but NaviChrome discovery still rejects the stale inventory before dispatch and macOS reports locked. A fresh read-only identity/submission check is required before any submit. The current NaviChrome headless ESPN route is also unavailable because `NAVICHROME_CHROME_EXECUTABLE` is unset; the prior Bills feed result remains feed-level only, without article-page verification. A fresh `scripts/reinstall-local.sh` attempt rebuilt and installed the host and Chrome accepted the extension reload URL, but native inventory did not refresh within 30 seconds; the script requests the popup's **Reload bridge** recovery next.

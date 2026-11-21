@@ -128,7 +128,7 @@ Use an **absolute** path to `target/release/navichrome-v2`, not `target/release/
 }
 ```
 
-Use a different absolute `NAVICHROME_STATE_DIR` for each concurrently running MCP process. Restart or reload the MCP client after changing its configuration.
+`NAVICHROME_STATE_DIR` is a shared state root. Each MCP process creates a unique child under `sessions/` for its server lock, operation journal, and heartbeat, so concurrent Codex launches do not contend for the lock or share a journal. Resolved session data is removed after a clean shutdown or on a later startup; unresolved delivery records are retained for reconciliation. Browser target leases remain coordinated at the shared root, and lease recovery matches the owning process heartbeat within the session directories. Restart or reload the MCP client after changing its configuration.
 
 For Codex, use the local MCP configuration UI or generated configuration from the checkout:
 

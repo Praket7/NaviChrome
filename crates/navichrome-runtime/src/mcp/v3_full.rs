@@ -483,6 +483,30 @@ mod route_telemetry_tests {
         let human = typing_policy(Some("human_keys"), Some(5), "hello", true).unwrap();
         assert!(matches!(human.mode, crate::v3::TypingMode::HumanKeys));
         assert_eq!(human.delay_ms, 5);
+        let continuation = typing_policy(Some("human_keys_continue"), Some(5), "hello", true).unwrap();
+        assert!(matches!(continuation.mode, crate::v3::TypingMode::HumanKeys));
+    }
+
+    #[test]
+    fn canvas_human_key_events_are_per_character_and_release_keys() {
+        let events = super::cdp_character_events('A');
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].0["type"], "keyDown");
+        assert_eq!(events[1].0["type"], "char");
+        assert_eq!(events[2].0["type"], "keyUp");
+        let newline = super::cdp_character_events('\n');
+        assert_eq!(newline.len(), 2);
+        assert_eq!(newline[0].0["key"], "Enter");
+        assert_eq!(newline[1].0["type"], "keyUp");
+    }
+
+    #[test]
+    fn canvas_human_typing_chunks_fit_a_bounded_call_and_continue_without_reclick() {
+        assert_eq!(super::human_key_chunk_limit(280), 52);
+        assert_eq!(super::human_key_chunk_limit(600), 28);
+        assert_eq!(super::human_key_chunk_limit(0), 200);
+        assert!(!super::coordinate_human_typing_needs_click("human_keys_continue"));
+        assert!(super::coordinate_human_typing_needs_click("human_keys"));
     }
 
     #[test]
@@ -548,32 +572,45 @@ mod route_telemetry_tests {
 
     #[test]
     fn key_chord_dispatches_modifiers_then_key_and_releases_in_reverse_order() {
+        let without_native_code = |mut event: serde_json::Value| {
+            event.as_object_mut().unwrap().remove("nativeVirtualKeyCode");
+            event
+        };
         let events = super::key_chord_events("Control+Shift+A").unwrap();
         assert_eq!(events.len(), 5);
         assert_eq!(
-            events[0].0,
-            json!({"type":"keyDown","key":"Control","modifiers":2})
+            without_native_code(events[0].0.clone()),
+            json!({"type":"rawKeyDown","key":"Control","code":"ControlLeft","windowsVirtualKeyCode":17,"modifiers":2})
         );
         assert_eq!(
-            events[1].0,
-            json!({"type":"keyDown","key":"Shift","modifiers":10})
+            without_native_code(events[1].0.clone()),
+            json!({"type":"rawKeyDown","key":"Shift","code":"ShiftLeft","windowsVirtualKeyCode":16,"modifiers":10})
         );
         assert_eq!(
-            events[2].0,
-            json!({"type":"keyDown","key":"A","modifiers":10})
+            without_native_code(events[2].0.clone()),
+            json!({"type":"rawKeyDown","key":"A","code":"KeyA","windowsVirtualKeyCode":65,"modifiers":10})
         );
         assert_eq!(
-            events[3].0,
-            json!({"type":"keyUp","key":"Shift","modifiers":2})
+            without_native_code(events[3].0.clone()),
+            json!({"type":"keyUp","key":"Shift","code":"ShiftLeft","windowsVirtualKeyCode":16,"modifiers":2})
         );
         assert_eq!(
-            events[4].0,
-            json!({"type":"keyUp","key":"Control","modifiers":0})
+            without_native_code(events[4].0.clone()),
+            json!({"type":"keyUp","key":"Control","code":"ControlLeft","windowsVirtualKeyCode":17,"modifiers":0})
         );
         assert_eq!(
-            events[2].1,
-            Some(json!({"type":"keyUp","key":"A","modifiers":10}))
+            events[2].1.clone().map(without_native_code),
+            Some(json!({"type":"keyUp","key":"A","code":"KeyA","windowsVirtualKeyCode":65,"modifiers":10}))
         );
+        let undo = super::key_chord_events("Meta+Z").unwrap();
+        assert_eq!(without_native_code(undo[0].0.clone()), json!({"type":"rawKeyDown","key":"Meta","code":"MetaLeft","windowsVirtualKeyCode":91,"modifiers":4}));
+        assert_eq!(without_native_code(undo[1].0.clone()), json!({"type":"rawKeyDown","key":"z","code":"KeyZ","windowsVirtualKeyCode":90,"modifiers":4}));
+        if cfg!(target_os = "macos") {
+            assert_eq!(undo[0].0["nativeVirtualKeyCode"], 55);
+            assert_eq!(undo[1].0["nativeVirtualKeyCode"], 6);
+        } else {
+            assert!(undo[0].0.get("nativeVirtualKeyCode").is_none());
+        }
     }
 
     #[test]
@@ -1751,6 +1788,20 @@ mod route_telemetry_tests {
         });
         super::normalize_receipt_outcomes(&mut with_reason);
         assert_eq!(with_reason["reason_code"], "editor_guard_rejected");
+    }
+
+    #[test]
+    fn aggregate_not_dispatched_receipts_surface_the_first_step_cause() {
+        let mut receipt = json!({
+            "status":"not_dispatched",
+            "reason_code":"precondition_failed",
+            "next_action":"correct_the_named_cause_before_retrying",
+            "steps":[{"step":"upload","status":"not_dispatched","reason_code":"account_marker_mismatch","reason":"account marker did not match","next_action":"use a fresh exact visible account marker"}]
+        });
+        super::normalize_receipt_outcomes(&mut receipt);
+        assert_eq!(receipt["reason_code"], "account_marker_mismatch");
+        assert_eq!(receipt["reason"], "account marker did not match");
+        assert_eq!(receipt["next_action"], "use a fresh exact visible account marker");
     }
 
     #[test]
@@ -4179,7 +4230,6 @@ struct V3BrowserArgs {
     client_id: Option<String>,
     #[serde(default)]
     #[schemars(
-        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
         description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
     )]
     mutation_authority: Option<V3MutationAuthority>,
@@ -4325,10 +4375,7 @@ struct V3ActArgs {
     )]
     expected_label: Option<String>,
     #[serde(default)]
-    #[schemars(
-        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
-        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
-    )]
+    #[schemars(description = "Optional guarded consequential click authority. action must exactly match the clicked action token.")]
     mutation_authority: Option<V3MutationAuthority>,
     #[schemars(
         description = "Fresh @cN reference, or an exact role/name such as link ‘Buffalo Bills’ resolved on the selected tab before the action."
@@ -4356,7 +4403,7 @@ struct V3ActArgs {
     outcome: Option<BrowserClickOutcome>,
     timeout_ms: Option<u64>,
     #[schemars(
-        description = "Typing strategy. Omit or use auto for the fastest verified path; human_keys is explicit human pacing and is never selected automatically. block, fast_keys, and ime are explicit overrides."
+        description = "Typing strategy. For a canvas, use human_keys with a fresh point for the first chunk, then human_keys_continue without coordinates so the caret is not reset. Each human call is capped to about 20 seconds; split at max_chars. Omit or use auto for the fastest verified path; block, fast_keys, and ime are explicit overrides."
     )]
     typing_mode: Option<String>,
     #[schemars(
@@ -4381,9 +4428,12 @@ struct V3ActArgs {
     end_x: Option<f64>,
     end_y: Option<f64>,
     #[schemars(
-        description = "multi_touch: fresh root ref, center/distances in CSS pixels; ratio 0.5..=2."
+        description = "click/type/press: root-viewport CSS pixels. Convert a fresh visual_probe image point using viewport_transform.clip and image_scale; never reuse a point after a page change. multi_touch uses the same CSS-pixel space."
     )]
     center_x: Option<f64>,
+    #[schemars(
+        description = "click/type/press: root-viewport CSS pixels. Convert a fresh visual_probe image point using viewport_transform.clip and image_scale; never reuse a point after a page change. multi_touch uses the same CSS-pixel space."
+    )]
     center_y: Option<f64>,
     start_distance: Option<f64>,
     end_distance: Option<f64>,
@@ -4437,9 +4487,14 @@ impl V3ActArgs {
 #[derive(Clone, serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct V3MutationAuthority {
+    #[schemars(
+        extend("enum" = ["send", "post", "publish", "submit", "delete", "remove", "share"]),
+        description = "Exact action token. The clicked label may include more words, such as 'submit test form response'."
+    )]
     action: String,
     account: V3MutationUiCheck,
     destination: V3MutationUiCheck,
+    #[schemars(length(min = 1, max = 4))]
     objects: Vec<V3MutationUiCheck>,
 }
 
@@ -4548,7 +4603,6 @@ struct V3WorkflowArgs {
     client_id: Option<String>,
     #[serde(default)]
     #[schemars(
-        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
         description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
     )]
     mutation_authority: Option<V3MutationAuthority>,
@@ -4615,10 +4669,7 @@ struct V3TaskArgs {
     client_id: Option<String>,
     account_marker: Option<super::SecureAccountMarker>,
     #[serde(default)]
-    #[schemars(
-        with = "Option<std::collections::BTreeMap<String, serde_json::Value>>",
-        description = "Optional {action,account:{selector,expected},destination:{selector,expected},objects:[{selector,expected},...]}; 1..4 objects, checked before consequential clicks."
-    )]
+    #[schemars(description = "Optional guarded consequential click authority. action must exactly match the clicked action token.")]
     mutation_authority: Option<V3MutationAuthority>,
     #[schemars(
         description = "Optional key for explicit-tab Research or guarded fill/click/save tasks with exact live postconditions; stores write-ahead mutation markers and digests, never page content. Unresolved click/save markers require reconciliation and are never replayed."
@@ -15848,9 +15899,9 @@ fn typing_policy(
         }
         Some("block") => crate::v3::TypingMode::Block,
         Some("fast_keys") => crate::v3::TypingMode::FastKeys,
-        Some("human_keys") => crate::v3::TypingMode::HumanKeys,
+        Some("human_keys" | "human_keys_continue") => crate::v3::TypingMode::HumanKeys,
         Some("ime") => crate::v3::TypingMode::Ime,
-        _ => return Err("typing_mode must be auto, block, fast_keys, human_keys, or ime"),
+        _ => return Err("typing_mode must be auto, block, fast_keys, human_keys, human_keys_continue, or ime"),
     };
     crate::v3::TypingPolicy::new(mode, delay_ms)
 }
@@ -16309,25 +16360,54 @@ fn snapshot_items_empty(value: &Value) -> bool {
         .is_none_or(|items| items.is_empty())
 }
 
-/// Type into a painted canvas whose editor has no bindable DOM node. Both
-/// clicks are individually probe-bound and spaced beyond the platform
-/// double-click interval: the first selects an unselected shape, the second
-/// lands the caret without selecting a word, so insertion never replaces text.
-/// The insertion is one trusted `Input.insertText` at the caret. Canvas text
-/// cannot be read back from the DOM, so the receipt is explicitly unverified
-/// and never replay-safe.
+const HUMAN_KEY_CALL_BUDGET_MS: u64 = 20_000;
+const HUMAN_KEY_EVENT_OVERHEAD_MS: u64 = 100;
+const HUMAN_KEY_MAX_CHARS: usize = 200;
+
+fn human_key_chunk_limit(delay_ms: u64) -> usize {
+    (HUMAN_KEY_CALL_BUDGET_MS / delay_ms.saturating_add(HUMAN_KEY_EVENT_OVERHEAD_MS))
+        .clamp(1, HUMAN_KEY_MAX_CHARS as u64) as usize
+}
+
+fn coordinate_human_typing_needs_click(mode: &str) -> bool {
+    mode != "human_keys_continue"
+}
+
+/// Type into a painted canvas with a bounded human-key chunk. Continuation
+/// chunks preserve the current caret by sending no pointer clicks.
 async fn coordinate_type_text(
     app: &AppV3,
     args: &V3ActArgs,
 ) -> Result<Value, rmcp::ErrorData> {
-    let (Some(x), Some(y)) = (args.center_x, args.center_y) else {
+    let mode = args.typing_mode.as_deref().unwrap_or("canvas_point");
+    let human_keys = matches!(mode, "human_keys" | "human_keys_continue");
+    let needs_click = !human_keys || coordinate_human_typing_needs_click(mode);
+    if !matches!(mode, "canvas_point" | "auto" | "block" | "fast_keys" | "human_keys" | "human_keys_continue") {
+        return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"unsupported_canvas_typing_mode","dispatch_may_have_occurred":false}));
+    }
+    let (x, y) = if needs_click {
+        let (Some(x), Some(y)) = (args.center_x, args.center_y) else {
+            return Ok(json!({"status":"not_dispatched","action":"type",
+                "reason_code":"type_requires_reference_or_point",
+                "dispatch_may_have_occurred":false,
+                "reason":"The first canvas typing chunk requires center_x/center_y; continuation chunks omit coordinates."}));
+        };
+        (Some(x), Some(y))
+    } else {
+        if args.center_x.is_some() || args.center_y.is_some() {
+            return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"continuation_must_not_reposition_caret","dispatch_may_have_occurred":false}));
+        }
+        (None, None)
+    };
+    let point = x.zip(y);
+    if !human_keys && point.is_none() {
         return Ok(json!({
             "status":"not_dispatched","action":"type",
             "reason_code":"type_requires_reference_or_point",
             "dispatch_may_have_occurred":false,
             "reason":"type requires a semantic reference, or center_x/center_y for a canvas caret."
         }));
-    };
+    }
     let text = args.value.as_deref().unwrap_or_default();
     if text.is_empty() {
         return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"empty_text","dispatch_may_have_occurred":false}));
@@ -16335,8 +16415,22 @@ async fn coordinate_type_text(
     if text.chars().count() > 16_384 {
         return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"text_too_large","dispatch_may_have_occurred":false}));
     }
-    if args.typing_mode.as_deref() == Some("human_keys") {
-        return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"canvas_point_requires_block_typing","dispatch_may_have_occurred":false}));
+    let text = if human_keys {
+        normalize_key_text(text)
+    } else {
+        text.to_owned()
+    };
+    if human_keys && human_keys_control_character(&text).is_some() {
+        return Ok(json!({"status":"not_dispatched","action":"type","reason_code":"unsupported_human_key_character","dispatch_may_have_occurred":false}));
+    }
+    let delay_ms = args.delay_ms.unwrap_or(280).min(600);
+    let max_chars = human_key_chunk_limit(delay_ms);
+    let char_count = text.chars().count();
+    if human_keys && char_count > max_chars {
+        return Ok(json!({"status":"not_dispatched","action":"type","typing_mode":mode,
+            "reason_code":"human_key_chunk_too_large","dispatch_may_have_occurred":false,
+            "requested_chars":char_count,"max_chars":max_chars,
+            "reason":"Split this human-typing request at max_chars before dispatch; no click or key was sent."}));
     }
     let mut click_args = args.clone();
     click_args.action = "click".into();
@@ -16344,17 +16438,17 @@ async fn coordinate_type_text(
     click_args.value = None;
     click_args.expected_value = None;
     click_args.expected_label = None;
-    let first = guarded_coordinate_click(app, &click_args, x, y).await?;
-    if !matches!(first["status"].as_str(), Some("dispatched") | Some("verified")) {
-        return Ok(first);
-    }
-    // A double-click selects a word in a text box; inserting then would
-    // replace that word instead of placing the caret. Two separate singles
-    // select the shape and then edit it without a destructive selection.
-    tokio::time::sleep(Duration::from_millis(650)).await;
-    let second = guarded_coordinate_click(app, &click_args, x, y).await?;
-    if !matches!(second["status"].as_str(), Some("dispatched") | Some("verified")) {
-        return Ok(second);
+    if let Some((x, y)) = point {
+        let first = guarded_coordinate_click(app, &click_args, x, y).await?;
+        if !matches!(first["status"].as_str(), Some("dispatched") | Some("verified")) {
+            return Ok(first);
+        }
+        // The two singles select the shape and then enter text editing.
+        tokio::time::sleep(Duration::from_millis(650)).await;
+        let second = guarded_coordinate_click(app, &click_args, x, y).await?;
+        if !matches!(second["status"].as_str(), Some("dispatched") | Some("verified")) {
+            return Ok(second);
+        }
     }
     let live = app
         .core
@@ -16373,7 +16467,48 @@ async fn coordinate_type_text(
         .connection
         .as_ref()
         .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
-    let dispatched = connection
+    let mut key_events = 0_u64;
+    if human_keys {
+        let delay = Duration::from_millis(delay_ms);
+        let characters = text.chars().collect::<Vec<_>>();
+        for (character_index, character) in characters.iter().copied().enumerate() {
+            let events = cdp_character_events(character);
+            for (event, _) in &events {
+                if let Err(error) = connection
+                    .command(
+                        shared.registry()?,
+                        &shared.handle,
+                        &args.chrome_tab_id,
+                        "Input.dispatchKeyEvent",
+                        event.clone(),
+                    )
+                    .await
+                {
+                    if let Some(key_up) = events.iter().rev().find(|(event, _)| event["type"] == "keyUp") {
+                        let _ = connection
+                            .command(
+                                shared.registry()?,
+                                &shared.handle,
+                                &args.chrome_tab_id,
+                                "Input.dispatchKeyEvent",
+                                key_up.0.clone(),
+                            )
+                            .await;
+                    }
+                    return Ok(json!({
+                        "status":"unknown","action":"type","typing_mode":"human_keys",
+                        "dispatch_acknowledged":key_events > 0,"dispatch_may_have_occurred":true,
+                        "completed_chars":character_index,"key_events":key_events,
+                        "reason":format!("canvas key delivery became uncertain; inspect before retrying: {error}")
+                    }));
+                }
+                key_events = key_events.saturating_add(1);
+            }
+            if character_index + 1 < characters.len() && !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+        }
+    } else if let Err(error) = connection
         .command(
             shared.registry()?,
             &shared.handle,
@@ -16381,27 +16516,138 @@ async fn coordinate_type_text(
             "Input.insertText",
             json!({"text":text}),
         )
-        .await;
-    if let Err(error) = dispatched {
+        .await
+    {
         return Ok(json!({
             "status":"unknown","action":"type","typing_mode":"canvas_point",
             "dispatch_may_have_occurred":true,
             "reason":format!("text insertion delivery is unknown; inspect the canvas and do not retry: {error}")
         }));
     }
+    let document = connection
+        .command(
+            shared.registry()?,
+            &shared.handle,
+            &args.chrome_tab_id,
+            "Runtime.evaluate",
+            json!({"expression":"document","returnByValue":false}),
+        )
+        .await
+        .ok()
+        .and_then(|value| value["result"]["objectId"].as_str().map(str::to_owned));
+    let proof = if let Some(object_id) = document {
+        verify_canvas_document_text(
+            connection,
+            shared.registry()?,
+            &shared.handle,
+            &args.chrome_tab_id,
+            &object_id,
+            &text,
+            tokio::time::Instant::now() + Duration::from_secs(15),
+        )
+        .await
+    } else {
+        json!({"status":"dispatched_unverified","verification":"document_object_unavailable"})
+    };
+    let verified = proof["status"] == "verified";
     Ok(json!({
-        "status":"dispatched_unverified",
+        "status":if verified {"verified"} else {"dispatched_unverified"},
         "action":"type",
-        "typing_mode":"canvas_point",
+        "typing_mode":if human_keys {"human_keys"} else {"canvas_point"},
         "dispatch_acknowledged":true,
         "dispatch_may_have_occurred":true,
-        "bulk_insert":true,
+        "bulk_insert":!human_keys,
         "completed_chars":text.chars().count(),
-        "point":{"x":x,"y":y},
-        "requires_verify":true,
+        "key_events":key_events,
+        "point":point.map(|(x,y)| json!({"x":x,"y":y})).unwrap_or(Value::Null),
+        "caret_strategy":if point.is_some() {"clicked_at_point"} else {"continued_without_reclick"},
+        "verification":proof["verification"],
+        "document_text":proof["document_text"],
+        "verified":verified,
+        "requires_verify":!verified,
         "surface":{"canvas":true,"text_readable":false},
-        "next_action":"Verify the canvas text visually or by copy readback; do not replay this transaction."
+        "next_action":if verified {Value::Null} else {json!("Verify the canvas text visually or by copy readback; do not replay this transaction.")}
     }))
+}
+
+async fn coordinate_press(
+    app: &AppV3,
+    args: &V3ActArgs,
+) -> Result<Value, rmcp::ErrorData> {
+    let (Some(x), Some(y)) = (args.center_x, args.center_y) else {
+        return Ok(json!({"status":"not_dispatched","action":"press","reason_code":"press_requires_reference_or_point","dispatch_may_have_occurred":false}));
+    };
+    let Some(key) = args.key.as_deref().filter(|key| !key.is_empty() && key.len() <= 64 && !key.chars().any(char::is_control)) else {
+        return Err(invalid("press requires a bounded key or modifier chord such as Control+A"));
+    };
+    let events = key_chord_events(key).map_err(invalid)?;
+    let mut click_args = args.clone();
+    click_args.action = "click".into();
+    click_args.reference = None;
+    click_args.value = None;
+    click_args.key = None;
+    click_args.outcome = None;
+    let click = guarded_coordinate_click(app, &click_args, x, y).await?;
+    if !matches!(click["status"].as_str(), Some("dispatched") | Some("verified")) {
+        return Ok(click);
+    }
+    let live = app
+        .core
+        .legacy
+        .shared_sessions
+        .lock()
+        .await
+        .get(&args.session_id)
+        .cloned()
+        .ok_or_else(|| invalid("unknown session_id"))?;
+    let shared = live.lock().await;
+    if shared.handle.principal != app.core.legacy.principal.as_ref() {
+        return Err(invalid("session is not owned by this server principal"));
+    }
+    let connection = shared
+        .connection
+        .as_ref()
+        .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
+    let registry = shared.registry()?;
+    let mut acknowledged_downs = Vec::new();
+    for (index, (event, release)) in events.iter().enumerate() {
+        let sent = connection
+            .command(
+                registry,
+                &shared.handle,
+                &args.chrome_tab_id,
+                "Input.dispatchKeyEvent",
+                event.clone(),
+            )
+            .await;
+        if sent.is_ok() {
+            if let Some(release) = release {
+                acknowledged_downs.push(release.clone());
+            }
+            continue;
+        }
+        if let Some(release) = release {
+            acknowledged_downs.push(release.clone());
+        }
+        let mut released = true;
+        for key_up in acknowledged_downs.iter().rev() {
+            if connection
+                .command(
+                    registry,
+                    &shared.handle,
+                    &args.chrome_tab_id,
+                    "Input.dispatchKeyEvent",
+                    key_up.clone(),
+                )
+                .await
+                .is_err()
+            {
+                released = false;
+            }
+        }
+        return Ok(json!({"status":"unknown","action":"press","dispatch_acknowledged":index > 0,"dispatch_may_have_occurred":true,"pressed_keys_released":released,"reason":"coordinate key chord delivery is uncertain; inspect before retrying"}));
+    }
+    Ok(json!({"status":"dispatched","action":"press","dispatch_acknowledged":true,"dispatch_may_have_occurred":true,"requires_verify":true,"key_target":"visually_grounded_canvas_point","point":{"x":x,"y":y}}))
 }
 
 async fn rich_block_type(
@@ -17836,19 +18082,120 @@ fn key_chord_events(input: &str) -> Result<Vec<(Value, Option<Value>)>, &'static
     let mut held = 0u8;
     for (name, bit, _) in &modifiers {
         held |= bit;
-        let down = json!({"type":"keyDown","key":name,"modifiers":held});
-        let up = json!({"type":"keyUp","key":name,"modifiers":held & !bit});
+        let (code, virtual_key) = key_code_and_virtual_key(name);
+        let down = chord_key_event("rawKeyDown", name, code.as_deref(), virtual_key, held);
+        let up = chord_key_event("keyUp", name, code.as_deref(), virtual_key, held & !bit);
         events.push((down, Some(up)));
     }
+    let key = if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() {
+        if flags & 8 != 0 {
+            key.to_ascii_uppercase()
+        } else {
+            key.to_ascii_lowercase()
+        }
+    } else {
+        key.to_owned()
+    };
+    let (code, virtual_key) = key_code_and_virtual_key(&key);
     events.push((
-        json!({"type":"keyDown","key":key,"modifiers":flags}),
-        Some(json!({"type":"keyUp","key":key,"modifiers":flags})),
+        chord_key_event("rawKeyDown", &key, code.as_deref(), virtual_key, flags),
+        Some(chord_key_event("keyUp", &key, code.as_deref(), virtual_key, flags)),
     ));
     for (name, bit, _) in modifiers.iter().rev() {
         held &= !bit;
-        events.push((json!({"type":"keyUp","key":name,"modifiers":held}), None));
+        let (code, virtual_key) = key_code_and_virtual_key(name);
+        events.push((chord_key_event("keyUp", name, code.as_deref(), virtual_key, held), None));
     }
     Ok(events)
+}
+
+fn chord_key_event(
+    event_type: &str,
+    key: &str,
+    code: Option<&str>,
+    virtual_key: Option<u64>,
+    modifiers: u8,
+) -> Value {
+    let mut event = json!({"type":event_type,"key":key,"code":code,"windowsVirtualKeyCode":virtual_key,"modifiers":modifiers});
+    if let Some(native_key) = mac_native_virtual_key_code(key) {
+        event["nativeVirtualKeyCode"] = json!(native_key);
+    }
+    event
+}
+
+fn mac_native_virtual_key_code(key: &str) -> Option<u64> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let named = match key {
+        "Control" => Some(59),
+        "Shift" => Some(56),
+        "Alt" => Some(58),
+        "Meta" => Some(55),
+        "Enter" => Some(36),
+        "Backspace" => Some(51),
+        "Tab" => Some(48),
+        "Escape" => Some(53),
+        "Delete" => Some(117),
+        "ArrowLeft" => Some(123),
+        "ArrowRight" => Some(124),
+        "ArrowDown" => Some(125),
+        "ArrowUp" => Some(126),
+        _ => None,
+    };
+    if named.is_some() {
+        return named;
+    }
+    if key.len() != 1 || !key.as_bytes()[0].is_ascii_alphabetic() {
+        return match key {
+            "0" => Some(29), "1" => Some(18), "2" => Some(19), "3" => Some(20),
+            "4" => Some(21), "5" => Some(23), "6" => Some(22), "7" => Some(26),
+            "8" => Some(28), "9" => Some(25), _ => None,
+        };
+    }
+    let letter = key.chars().next()?.to_ascii_uppercase();
+    let letter_code = match letter {
+        'A' => 0, 'B' => 11, 'C' => 8, 'D' => 2, 'E' => 14, 'F' => 3, 'G' => 5,
+        'H' => 4, 'I' => 34, 'J' => 38, 'K' => 40, 'L' => 37, 'M' => 46, 'N' => 45,
+        'O' => 31, 'P' => 35, 'Q' => 12, 'R' => 15, 'S' => 1, 'T' => 17, 'U' => 32,
+        'V' => 9, 'W' => 13, 'X' => 7, 'Y' => 16, 'Z' => 6,
+        _ => -1,
+    };
+    if letter_code >= 0 {
+        return Some(letter_code as u64);
+    }
+    None
+}
+
+fn key_code_and_virtual_key(key: &str) -> (Option<String>, Option<u64>) {
+    let named = match key {
+        "Control" => Some(("ControlLeft", 17)),
+        "Shift" => Some(("ShiftLeft", 16)),
+        "Alt" => Some(("AltLeft", 18)),
+        "Meta" => Some(("MetaLeft", 91)),
+        "Enter" => Some(("Enter", 13)),
+        "Backspace" => Some(("Backspace", 8)),
+        "Tab" => Some(("Tab", 9)),
+        "Escape" => Some(("Escape", 27)),
+        "Delete" => Some(("Delete", 46)),
+        "ArrowLeft" => Some(("ArrowLeft", 37)),
+        "ArrowUp" => Some(("ArrowUp", 38)),
+        "ArrowRight" => Some(("ArrowRight", 39)),
+        "ArrowDown" => Some(("ArrowDown", 40)),
+        _ => None,
+    };
+    if let Some((code, virtual_key)) = named {
+        return (Some(code.to_owned()), Some(virtual_key));
+    }
+    if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() {
+        let letter = key.to_ascii_uppercase();
+        return (Some(format!("Key{letter}")), Some(letter.as_bytes()[0] as u64));
+    }
+    if key.len() == 1 && key.as_bytes()[0].is_ascii_digit() {
+        let digit = key.as_bytes()[0];
+        return (Some(format!("Digit{}", key)), Some(digit as u64));
+    }
+    (None, None)
 }
 
 fn page_tool_completion(response: Result<Value, String>) -> Result<Value, Value> {
@@ -18090,6 +18437,33 @@ fn browser_tool_result(mut value: Value) -> rmcp::model::CallToolResult {
 fn normalize_receipt_outcomes(value: &mut Value) {
     super::normalize_unknown_receipts(value);
     backfill_missing_reason_codes(value);
+    promote_aggregate_failure_cause(value);
+}
+
+fn promote_aggregate_failure_cause(value: &mut Value) {
+    if value["status"] != "not_dispatched" || value["reason_code"] != "precondition_failed" {
+        return;
+    }
+    let cause = ["steps", "receipts"]
+        .into_iter()
+        .filter_map(|key| value[key].as_array())
+        .flatten()
+        .find(|step| {
+            step["status"] == "not_dispatched"
+                && step["reason_code"]
+                    .as_str()
+                    .is_some_and(|code| code != "precondition_failed")
+        })
+        .cloned();
+    let Some(cause) = cause else { return };
+    value["reason_code"] = cause["reason_code"].clone();
+    for field in ["reason", "next_action"] {
+        if !value[field].is_string()
+            || value[field].as_str() == Some("correct_the_named_cause_before_retrying")
+        {
+            value[field] = cause[field].clone();
+        }
+    }
 }
 
 /// Every non-success receipt must name its cause. An extension refusal that only
@@ -22617,11 +22991,17 @@ impl AppV3 {
                 && args.center_y.is_some()
                 && args.start_distance.is_none()
                 && args.end_distance.is_none();
-            if coordinate_click || coordinate_type {
+            let coordinate_press = args.action == "press"
+                && args.reference.is_none()
+                && args.center_x.is_some()
+                && args.center_y.is_some()
+                && args.start_distance.is_none()
+                && args.end_distance.is_none();
+            if coordinate_click || coordinate_type || coordinate_press {
                 if args.outcome.is_some() {
                     return Ok(Json(json!({"status":"not_dispatched","action":"click",
                         "reason_code":"coordinate_click_outcome_unsupported","dispatch_may_have_occurred":false,
-                        "reason":"A coordinate click returns requires_verify:true; verify its postcondition explicitly instead of declaring an outcome."})));
+                        "reason":"A coordinate action returns requires_verify:true; verify its postcondition explicitly instead of declaring an outcome."})));
                 }
             } else {
                 let coordinate_args = args.center_x.is_some() || args.center_y.is_some();
@@ -23145,6 +23525,9 @@ impl AppV3 {
                     }
                 }
                 "press" => {
+                    if args.reference.is_none() && args.center_x.is_some() && args.center_y.is_some() {
+                        return coordinate_press(self, &args).await;
+                    }
                     if background_mutation {
                         let reference = args.reference.as_deref().ok_or_else(|| invalid("press requires reference"))?;
                         return Box::pin(self.background_dom_action(&args, reference, None)).await;
@@ -28641,9 +29024,11 @@ Recovery: a not_dispatched receipt names the correction in next_action. stale_wa
 }
 
 pub(super) async fn run() -> Result<(), String> {
-    let state_dir = super::super::state_directory();
-    std::fs::create_dir_all(&state_dir).map_err(|error| error.to_string())?;
-    let _state_lock = super::super::acquire_state_directory_lock(&state_dir)
+    let state_root = super::super::state_directory();
+    std::fs::create_dir_all(&state_root).map_err(|error| error.to_string())?;
+    let state_dir = super::super::session_state::create_session_state_dir(&state_root, std::process::id())
+        .map_err(|error| error.to_string())?;
+    let state_lock = super::super::acquire_state_directory_lock(&state_dir)
         .map_err(|error| error.to_string())?;
     crate::doctor::publish_stdio_runtime(&state_dir, env!("CARGO_PKG_VERSION"))?;
     let heartbeat_dir = state_dir.clone();
@@ -28654,12 +29039,15 @@ pub(super) async fn run() -> Result<(), String> {
             let _ = crate::doctor::publish_stdio_runtime(&heartbeat_dir, env!("CARGO_PKG_VERSION"));
         }
     });
+    let journal = crate::jobs::Journal::open(state_dir.join("operations.sqlite"))
+        .map_err(|error| error.to_string())?;
+    journal
+        .recover_after_restart()
+        .map_err(|error| error.to_string())?;
+    let cleanup_journal = journal.clone();
+    super::super::session_state::prune_resolved_sessions(&state_root, &state_dir)
+        .map_err(|error| error.to_string())?;
     let result = async {
-        let journal = crate::jobs::Journal::open(state_dir.join("operations.sqlite"))
-            .map_err(|error| error.to_string())?;
-        journal
-            .recover_after_restart()
-            .map_err(|error| error.to_string())?;
         let legacy = super::super::App::with_journal(journal);
         let app = AppV3::new(AppV2::new(legacy));
         let service = app
@@ -28672,6 +29060,14 @@ pub(super) async fn run() -> Result<(), String> {
     .await;
     heartbeat.abort();
     let _ = std::fs::remove_file(state_dir.join("stdio-runtime.json"));
+    if result.is_ok() {
+        super::super::session_state::cleanup_resolved_session(
+            &state_dir,
+            cleanup_journal,
+            state_lock,
+        )
+        .map_err(|error| error.to_string())?;
+    }
     result
 }
 

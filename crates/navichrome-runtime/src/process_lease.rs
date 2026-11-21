@@ -296,23 +296,9 @@ impl LeaseCoordinator {
         if alive {
             // No runtime record is not proof of death: a live process that never
             // publishes one (library use, tests) must keep its lease.
-            let runtime = runtime_record(&record.state_dir)?;
-            let service_pid = runtime
-                .get("service_pid")
-                .and_then(|pid| pid.as_u64())
-                .and_then(|pid| u32::try_from(pid).ok());
-            let generation = runtime
-                .get("process_generation")
-                .and_then(|value| value.as_str());
-            // Only the process that published the record can be judged by it. A
-            // record owned by a different pid says nothing about this live
-            // holder, so the lease stays with it.
-            if service_pid != Some(record.pid) {
-                return None;
-            }
-            if generation == Some(record.process_generation.as_str()) {
-                return expired.then(expiry_reason);
-            }
+            let _runtime =
+                runtime_record(&record.state_dir, record.pid, &record.process_generation)?;
+            return expired.then(expiry_reason);
         }
         Some(format!(
             "recorded owner generation {} (pid {}) is absent from the live runtime records in {}",
@@ -453,9 +439,27 @@ fn write_owner_record(
     let _ = key;
 }
 
-fn runtime_record(state_dir: &str) -> Option<serde_json::Value> {
-    let bytes = std::fs::read(Path::new(state_dir).join("stdio-runtime.json")).ok()?;
-    serde_json::from_slice(&bytes).ok()
+fn runtime_record(state_dir: &str, pid: u32, generation: &str) -> Option<serde_json::Value> {
+    let root = Path::new(state_dir);
+    let matches_process = |path: &Path| {
+        let bytes = std::fs::read(path).ok()?;
+        let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        (value["service_pid"].as_u64() == Some(pid as u64)
+            && value["process_generation"].as_str() == Some(generation))
+        .then_some(value)
+    };
+    if let Some(runtime) = matches_process(&root.join("stdio-runtime.json")) {
+        return Some(runtime);
+    }
+    for entry in std::fs::read_dir(root.join("sessions")).ok()?.flatten() {
+        if !entry.file_type().ok()?.is_dir() {
+            continue;
+        }
+        if let Some(runtime) = matches_process(&entry.path().join("stdio-runtime.json")) {
+            return Some(runtime);
+        }
+    }
+    None
 }
 
 #[cfg(unix)]
@@ -604,6 +608,25 @@ mod tests {
                 .unwrap();
         assert_eq!(written.owner, "recovering-owner");
         assert_eq!(written.pid, std::process::id());
+    }
+
+    #[test]
+    fn runtime_record_finds_the_matching_process_session_heartbeat() {
+        let root = test_dir();
+        let session = root.join("sessions/500-session");
+        std::fs::create_dir_all(&session).unwrap();
+        std::fs::write(
+            session.join("stdio-runtime.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "service_pid": 500,
+                "process_generation": "generation-a"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(runtime_record(root.to_str().unwrap(), 500, "generation-a").is_some());
+        assert!(runtime_record(root.to_str().unwrap(), 500, "generation-b").is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// POSIX can replace a lock file that another process still has open, so a

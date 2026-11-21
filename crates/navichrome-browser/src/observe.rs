@@ -487,7 +487,7 @@ pub fn parse_observation(
 fn account_marker_script(marker: &Option<(String, String)>) -> String {
     let marker = serde_json::to_string(marker).expect("account marker serializes");
     format!(
-        "(()=>{{const m={marker};if(!m)return false;const matches=Array.from(document.querySelectorAll(m[0])).filter(e=>{{if(!e.isConnected||e.getClientRects().length===0)return false;for(let n=e;n;n=n.parentElement){{const s=getComputedStyle(n);if(s.display==='none'||s.visibility!=='visible'||Number.parseFloat(s.opacity||'1')<=0||n.hasAttribute('hidden')||n.hasAttribute('inert'))return false}}return true}});const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();const label=e=>norm(e.innerText||e.getAttribute('content')||e.getAttribute('aria-label')||e.getAttribute('title')||e.getAttribute('alt'));return matches.length===1&&label(matches[0])===norm(m[1])}})()"
+        "(()=>{{const m={marker};if(!m)return false;const candidates=Array.from(document.querySelectorAll(m[0]));if(candidates.length>512)return false;const norm=s=>String(s||'').replace(/\\s+/g,' ').trim();const label=e=>norm(e.innerText||e.getAttribute('content')||e.getAttribute('aria-label')||e.getAttribute('title')||e.getAttribute('alt'));const visible=e=>{{if(!e.isConnected||e.getClientRects().length===0||e.getAttribute('aria-selected')==='true'||e.getAttribute('aria-checked')==='true'||e.closest('[role=menu],[role=listbox],[role=option],[role=menuitem],[role=dialog],[aria-modal=true]'))return false;for(let n=e;n;n=n.parentElement){{const s=getComputedStyle(n);if(s.display==='none'||s.visibility!=='visible'||Number.parseFloat(s.opacity||'1')<=0||n.hasAttribute('hidden')||n.hasAttribute('inert'))return false}}return true}};const matches=candidates.filter(e=>visible(e)&&label(e)===norm(m[1]));return matches.length===1}})()"
     )
 }
 
@@ -1383,6 +1383,10 @@ mod tests {
             assert!(expression.contains("querySelectorAll"));
             assert!(expression.contains("getClientRects().length===0"));
             assert!(expression.contains("matches.length===1"));
+            assert!(expression.contains("label(e)===norm(m[1])"));
+            assert!(expression.contains("candidates.length>512"));
+            assert!(expression.contains("aria-selected"));
+            assert!(expression.contains("[role=menu]"));
             assert!(expression.contains("replace(/\\s+/g,' ').trim()"));
             assert!(expression.contains("visibility!=='visible'"));
             assert!(expression.contains("Number.parseFloat(s.opacity||'1')<=0"));

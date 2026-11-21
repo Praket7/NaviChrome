@@ -4305,11 +4305,14 @@ impl ServerHandler for AppV2 {
 }
 
 pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let state_dir = state_directory();
-    std::fs::create_dir_all(&state_dir)?;
-    let _state_lock = acquire_state_directory_lock(&state_dir)?;
+    let state_root = state_directory();
+    std::fs::create_dir_all(&state_root)?;
+    let state_dir = super::session_state::create_session_state_dir(&state_root, std::process::id())?;
+    let state_lock = acquire_state_directory_lock(&state_dir)?;
     let journal = crate::jobs::Journal::open(state_dir.join("operations.sqlite"))?;
     journal.recover_after_restart()?;
+    let cleanup_journal = journal.clone();
+    super::session_state::prune_resolved_sessions(&state_root, &state_dir)?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -4320,7 +4323,9 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
             .waiting()
             .await?;
         Ok::<_, Box<dyn std::error::Error>>(())
-    })
+    })?;
+    super::session_state::cleanup_resolved_session(&state_dir, cleanup_journal, state_lock)?;
+    Ok(())
 }
 
 fn selector_error_receipt(message: &str) -> Option<Value> {

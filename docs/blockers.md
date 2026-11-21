@@ -19,6 +19,12 @@ and leaving failed/unknown tasks for inspection. The current ledger is
 in-memory and session-scoped rather than durable/task-scoped; live multi-task
 cleanup and restart recovery remain unverified.
 
+The exact `50k-node-targeted-control` fixture now passes local actor,
+preflight, and independent-oracle checks for its
+`50000_nodes_one_requested_control` scenario; it has no measured latency row.
+The `five-field-single-workflow` row now has five actual controls and a
+scenario-bound actor and persisted-state oracle; its local fixture checks pass,
+but no paired latency row is measured.
 The configured Phase 11 suite still rejects the full matrix before Chrome
 starts: most tasks lack independent acceptance plus actor paths, and warm,
 reconnect, headed, and concurrency bindings are not implemented. The prior
@@ -26,6 +32,15 @@ three-task one-pair subset is diagnostic only; no 30-repetition full-matrix
 speed evidence exists. Hosted CI run
 [42497249871](https://github.com/Praket7/NaviChrome/actions/runs/42497249871)
 passed for commit `d9fb24a`; the full matrix remains blocked before browser startup.
+
+The supplied Google Form was filled under `praketg1@gmail.com`; NaviChrome
+reported a verified Submit click/navigation, but the resulting page did not
+show the standard recorded-response confirmation. Treat persistence as
+unverified and do not replay the submission. Its text attachment was visible
+before Submit, while the tool receipt remained `unknown` after an unassigned
+`topSites` duplicate-declaration error. The ESPN Bills page was read and its
+visible newest Bills story was labeled `2d`; an absolute publication timestamp
+and story body remain unchecked.
 
 ## Phase 11 full matrix and live bridge — 2026-11-08
 
@@ -410,3 +425,10 @@ The download path now coalesces two identity/epoch checks, but its qualification
 - `close_owned` is provenance-guarded, but automatic task-local tab ownership/retention tracking is not implemented. Existing or user-owned tabs cannot be cleaned up from screenshot evidence.
 - Named-client qualification is not run: Claude Code is unavailable, while Freebuff and ChatGPT Desktop require interactive host drivers.
 - Live Google inspection is limited to `praketg1@gmail.com`; only the personal Gmail account marker and a Sent row were reconciled. Classroom, Slides, and Forms were not opened because the tab inventory did not prove their signed-in account. No sending, posting, or other Google write was performed in this continuation.
+
+### 2026-11-08 Phase 11 and live-browser continuation
+
+- The fixture server now scopes persisted state by `(task_id, run_id)` to prevent overlapping benchmark runs from overwriting one another. `npm run check:bench` is green, but the configured runner still rejects most task/mode/execution/concurrency rows before browser startup; the full matrix and 30-repetition speed evidence remain open.
+- The user's direct Google Form URL titled `testing` is blocked pending an unlocked Mac and fresh NaviChrome shared-tab inventory; discovery returns `native tab inventory is stale` with `dispatch_may_have_occurred=false`. Chrome shows the exact viewform tab plus an older `formResponse` tab, so inspect the target, account, and submission state before submitting.
+- The prior ESPN Bills check identified “How the Bills are planning with illnesses on the OL” at feed level, but its article link was not verified. A fresh isolated NaviChrome read is blocked because `NAVICHROME_CHROME_EXECUTABLE` is unset.
+- Hotload's separate `controlla4` child recovered after a reload at 21:55 UTC and now exposes six tools. The four-task trace contains no Controlla calls, so its earlier `Connection closed` did not cause that run's elapsed time; its startup root cause remains undiagnosed.

@@ -28,12 +28,12 @@ export function verifyAdapterVersions(versions, runtimeHash) {
 export function configuredMatrixBlockers({adapters,tasks,modes,executionModes,concurrency}) {
   const blockers=[];
   const supportedAdapters=new Set(['controlla','playwright-mcp']);
-  const supportedTasks=new Set(['form-guarded-fill','structured-extraction','guarded-upload']);
+  const supportedTasks={'form-guarded-fill':undefined,'repeat-qualified-flow':undefined,'five-field-single-workflow':'five_fields_one_workflow','structured-extraction':undefined,'50k-node-targeted-control':'50000_nodes_one_requested_control','newest-ranking-50-candidates':'50_candidates_staged_freshness_frontier','guarded-upload':undefined,'slow-media-early-form':'form_ready_before_slow_media_completes'};
   for(const adapter of adapters) if(!supportedAdapters.has(adapter)) blockers.push(`adapter ${adapter} has no configured convenience actor`);
   for(const mode of modes) if(mode!=='cold_browser') blockers.push(`mode ${mode} has no warm-session lifecycle binding`);
   for(const mode of executionModes) if(mode!=='headless') blockers.push(`execution mode ${mode} has no headed Chrome display binding`);
   for(const level of concurrency) if(level!==1) blockers.push(`concurrency ${level} has no adapter resource/telemetry binding`);
-  for(const task of tasks) if(!supportedTasks.has(task.id)||task.scenario) blockers.push(`task ${task.id} has no configured independent acceptance and actor path`);
+  for(const task of tasks) if(!Object.hasOwn(supportedTasks,task.id)||task.scenario!==supportedTasks[task.id]) blockers.push(`task ${task.id} has no configured independent acceptance and actor path`);
   return [...new Set(blockers)];
 }
 

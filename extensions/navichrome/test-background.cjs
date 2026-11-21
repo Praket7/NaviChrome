@@ -537,9 +537,10 @@ const chrome = {
         networkEventsOnEnable = [];
         for (const [eventMethod, eventParams] of events) queueMicrotask(() => debuggerEvent?.({ tabId: target.tabId, sessionId: target.sessionId }, eventMethod, eventParams));
       }
-      if (method === "Runtime.evaluate" && params?.expression?.includes("button[data-identity-test]")) {
+      if (method === "Runtime.evaluate" && (params?.expression?.includes('document.querySelectorAll("button[data-identity-test]")') || params?.expression?.includes('document.querySelectorAll("span")'))) {
+        const selector = params.expression.includes('document.querySelectorAll("span")') ? "span" : "button[data-identity-test]";
         const document = {
-          querySelectorAll(selector) { return selector === "button[data-identity-test]" ? rootIdentityElements : []; },
+          querySelectorAll(value) { return value === selector ? rootIdentityElements : []; },
           querySelector() { return rootIdentityElements[0] || null; },
         };
         return { result: { value: vm.runInNewContext(params.expression, { document, getComputedStyle: element => element.style }) } };
@@ -1408,6 +1409,11 @@ async function waitFor(predicate, description) {
   native.hostMessage({ type: "command", id: "identity-marker-unique-root", target_id: "41", method: "NaviChrome.checkIdentityMarker", params: { selector: "button[data-identity-test]", expected: "student@example.edu" } });
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(native.sent.at(-1).result.matches, true, "one visible exact root marker remains a valid fast path");
+  rootIdentityElements = [rootIdentity("unrelated control", true), rootIdentity("praketg1@gmail.com", true)];
+  native.hostMessage({ type: "command", id: "identity-marker-broad-unique-text", target_id: "41", method: "NaviChrome.checkIdentityMarker", params: { selector: "span", expected: "praketg1@gmail.com" } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(native.sent.at(-1).result.matches, true, "a broad selector is accepted only when one visible element has the exact expected account text");
+  assert.equal(native.sent.at(-1).result.match_count, 1);
   rootIdentityElements = [rootIdentity("", true, "1", "Google Account: Praket G (praketg1@gmail.com)")];
   native.hostMessage({ type: "command", id: "identity-marker-aria-label", target_id: "41", method: "NaviChrome.checkIdentityMarker", params: { selector: "button[data-identity-test]", expected: "Google Account: Praket G (praketg1@gmail.com)" } });
   await new Promise(resolve => setTimeout(resolve, 0));

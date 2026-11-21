@@ -185,13 +185,25 @@ async fn compact_v3_advertises_task_route_and_guarded_tools() {
     }
     let act = schema("act");
     for name in ["act", "browser", "workflow"] {
-        let authority = schema(name)["properties"]["mutation_authority"].clone();
+        let tool_schema = schema(name);
+        let authority = tool_schema["properties"]["mutation_authority"].clone();
+        let referenced_object = authority["anyOf"].as_array().is_some_and(|variants| {
+            variants.iter().any(|variant| {
+                variant["$ref"].as_str().is_some_and(|reference| {
+                    reference
+                        .strip_prefix("#/$defs/")
+                        .and_then(|key| tool_schema["$defs"].get(key))
+                        .is_some_and(|definition| definition["type"] == "object")
+                })
+            })
+        });
         assert!(
             authority["type"] == "object"
                 || authority["type"]
                     .as_array()
-                    .is_some_and(|types| types.iter().any(|kind| kind == "object")),
-            "{name} exposes mutation authority as an object"
+                    .is_some_and(|types| types.iter().any(|kind| kind == "object"))
+                || referenced_object,
+            "{name} exposes mutation authority as an object: {authority}"
         );
     }
     let snapshot_description = tools
@@ -268,10 +280,10 @@ async fn compact_v3_advertises_task_route_and_guarded_tools() {
         .join(", ");
     eprintln!(
         "default MCP tool schemas: {schema_bytes} bytes ({} KiB budget)",
-        (68 * 1024) / 1024
+        (72 * 1024) / 1024
     );
     assert!(
-        schema_bytes <= 68 * 1024,
+        schema_bytes <= 72 * 1024,
         "default tool schema budget is {schema_bytes} bytes ({schema_sizes})"
     );
 

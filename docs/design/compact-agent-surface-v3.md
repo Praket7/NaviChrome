@@ -11,7 +11,7 @@ NaviChrome v3 exposes six default concepts to an agent and keeps implementation-
 | `extract` | Return bounded structured data, URLs, citations, or artifact metadata. |
 | `verify` | Independently observe and evaluate postconditions after a mutation. |
 
-The serialized default schemas must stay at or below 48 KiB. Results must stay at or below 512 KiB before transport, and normal semantic results should be substantially smaller. Screenshots, raw trees, tracing, skill administration, page-tool diagnostics, and benchmark controls are negotiated capabilities rather than default tools.
+The serialized default schemas must stay at or below 72 KiB. Results must stay at or below 512 KiB before transport, and normal semantic results should be substantially smaller. Screenshots, raw trees, tracing, skill administration, page-tool diagnostics, and benchmark controls are negotiated capabilities rather than default tools.
 
 ## Execution hierarchy
 

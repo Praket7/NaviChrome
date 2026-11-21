@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { evaluateAcceptance } from './phase11-verifier-state.mjs';
 
-test('privileged HTTP readback accepts persisted bytes and rejects forgery, stale runs and persistence failures',async()=>{
+test('privileged HTTP readback accepts persisted bytes and isolates concurrent runs',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'oracle-http-')); const statePath=join(dir,'state.json'); const token='test-privileged-oracle-token';
  const server=spawn(process.execPath,['bench/fixtures/realistic/server.mjs','--port=0'],{env:{...process.env,PHASE11_ORACLE_TOKEN:token,PHASE11_STATE_FILE:statePath},stdio:['ignore','pipe','inherit']});
  try{
@@ -38,22 +38,22 @@ test('privileged HTTP readback accepts persisted bytes and rejects forgery, stal
  assert.equal((await cli('bench/adapters/phase11-verifier.mjs',{input})).passed,true);
  assert.equal((await cli('bench/adapters/phase11-verifier.mjs',{input},false)).passed,false);
 
- assert.equal(JSON.parse(await readFile(statePath,'utf8'))['form-guarded-fill'].form.name,'Alice');
+ assert.equal(JSON.parse(await readFile(statePath,'utf8'))[JSON.stringify([input.task_id,input.run_id])].form.name,'Alice');
  const editorText='Cafe\u0301\n東京🙂';
  const editor={task_id:'root-1000-char-transaction',run_id:'editor-run',task_class:'forms',scenario:'root_editor_1000_char_one_transaction',acceptance:{kind:'editor',source:'root',text:editorText,length:editorText.length}};
  assert.equal((await post('/__reset',editor)).status,200);
- const editorPage=await (await fetch(`${base}/workflow-suite?task=${editor.task_id}&scenario=${editor.scenario}`)).text();
+ const editorPage=await (await fetch(`${base}/workflow-suite?task=${editor.task_id}&scenario=${editor.scenario}&run=${editor.run_id}`)).text();
  assert.match(editorPage,/persistRoot/);
  assert.match(editorPage,/persistChild/);
  assert.equal((await fetch(`${base}/accept/editor?task=${editor.task_id}&run=${editor.run_id}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(editor.acceptance)})).status,200);
  assert.equal(evaluateAcceptance(editor,await state(editor)).passed,true);
- const editorState=JSON.parse(await readFile(statePath,'utf8'))[editor.task_id];
+ const editorState=JSON.parse(await readFile(statePath,'utf8'))[JSON.stringify([editor.task_id,editor.run_id])];
  assert.equal(editorState.editor.text,editorText);
  assert.equal(editorState.editor.source,'root');
- const page=await (await fetch(`${base}/registration-form?task=form-guarded-fill`)).text(); assert.ok(page.includes('run-one'));assert.ok(!page.includes(token));
+ const page=await (await fetch(`${base}/registration-form?task=form-guarded-fill&run=run-one`)).text(); assert.ok(page.includes('run-one'));assert.ok(!page.includes(token));
  const newer={...input,run_id:'run-two'};assert.equal((await cli('bench/adapters/phase11-reset.mjs',newer)).ok,true);
- assert.equal(evaluateAcceptance(input,await state(input)).passed,false);
- assert.equal((await post('/accept/form?task=form-guarded-fill&run=run-one',input.acceptance,false)).status,409);
+ assert.equal(evaluateAcceptance(input,await state(input)).passed,true);
+ assert.equal((await post('/accept/form?task=form-guarded-fill&run=run-one',input.acceptance,false)).status,200);
  assert.equal(evaluateAcceptance(newer,await state(newer)).passed,false);
  const bytes=Buffer.from('genuine upload bytes');const upload={task_id:'guarded-upload',run_id:'upload-run',task_class:'upload',acceptance:{kind:'upload',filename:'sample.bin',size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}};
  await post('/__reset',upload);

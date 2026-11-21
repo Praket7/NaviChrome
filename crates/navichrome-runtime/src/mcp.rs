@@ -16,6 +16,11 @@ use std::time::Duration;
 use std::{collections::BTreeMap, net::IpAddr, sync::Arc};
 use tokio::sync::Mutex;
 
+#[allow(dead_code)] // The binary includes this MCP module; the library build does not run its v2 entry point.
+pub(crate) mod session_state {
+    include!("mcp/session_state.rs");
+}
+
 const LOCAL_STDIO_PRINCIPAL: &str = "local-stdio";
 pub const SHARED_CLICK_UNSAFE_PREDICATE: &str = "['password','hidden','file','image'].includes(t)||(e instanceof HTMLInputElement&&!['text','search','email','url','tel','submit','reset','button'].includes(e.type))||(e.hasAttribute('data-requires-trusted')&&!(e instanceof HTMLTextAreaElement||e instanceof HTMLInputElement&&['text','search','email','url','tel'].includes(t)))||((e instanceof HTMLButtonElement||e instanceof HTMLInputElement)&&!!e.form&&['submit','reset'].includes(t))";
 const SHARED_CLICK_VERIFY_INITIAL_POLL_INTERVAL: Duration = Duration::from_millis(25);

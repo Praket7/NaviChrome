@@ -1,10 +1,21 @@
 # NaviChrome browser-agent speed and safety plan
 
-**Status:** Partial implementation (updated 2026-11-08). Keep the existing six-tool V3 contract and Chrome-only product boundary. Local click-authority, pointer revalidation, attachment-verification, and owned-tab close guards are implemented. Filename-bound JS-only download tracking and automatic cleanup of unused/intermediate NaviChrome-owned tabs are implemented locally. Cargo dev/test builds now disable incremental caches and debug symbols to stop future large build artifacts. The cleanup ledger is in-memory and session-scoped, so task-ID isolation and restart recovery are still open. Hosted CI passed for `d9fb24a`; the installed extension/native host reload passed. Google account work remains restricted to `praketg1@gmail.com`. The full Phase 11 matrix, 30-repetition latency evidence, end-to-end live cleanup, and full live account qualification remain open.
+**Status:** Partial implementation (updated 2026-11-08). Keep the existing six-tool V3 contract and Chrome-only product boundary. Local click-authority, pointer revalidation, attachment-verification, and owned-tab close guards are implemented. Filename-bound JS-only download tracking and automatic cleanup of unused/intermediate NaviChrome-owned tabs are implemented locally. Cargo dev/test builds now disable incremental caches and debug symbols to stop future large build artifacts. The cleanup ledger is in-memory and session-scoped, so task-ID isolation and restart recovery are still open. The realistic benchmark fixture now isolates persisted state by task and run ID; `npm run check:bench` passes, but its configured runner still rejects most of the declared matrix. Hosted CI passed for `d9fb24a`; the installed extension/native host reload passed. Google account work remains restricted to `praketg1@gmail.com`. The full Phase 11 matrix, 30-repetition latency evidence, end-to-end live cleanup, and full live account qualification remain open.
 
 ## Diagnosis from the five-task run
 
 The first request reached the live-task answer after **4 h 7 min 39 s**. The separately requested push and CI check added **32 min**, for **4 h 39 min 39 s** total. The timestamps show no idle gap longer than ten minutes. Exact time per model call, MCP call, browser wait, and user correction was not recorded, so a more granular time split would be invented.
+
+The later timing ledger splits the four live tasks by request span and wrapper waits:
+
+| Task | Request span | `functions.exec` calls | Cumulative wrapper time | Median wrapper call |
+|---|---:|---:|---:|---:|
+| Gmail | 44m 09s | 95 | 16m 32s | 15.11s |
+| Classroom | 13m 02s | 51 | 5m 36s | 10.11s |
+| ESPN | 14m 46s | 34 | 6m 06s | 10.12s |
+| Form, first pass | 32m 38s | 97 | 5m 07s | 2.62s |
+
+Across those four spans, the log shows 277 wrapper calls and 33m 21s of cumulative wrapper time. Repeated 10–20 second `write_stdin` yield windows account for 92–99% of that wrapper time. Those figures measure orchestration waits, not browser or Controlla execution time. The live-task trace contains no Controlla calls, so it does not support attributing the delay to Controlla; the current Hotload `controlla4` child separately reports `Connection closed` with no stderr detail, which is an availability blocker but not a measured task-time cause.
 
 The main causes, ordered by rework and risk:
 
