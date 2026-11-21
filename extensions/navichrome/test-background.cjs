@@ -551,7 +551,9 @@ const chrome = {
           viewport: { width: 1280, height: 720, device_scale_factor: 2 }, lifecycle: "active" } } };
       }
       if (method === "Runtime.callFunctionOn" && params?.functionDeclaration?.includes("__navichromeFrameOutcome")) {
-        return { result: { value: frameOutcomeVerified } };
+        const pointer = debuggerCalls.slice(0, -1).reverse().find(call => call.target.tabId === target.tabId &&
+          (call.method === "Input.dispatchMouseEvent" || call.method === "Input.dispatchTouchEvent" || call.params?.functionDeclaration?.includes("__navichromeFrameActionable")));
+        return { result: { value: frameOutcomeVerified && ["mouseReleased", "touchEnd"].includes(pointer?.params?.type) } };
       }
       if (method === "Runtime.callFunctionOn" && params?.functionDeclaration?.includes("__navichromeFrameActionable")) {
         assert.ok(params.functionDeclaration.includes("root=root.host.getRootNode()"), "frame action guard validates the open shadow-root chain to its owning document");
@@ -1915,6 +1917,12 @@ async function waitFor(predicate, description) {
   tabList.find(tab => tab.id === 42).active = false;
   tabList.find(tab => tab.id === 41).active = true;
   pointerGuardValue = { ok: true, x: 10, y: 20, viewport: "fixture-viewport" };
+  native.hostMessage({ type: "command", id: "oversized-pointer-guard", target_id: "41", method: "NaviChrome.pointerClick", params: {
+    object_id: "fixture-target", function_declaration: "function(index,expected){return true}" + " ".repeat(12000), index: 0
+  } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(native.sent.at(-1).result.reason_code, "pointer_request_invalid");
+  assert.equal(native.sent.at(-1).result.dispatch_may_have_occurred, false);
   const doubleSuccessStart = debuggerCalls.length;
   native.hostMessage({ type: "command", id: "double-pointer-click-success", target_id: "41", method: "NaviChrome.pointerClick", params: {
     object_id: "fixture-target", function_declaration: "function(index,expected){return __fixturePointerGuard}",
@@ -2984,7 +2992,7 @@ async function waitFor(predicate, description) {
     for (const timer of reconnectTimers.slice(nestedSessionWaitCursor).filter(timer => timer.delay === 400)) timer.callback();
     nestedSessionWaitCursor = reconnectTimers.length;
   }
-  assert.match(liveNative.sent.findLast(message => message.id === "nested-transform-click-refused")?.error || "", /geometry changed before dispatch/i);
+  assert.match(liveNative.sent.findLast(message => message.id === "nested-transform-click-refused")?.result?.reason || "", /geometry changed before dispatch/i);
   assert.equal(debuggerCalls.filter(call => call.target.tabId === 95 && call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed").length, changedTransformClickCount, "frame click refuses owner transform drift before trusted input");
   identityAxNodes = [{ nodeId: "nested-scroll", role: { value: "generic" }, name: { value: "Nested scroll region" }, backendDOMNodeId: 777 }];
   changingNestedTransformFixture = false;
@@ -3027,6 +3035,7 @@ async function waitFor(predicate, description) {
   reconnectTimers.findLast(timer => timer.delay === 400)?.callback();
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(liveNative.sent.findLast(message => message.id === "child-navigation-click")?.result?.verified, true, "child-frame navigation is checked against the child URL");
+  childFrameUrl = "https://picker.example.test/before";
   navigateFrameOnClick = true;
   liveNative.hostMessage({ type: "command", id: "child-navigation-canonical-url", target_id: "95", method: "NaviChrome.frameClick", params: { frame_id: "frame-oopif", loader_id: childFrameLoaderId, backend_node_id: 777, outcome: { kind: "navigation", url: "HTTPS://PICKER.EXAMPLE.TEST:443/next" }, timeout_ms: 250 } });
   await new Promise(resolve => setTimeout(resolve, 0));

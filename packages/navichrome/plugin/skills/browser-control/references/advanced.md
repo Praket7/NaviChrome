@@ -10,6 +10,24 @@ Steps include navigate, snapshot, find, click, double_click, context_click, hove
 
 `browser(action="task", task_program=...)` compiles the same typed steps (plus bounded control flow) into that VM, so one call can navigate, observe, fill, click, and verify without returning intermediate model turns. Programs are bounded to 128 expanded steps and 16 nesting levels; `drag` and selector `wait_for` are rejected rather than approximated.
 
+## Nested scrolling
+
+For a nested canvas/list, `act(action="scroll")` accepts one delta plus a fresh
+semantic `reference`, or a fresh visual-probe point as `center_x`/`center_y`
+without a reference. It scrolls the nearest scrollable ancestor and verifies
+that its offset moved in the requested direction. Without either target it
+uses the viewport center. A point over a frame requires a fresh frame reference;
+otherwise NaviChrome refuses instead of scrolling the outer page.
+
+## Canvas undo and visual proof
+
+Use one workflow: `probe` the affected document region with `save_as: "before"`,
+`find` the exact Undo button, click once without an outcome, then verify with
+`{"kind":"visual_region_changed","evidence_before":"$before"}`. Keep the probe
+away from the caret, toolbar, and animated UI. If pixels do not change or exact
+text matters, read the document. Never replay after `dispatched_unverified` or
+`unknown`.
+
 ## Virtualized lists
 
 Use `collect_virtual` when the page recycles rows or reveals items only through scrolling. Bound `max_scrolls` and treat `coverage_complete:false` as incomplete evidence.
@@ -115,3 +133,17 @@ open the observed href directly or use `foreground`.
 - Upload: `artifact_register`, then one `workflow` step with the visible attach
   control and an `acceptance` predicate on the filename. Never retry after
   `unknown`; inspect once.
+
+### Canvas human typing
+
+Use a fresh visual probe for the starting point. Send `human_keys` with that
+point, then `human_keys_continue` without coordinates on the same session and
+tab. Respect `max_chars` in pre-dispatch refusals. The continuation expires
+after two idle minutes and requires the same focused editor and caret. A
+trusted pointer press, caret-navigation key, or new composition stops that
+binding even when the hidden edit field has the same selection offset.
+Receipts count delivered key sequences. Verify the full text at the intended
+location once after the last chunk. Use a fresh visual read or saved editor
+view when the canvas is unreadable. Document copy proof may move the selection
+and needs a visible editor. After an interruption, inspect the editor and
+identify the saved prefix before placing a new caret.

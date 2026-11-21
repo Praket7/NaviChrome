@@ -87,6 +87,7 @@ struct SemanticTabState {
     items: BTreeMap<String, Value>,
     snapshot_id: String,
     scope_complete: bool,
+    find_scope: Option<Value>,
     /// A full copy of the last observation. It is only replayed when the
     /// caller names this exact snapshot and the live interaction epoch still
     /// matches; page text and values are already retained by `items`.
@@ -383,7 +384,8 @@ enum BrowserPredicate {
     },
     VisualRegionChanged {
         evidence_before: String,
-        evidence_after: String,
+        #[schemars(description = "Optional name of a second workflow probe. Omit to capture the first probe’s region again during verification.")]
+        evidence_after: Option<String>,
     },
     AppSpecific {
         #[schemars(
@@ -1468,6 +1470,25 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
         }
     };
     if args.include_frames == Some(true) {
+        if snapshot["cross_origin_frames_unread"].as_u64().unwrap_or(0) > 0 {
+            let live = app.legacy.shared_sessions.lock().await.get(&args.session_id).cloned();
+            if let Some(live) = live {
+                let live = live.lock().await;
+                if let Some(connection) = live.connection.as_ref()
+                    && let Ok(registry) = live.registry()
+                    && let Ok(tree) = connection.command(registry, &live.handle, &args.chrome_tab_id,
+                        "Page.getFrameTree", json!({"navichrome_include_oopif":true})).await
+                    && let Ok((frames, truncated)) = super::frame_handles_from_tree(&tree, &args.chrome_tab_id)
+                    && frames.first().is_some_and(|frame| {
+                        snapshot["document"]["frame_id"].as_str() == Some(frame.frame_id.as_str())
+                            && snapshot["document"]["loader_id"].as_str() == frame.loader_id.as_deref()
+                    })
+                {
+                    snapshot["frame_handles"] = json!(frames);
+                    snapshot["frame_handles_truncated"] = json!(truncated);
+                }
+            }
+        }
         let frame_handles = snapshot["frame_handles"]
             .as_array()
             .cloned()
@@ -1609,6 +1630,7 @@ async fn snapshot_impl(app: &AppV2, args: &BrowserSnapshotArgs) -> Result<Value,
     ));
     state.scope_complete = scope_complete;
     state.root_scope_complete = root_scope_complete;
+    state.find_scope = find_scope_signature(args);
     if state.next_ref == 0 {
         state.next_ref = 1;
     }
@@ -2394,9 +2416,9 @@ async fn retained_click(
     app: &AppV2,
     args: &BrowserActArgs,
     reference: &str,
-    outcome: BrowserClickOutcome,
+    outcome: Option<&BrowserClickOutcome>,
 ) -> Result<Value, rmcp::ErrorData> {
-    let first = retained_click_once(app, args, reference, &outcome).await?;
+    let first = retained_click_once(app, args, reference, outcome).await?;
     if !click_needs_reacquisition(&first) {
         return Ok(first);
     }
@@ -2459,7 +2481,7 @@ async fn retained_click(
         Ok(candidate) => candidate.reference,
         Err(_) => return Ok(first),
     };
-    let mut rebound = retained_click_once(app, args, &candidate, &outcome).await?;
+    let mut rebound = retained_click_once(app, args, &candidate, outcome).await?;
     rebound["reacquisition"] = json!({"status":"rebound_after_not_dispatched","from":reference,"to":candidate,"semantic_revision":fresh["semantic_revision"]});
     Ok(rebound)
 }
@@ -2484,13 +2506,17 @@ async fn retained_click_once(
     app: &AppV2,
     args: &BrowserActArgs,
     reference: &str,
-    outcome: &BrowserClickOutcome,
+    outcome: Option<&BrowserClickOutcome>,
 ) -> Result<Value, rmcp::ErrorData> {
     let legacy_reference =
         resolve_reference(app, &args.session_id, &args.chrome_tab_id, reference).await?;
-    let shared_outcome: SharedClickOutcome =
-        serde_json::from_value(serde_json::to_value(outcome).map_err(|e| invalid(e.to_string()))?)
-            .map_err(|e| invalid(e.to_string()))?;
+    let shared_outcome = match outcome {
+        Some(outcome) => serde_json::from_value(
+            serde_json::to_value(outcome).map_err(|error| invalid(error.to_string()))?,
+        )
+        .map_err(|error| invalid(error.to_string()))?,
+        None => SharedClickOutcome::DispatchOnly,
+    };
     let Json(value) = app
         .legacy
         .shared_click(Parameters(SharedClickArgs {
@@ -2797,58 +2823,52 @@ fn workflow_find_is_usable(found: &Value) -> bool {
             .is_some_and(|matches| matches.len() == 1)
 }
 
+fn find_snapshot_args(
+    args: &BrowserFindArgs,
+    include_frames: Option<bool>,
+) -> BrowserSnapshotArgs {
+    let exact = args.match_mode.as_deref() == Some("exact");
+    BrowserSnapshotArgs {
+        session_id: args.session_id.clone(),
+        chrome_tab_id: args.chrome_tab_id.clone(),
+        selector: args.selector.clone(),
+        max_items: Some(if exact { args.max_matches.unwrap_or(16).clamp(8, 50) } else { 200 }),
+        max_text_chars: Some(0),
+        max_bytes: Some(if exact { DEFAULT_TARGETED_RESPONSE_BYTES } else { 100_000 }),
+        max_bytes_reason: (!exact).then(|| "targeted control lookup".into()),
+        href_hint: None,
+        frame_id: None,
+        include_frames,
+        goal: Some(super::SnapshotGoal {
+            query: Some(args.query.clone()),
+            roles: args.role.clone().map(|role| vec![role]),
+            href_hint: args.href_hint.clone(),
+            within: None,
+            exhaustive: true,
+            model_profile: None,
+            needs_layout: false,
+        }),
+        max_scan_nodes: Some(65_536),
+    }
+}
+
+fn find_scope_signature(args: &BrowserSnapshotArgs) -> Option<Value> {
+    if args.goal.is_none() && args.selector.is_none() && args.href_hint.is_none() && args.frame_id.is_none() {
+        return None;
+    }
+    let goal = args.goal.as_ref();
+    Some(json!({
+        "query":goal.and_then(|goal| goal.query.as_deref()),
+        "roles":goal.and_then(|goal| goal.roles.as_ref()),
+        "goal_href":goal.and_then(|goal| goal.href_hint.as_deref()),
+        "within":goal.and_then(|goal| goal.within.as_ref()),
+        "selector":args.selector,"href":args.href_hint,"frame":args.frame_id
+    }))
+}
+
 async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::ErrorData> {
     if args.query.trim().is_empty() || args.query.len() > 512 {
         return Err(invalid("query must contain 1..512 characters"));
-    }
-    let key = tab_key(&args.session_id, &args.chrome_tab_id);
-    if !app.semantic.lock().await.contains_key(&key) {
-        let _ = snapshot_impl(
-            app,
-            &BrowserSnapshotArgs {
-                session_id: args.session_id.clone(),
-                chrome_tab_id: args.chrome_tab_id.clone(),
-                selector: None,
-                max_items: None,
-                max_text_chars: None,
-                max_bytes: None,
-                max_bytes_reason: None,
-                href_hint: None,
-                frame_id: None,
-                include_frames: None,
-                goal: None,
-                max_scan_nodes: None,
-            },
-        )
-        .await?;
-    }
-    let mut selector_subtree_complete = false;
-    if let Some(selector) = args.selector.as_deref() {
-        if selector.trim().is_empty() || selector.len() > 512 {
-            return Err(invalid("selector must contain 1..512 characters"));
-        }
-        // The snapshot collector rejects selectors that do not identify one
-        // composed-tree root, so this refresh keeps matching and completeness
-        // inside the requested subtree.
-        let scoped = snapshot_impl(
-            app,
-            &BrowserSnapshotArgs {
-                session_id: args.session_id.clone(),
-                chrome_tab_id: args.chrome_tab_id.clone(),
-                selector: Some(selector.to_owned()),
-                max_items: Some(200),
-                max_text_chars: Some(0),
-                max_bytes: Some(100_000),
-                max_bytes_reason: Some("scoped find refresh".into()),
-                href_hint: None,
-                frame_id: None,
-                include_frames: None,
-                goal: None,
-                max_scan_nodes: Some(65_536),
-            },
-        )
-        .await?;
-        selector_subtree_complete = scoped["scope_complete"] == true;
     }
     let mode = args.match_mode.as_deref().unwrap_or("all");
     if !matches!(mode, "all" | "best" | "exact")
@@ -2861,6 +2881,26 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
             "match_mode must be all, best, or exact and href_hint must be bounded",
         ));
     }
+    if args.selector.as_deref().is_some_and(|selector| selector.trim().is_empty() || selector.len() > 512) {
+        return Err(invalid("selector must contain 1..512 characters"));
+    }
+    let key = tab_key(&args.session_id, &args.chrome_tab_id);
+    let capture = find_snapshot_args(args, None);
+    let capture_scope = find_scope_signature(&capture);
+    let (cold, different_scope) = {
+        let semantic = app.semantic.lock().await;
+        let state = semantic.get(&key);
+        (state.is_none(), state.is_some_and(|state| state.find_scope.is_some() && state.find_scope != capture_scope))
+    };
+    if cold && args.within_reference.is_some() {
+        return Err(invalid("within_reference requires a retained semantic snapshot"));
+    }
+    let targeted_observation = cold || args.selector.is_some() || different_scope && args.within_reference.is_none();
+    let mut selector_subtree_complete = false;
+    if targeted_observation {
+        let observed = snapshot_impl(app, &capture).await?;
+        selector_subtree_complete = args.selector.is_some() && observed["scope_complete"] == true;
+    }
     let needs_nested_frame_evidence = {
         let semantic = app.semantic.lock().await;
         semantic.get(&key).is_some_and(|state| {
@@ -2872,24 +2912,8 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
         // as an @c reference. The AX frame pass supplies the frame/loader/node
         // identity needed by the guarded child-frame mutation route. Pay this
         // cost only when a nested target actually needs it.
-        snapshot_impl(
-            app,
-            &BrowserSnapshotArgs {
-                session_id: args.session_id.clone(),
-                chrome_tab_id: args.chrome_tab_id.clone(),
-                selector: None,
-                max_items: Some(200),
-                max_text_chars: Some(0),
-                max_bytes: Some(100_000),
-                max_bytes_reason: None,
-                href_hint: None,
-                frame_id: None,
-                include_frames: Some(true),
-                goal: None,
-                max_scan_nodes: Some(65_536),
-            },
-        )
-        .await?;
+        let observed = snapshot_impl(app, &find_snapshot_args(args, Some(true))).await?;
+        selector_subtree_complete = args.selector.is_some() && observed["scope_complete"] == true;
     }
     let state = app.semantic.lock().await;
     let state = state
@@ -2922,7 +2946,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
         ranked.retain(|item| item["source_frame"] == "main");
     }
     let root_scoped = within_root || exact_root_matches_only;
-    let scope_complete = find_scope_is_complete(
+    let scope_complete = (state.find_scope.is_none() || state.find_scope == capture_scope) && find_scope_is_complete(
         state.scope_complete,
         state.root_scope_complete,
         within_root,
@@ -2956,7 +2980,7 @@ async fn find_impl(app: &AppV2, args: &BrowserFindArgs) -> Result<Value, rmcp::E
     }
     let count = matches.len();
     Ok(
-        json!({"matches":matches,"count":count,"ambiguous":ambiguous,"scope_complete":scope_complete,"global_scope_complete":state.scope_complete,"selector_scope_complete":selector_subtree_complete,"scope":if selector_subtree_complete {"selector_subtree"} else if root_scoped {"root_document_subtree"} else {"all_collected_frames"},"semantic_revision":state.snapshot_id}),
+        json!({"matches":matches,"count":count,"ambiguous":ambiguous,"scope_complete":scope_complete,"global_scope_complete":state.scope_complete,"selector_scope_complete":selector_subtree_complete,"scope":if selector_subtree_complete {"selector_subtree"} else if root_scoped {"root_document_subtree"} else {"all_collected_frames"},"semantic_revision":state.snapshot_id,"targeted_observation":targeted_observation || needs_nested_frame_evidence}),
     )
 }
 
@@ -2969,6 +2993,28 @@ fn find_is_ambiguous(mode: &str, scope_complete: bool, ranked: &[Value]) -> bool
                     .is_some_and(|item| item["confidence"] != "high")
         }
         "exact" => !scope_complete || ranked.len() > 1,
+        _ => false,
+    }
+}
+
+fn is_google_workspace_canvas_editor(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    if url.scheme() != "https"
+        || url.host_str() != Some("docs.google.com")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return false;
+    }
+    let path = url.path_segments().into_iter().flatten().collect::<Vec<_>>();
+    match path.as_slice() {
+        ["document" | "presentation", "d", id, "edit", ..] => !id.is_empty(),
+        ["document" | "presentation", "u", account, "d", id, "edit", ..] => {
+            !account.is_empty() && account.bytes().all(|byte| byte.is_ascii_digit()) && !id.is_empty()
+        }
         _ => false,
     }
 }
@@ -3045,10 +3091,14 @@ async fn verify_shared_dom_text(
         );
     }
     let found = value["text_present"] == true;
-    let complete = value["truncated"] != true;
-    Ok(
-        json!({"status":text_presence_status(found,!complete),"observer":"shared_root_dom_text","expected":{"text_contains":expected},"observed":{"text_present":found,"scope":if selector.is_some() {"selector"} else {"root"}},"evidence_complete":complete,"document":{"frame_id":before.0,"loader_id":before.1,"url":before.2},"dispatch_occurred":false}),
-    )
+    let painted_editor = selector.is_none() && !found && is_google_workspace_canvas_editor(&before.2);
+    let complete = value["truncated"] != true && !painted_editor;
+    let mut receipt = json!({"status":text_presence_status(found,!complete),"observer":"shared_root_dom_text","expected":{"text_contains":expected},"observed":{"text_present":found,"scope":if selector.is_some() {"selector"} else {"root"}},"evidence_complete":complete,"document":{"frame_id":before.0,"loader_id":before.1,"url":before.2},"dispatch_occurred":false});
+    if painted_editor {
+        receipt["reason_code"] = json!("canvas_text_not_in_dom");
+        receipt["next_action"] = json!("Read the saved editor text through an authorized app reader or a fresh visual probe. Do not repeat the edit.");
+    }
+    Ok(receipt)
 }
 
 fn verification_reference(predicate: &BrowserPredicate) -> Option<&str> {
@@ -3481,7 +3531,7 @@ async fn verify_impl_unmeasured(
         }
         BrowserPredicate::VisualRegionChanged { .. } => {
             return Ok(
-                json!({"status":"inconclusive","observer":"fresh_shared_page_snapshot","reason":"visual_region_changed requires two same-document runtime probe results supplied to workflow verify","document":snapshot["document"]}),
+                json!({"status":"inconclusive","observer":"fresh_shared_page_snapshot","reason":"visual_region_changed requires a baseline from the same workflow; use workflow probe followed by verify","document":snapshot["document"]}),
             );
         }
         BrowserPredicate::AppSpecific { adapter, predicate } => {
@@ -3917,7 +3967,7 @@ impl AppV2 {
                     let outcome = args.outcome.clone().ok_or_else(|| {
                         invalid("pointer action requires an explicit bounded outcome")
                     })?;
-                    retained_click(self, &args, reference, outcome).await?
+                    retained_click(self, &args, reference, Some(&outcome)).await?
                 }
             }
             "secure_fill" => secure_password_fill(self, &args, reference).await?,
@@ -5359,4 +5409,14 @@ mod tests {
         explained.max_bytes_reason = Some("more context".into());
         assert_ne!(original, snapshot_request_signature(&explained));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn canvas_text_rule_is_limited_to_editor_documents_on_the_exact_origin() {
+    assert!(is_google_workspace_canvas_editor("https://docs.google.com/document/d/example/edit?tab=t.0"));
+    assert!(is_google_workspace_canvas_editor("https://docs.google.com/presentation/u/0/d/example/edit#slide=id.p"));
+    assert!(!is_google_workspace_canvas_editor("https://docs.google.com/document/u/0/"));
+    assert!(!is_google_workspace_canvas_editor("https://docs.google.com.evil.example/document/d/example/edit"));
+    assert!(!is_google_workspace_canvas_editor("https://docs.google.com:10443/document/d/example/edit"));
 }

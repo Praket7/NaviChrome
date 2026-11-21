@@ -4,7 +4,7 @@ use super::{
     FILL_FORM_STEP, FileChooserCleanupGuard, HasUnknownOutcome, NativeDownloadSequence,
     SHARED_TRIGGER_UPLOAD_DEADLINE, StagedUploadFile, V3ActArgs, V3BrowserArgs, V3WorkflowOp,
     V3WorkflowStep, action_timeout_receipt, append_shared_download_chunk,
-    artifact_registration_scope, background_dom_readback_verified,
+    artifact_registration_scope, background_dom_readback_verified, background_scroll_readback_verified,
     background_navigation_matches, background_pointer_refusal,
     background_stale_reference_receipt,
     background_presentation_evidence,
@@ -1532,6 +1532,13 @@ fn human_typing_budget_accounts_for_pacing_and_character_transactions() {
     assert!(budget.max_wall_ms >= 102_000);
     assert!(budget.max_browser_commands >= 432);
     assert!(budget.max_cdp_commands >= 400 * 8);
+    let continued: super::V3ActArgs = serde_json::from_value(json!({
+        "session_id":"s", "chrome_tab_id":"1", "action":"type",
+        "typing_mode":"human_keys_continue", "value":"x".repeat(77), "delay_ms":280
+    })).unwrap();
+    let continuation_budget = super::direct_action_budget(&continued);
+    assert!(continuation_budget.max_wall_ms > 30_000);
+    assert!(continuation_budget.max_browser_commands >= 77 * 7 + 32);
     let ordinary: super::V3ActArgs = serde_json::from_value(json!({"session_id":"s", "chrome_tab_id":"1", "action":"click"})).unwrap();
     assert_eq!(super::direct_action_budget(&ordinary).max_wall_ms, 30_000);
 }
@@ -2597,6 +2604,17 @@ fn compact_surface_routes_tasks_and_receipts_do_not_dump_page_state() {
     assert!(scroll_variants.iter().any(|variant| {
         variant["required"].as_array() == Some(&vec![json!("delta_x")])
             && variant["properties"]["delta_y"]["const"] == 0
+    }));
+    let coordinate_scroll = act_schema["allOf"].as_array().unwrap().iter().find(|clause| {
+        clause["if"]["properties"]["action"]["const"] == "scroll"
+            && clause["then"]["oneOf"].is_array()
+            && clause["then"]["oneOf"].as_array().unwrap().iter().any(|variant| {
+                variant["required"].as_array() == Some(&vec![json!("center_x"), json!("center_y")])
+            })
+    }).expect("scroll coordinate target schema condition");
+    assert!(coordinate_scroll["then"]["oneOf"].as_array().unwrap().iter().any(|variant| {
+        variant["required"].as_array() == Some(&vec![json!("center_x"), json!("center_y")])
+            && variant["properties"]["reference"]["not"].is_object()
     }));
     let mut schema_actions = browser_schema["properties"]["action"]["enum"]
         .as_array()
@@ -3670,6 +3688,36 @@ fn compact_click_keeps_declared_effect_and_observed_proof() {
 }
 
 #[test]
+fn compact_unverified_click_preserves_status_and_no_replay() {
+    let receipt = json!({
+        "status":"dispatched_unverified","action":"click","verified":false,
+        "effect_verified":false,"dispatch_acknowledged":true,"dispatch_may_have_occurred":true,
+        "replay_safe":false,"requires_verify":true,"reference":"@c9",
+        "reason_code":"pointer_effect_not_verified",
+        "reason":"x".repeat(300),
+        "next_action":"Check the intended effect once. Do not replay the click.",
+        "verification":{"status":"event_only","basis":"trusted_pointer_delivery",
+            "reason_code":"pointer_effect_not_verified","observed":{"document_changed":false,"event_seen":true}},
+        "junk":"x".repeat(3000)
+    });
+    let bounded = compact_v3_workflow_step(receipt, false, true);
+    assert!(v3_workflow_response_size(&bounded) <= 640, "{bounded}");
+    assert_eq!(bounded["status"], "dispatched_unverified", "{bounded}");
+    assert_eq!(bounded["replay_safe"], false, "{bounded}");
+    assert_eq!(bounded["requires_verify"], true, "{bounded}");
+    assert_eq!(bounded["dispatch_may_have_occurred"], true, "{bounded}");
+}
+
+#[test]
+fn tight_workflow_response_keeps_visual_proof_and_its_scope() {
+    let receipt = json!({"step":"verify","status":"passed","evidence_scope":"region_pixels_only",
+        "observed":{"same_document":true,"same_region":true,"fresh":true,"pixels_changed":true}});
+    let bounded = super::compact_v3_step_for_response_budget(receipt.clone());
+    assert_eq!(bounded["observed"], receipt["observed"]);
+    assert_eq!(bounded["evidence_scope"], "region_pixels_only");
+}
+
+#[test]
 fn compact_verify_keeps_expected_and_observed_proof() {
     let receipt = json!({
         "status":"passed",
@@ -4327,6 +4375,12 @@ fn workflow_compiles_only_adjacent_bounded_fill_runs_into_one_program() {
 
 #[test]
 fn stale_cdp_object_is_a_non_delivery_not_an_unknown_click() {
+    assert!(super::background_receiver_missing("Could not find object with given id"));
+    assert!(!super::background_receiver_missing("Execution context was destroyed."));
+    assert!(!super::background_receiver_missing("extension command timed out"));
+    assert!(super::background_action_result(&json!({"result":{"value":{"ok":true,"dispatched":true}}})).is_ok());
+    assert!(super::background_action_result(&json!({"result":{"value":{"ok":true}}})).is_err());
+    assert!(super::background_action_result(&json!({"exceptionDetails":{"text":"after click"}})).is_err());
     let receipt = background_stale_reference_receipt("click", None);
     assert_eq!(receipt["status"], "not_dispatched");
     assert_eq!(receipt["reason_code"], "stale_reference");
@@ -4596,6 +4650,28 @@ fn hidden_background_dom_actions_use_readback_verification_without_focus() {
         "fill",
         &json!({"verified":false})
     ));
+}
+
+#[test]
+fn background_scroll_verification_requires_the_actual_scroller_to_move_in_direction() {
+    let verified = json!({
+        "status":"verified","dispatch_acknowledged":true,"dispatch_may_have_occurred":true,
+        "scroller":{"kind":"nested","axis":"y","before":0,"after":180},
+        "delta":{"x":0,"y":180}
+    });
+    assert!(background_scroll_readback_verified(&verified, 0, 180));
+    let wrong_direction = json!({
+        "status":"verified","dispatch_acknowledged":true,"dispatch_may_have_occurred":true,
+        "scroller":{"kind":"nested","axis":"y","before":180,"after":0},
+        "delta":{"x":0,"y":-180}
+    });
+    assert!(!background_scroll_readback_verified(&wrong_direction, 0, 180));
+    let false_success = json!({
+        "status":"verified","dispatch_acknowledged":true,"dispatch_may_have_occurred":true,
+        "scroller":{"kind":"root","axis":"y","before":0,"after":0},"delta":{"x":0,"y":0}
+    });
+    assert!(!background_scroll_readback_verified(&false_success, 0, 180));
+    assert!(!background_scroll_readback_verified(&verified, 180, 0));
 }
 
 #[test]

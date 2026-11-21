@@ -74,7 +74,7 @@ export class FrameTreeRegistry {
     // known OOPIF session would force a recovery toggle on the next action.
     // Explicit detach/destroy events remain authoritative for removal.
     state.frames = new Map(previous);
-    state.root_frame_id = tree?.frame?.id ?? null;
+    if (!sessionId) state.root_frame_id = tree?.frame?.id ?? null;
     for (const frame of flattenFrameTree(tree)) {
       const existing = previous.get(frame.frame_id);
       // A frame-tree refresh must not discard the OOPIF session that was
@@ -83,11 +83,10 @@ export class FrameTreeRegistry {
       const reusable = existing && (!existing.loader_id || !frame.loader_id || existing.loader_id === frame.loader_id);
       state.frames.set(frame.frame_id, {
         ...frame,
-        session_id: reusable
-          ? existing.session_id
-          : frame.frame_id === state.root_frame_id
-            ? sessionId
-            : null,
+        parent_frame_id: frame.parent_frame_id ?? existing?.parent_frame_id ?? null,
+        session_id: sessionId && frame.frame_id === tree?.frame?.id
+          ? sessionId
+          : reusable ? existing.session_id : null,
         last_seen_at_ms: this.now(),
       });
     }

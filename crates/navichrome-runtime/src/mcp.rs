@@ -809,6 +809,13 @@ fn snapshot_bytes() -> usize {
 #[derive(serde::Deserialize, serde::Serialize, rmcp::schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum SharedClickOutcome {
+    #[serde(skip_deserializing)]
+    #[schemars(skip)]
+    #[allow(
+        dead_code,
+        reason = "constructed by the V3 binary's retained click route"
+    )]
+    DispatchOnly,
     Navigation {
         #[schemars(
             description = "Optional exact absolute HTTP(S) destination. Omit to accept any observed document change; use a separate URL prefix verification for canonical redirects."
@@ -5373,6 +5380,20 @@ impl App {
             }
             (acknowledged, false)
         };
+        let dispatch_only = matches!(args.outcome, SharedClickOutcome::DispatchOnly);
+        if acknowledged && pointer_terminal.is_none() && dispatch_only {
+            let mut receipt = json!({
+                "status":"dispatched_unverified","dispatch_acknowledged":true,
+                "dispatch_may_have_occurred":true,"requires_verify":true,"verified":false,
+                "reason_code":"outcome_not_declared","replay_safe":false,
+                "next_action":"inspect_current_state_once_before_retrying",
+            });
+            if pointer_activation.is_object() {
+                receipt["pointer_activation"] = pointer_activation;
+            }
+            executed.attach(&mut receipt);
+            return Ok(rmcp::handler::server::wrapper::Json(receipt));
+        }
         let mut result = pointer_terminal.clone().unwrap_or_else(|| json!({
             "status":"unknown",
             "dispatch_acknowledged":acknowledged,
@@ -5386,7 +5407,10 @@ impl App {
             deadline.max(tokio::time::Instant::now() + SHARED_CLICK_VERIFY_POST_DISPATCH_GRACE);
         let mut verification_poll = SHARED_CLICK_VERIFY_INITIAL_POLL_INTERVAL;
         let mut verification_attempts = 0u32;
-        while pointer_terminal.is_none() && tokio::time::Instant::now() < verification_deadline {
+        while !dispatch_only
+            && pointer_terminal.is_none()
+            && tokio::time::Instant::now() < verification_deadline
+        {
             let check = async {
                 let identity = shared_frame_identity(
                     connection,
@@ -5657,7 +5681,7 @@ impl App {
                     .await
                     .map_err(invalid)?;
             if let Some(frame_id) = args.frame_id.as_deref() {
-                let before_tree = connection.command(registry, &shared.handle, &args.chrome_tab_id, "Page.getFrameTree", Value::Null).await.map_err(|error|invalid(error.to_string()))?;
+                let before_tree = connection.command(registry, &shared.handle, &args.chrome_tab_id, "Page.getFrameTree", json!({"navichrome_include_oopif":true})).await.map_err(|error|invalid(error.to_string()))?;
                 let before_frame = find_cdp_frame(&before_tree, frame_id).ok_or_else(||invalid("frame_id is detached or not part of the selected tab"))?;
                 let response = match connection.command(registry, &shared.handle, &args.chrome_tab_id, "Accessibility.getFullAXTree", json!({"frameId":frame_id})).await {
                     Ok(value) => value,
@@ -5679,7 +5703,7 @@ impl App {
                     let actionable = matches!(role, "button" | "link" | "checkbox" | "radio" | "option" | "menuitem" | "tab" | "switch");
                     items.push(json!({"reference":format!("@f:{frame_id}:{}:{backend}",before_frame.0),"source_frame_id":frame_id,"frame_loader_id":before_frame.0,"source_frame_url":before_frame.1,"role":role,"name":name,"backend_node_id":backend,"actionable":actionable}));
                 }
-                let after_tree=connection.command(registry,&shared.handle,&args.chrome_tab_id,"Page.getFrameTree",Value::Null).await.map_err(|error|invalid(error.to_string()))?;
+                let after_tree=connection.command(registry,&shared.handle,&args.chrome_tab_id,"Page.getFrameTree",json!({"navichrome_include_oopif":true})).await.map_err(|error|invalid(error.to_string()))?;
                 let after_frame=find_cdp_frame(&after_tree,frame_id).ok_or_else(||invalid("frame detached during accessibility read; result discarded"))?;
                 if before!=shared_frame_identity(connection,registry,&shared.handle,&args.chrome_tab_id).await.map_err(invalid)? || before_frame!=after_frame { return Err(invalid("tab or frame navigated during accessibility read; result discarded as stale")); }
                 let mut result=json!({"chrome_tab_id":args.chrome_tab_id,"source_frame_id":frame_id,"source_frame_url":before_frame.1,"frame_loader_id":before_frame.0,"routing":ax.get("routing").and_then(Value::as_str).unwrap_or("root_frame_id"),"items":items,"truncated":truncated,"complete":!truncated,"shared_frame_identity":{"frame_id":before.0,"loader_id":before.1,"url":before.2}});
@@ -6692,8 +6716,8 @@ impl App {
                 .connection
                 .as_ref()
                 .ok_or_else(|| invalid("shared extension session has not been accepted"))?;
-            if !connection
-                .selected_targets()
+            let selected_targets = connection.selected_targets();
+            if !selected_targets
                 .iter()
                 .any(|selected| selected.as_str() == target)
             {
@@ -6701,14 +6725,16 @@ impl App {
                     "close_owned target is not selected in this shared session",
                 ));
             }
-            let source = connection.selected_targets().iter().find(|candidate| candidate.as_str() != target)
-                .cloned()
-                .ok_or_else(|| invalid("close_owned needs another still-open tab in this session to verify the target lifecycle"))?;
+            let source = selected_targets
+                .iter()
+                .find(|candidate| candidate.as_str() != target)
+                .map(String::as_str)
+                .unwrap_or(target);
             let receipt = connection
                 .command(
                     shared.registry()?,
                     &shared.handle,
-                    &source,
+                    source,
                     "NaviChrome.closeOwnedTab",
                     json!({"owned_tab_id":target}),
                 )
@@ -8882,6 +8908,11 @@ mod tests {
 
     #[test]
     fn shared_click_guard_allows_implicit_submit_only_outside_forms() {
+        let deployed_guard = crate::guard_reason::click_guard_script(SHARED_CLICK_UNSAFE_PREDICATE);
+        assert!(
+            deployed_guard.encode_utf16().count() <= 12_000,
+            "the generated guard must fit Chrome extension pointerClick's limit"
+        );
         let runtime = rquickjs::Runtime::new().unwrap();
         let context = rquickjs::Context::full(&runtime).unwrap();
         context.with(|ctx| {

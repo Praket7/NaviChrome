@@ -19,6 +19,7 @@ export function commandNeedsPageFocus(method) {
     || method.startsWith("Accessibility.")
     || method === "NaviChrome.fastType"
     || method === "NaviChrome.humanTypeCharacter"
+    || method === "NaviChrome.canvasHumanBatch"
     || method === "NaviChrome.typeTextTransaction"
     || method === "NaviChrome.securePasswordFill"
     || method === "NaviChrome.checkIdentityMarker"

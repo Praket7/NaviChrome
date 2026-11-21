@@ -77,11 +77,12 @@ pub struct TextMatch {
     pub matched_windows: usize,
     pub sampled_windows: usize,
     pub exact_contains: bool,
+    pub contiguous_content: bool,
 }
 
 impl TextMatch {
     pub fn proven(&self) -> bool {
-        self.sampled_windows > 0 && self.matched_windows == self.sampled_windows
+        self.sampled_windows > 0 && self.contiguous_content
     }
 }
 
@@ -95,12 +96,15 @@ pub fn verify_typed_text(typed: &str, document: &str) -> TextMatch {
         .count();
     let normalized_document = normalize_text(document);
     let normalized_typed = normalize_text(typed).trim().to_owned();
-    let exact_contains = !normalized_typed.is_empty()
-        && normalized_document.contains(normalized_typed.lines().next().unwrap_or("").trim());
+    let exact_contains =
+        !normalized_typed.is_empty() && normalized_document.contains(&normalized_typed);
+    let contiguous_content =
+        !windows.is_empty() && canonical_document.contains(&canonical_alnum(typed));
     TextMatch {
         matched_windows,
         sampled_windows: windows.len(),
         exact_contains,
+        contiguous_content,
     }
 }
 
@@ -159,6 +163,23 @@ mod tests {
         let typed = "NaviChrome typed this into a fresh Google Doc, and every character was paced.";
         let document = "An unrelated pre-existing paragraph with nothing in common.";
         let result = verify_typed_text(typed, document);
+        assert!(!result.proven());
+    }
+
+    #[test]
+    fn sampled_windows_and_first_line_do_not_prove_the_full_text() {
+        let typed = format!(
+            "{}\n{}{}{}{}",
+            "a".repeat(40),
+            "b".repeat(40),
+            "c".repeat(40),
+            "d".repeat(40),
+            "e".repeat(40)
+        );
+        let document = typed.replacen(&"b".repeat(40), &"x".repeat(40), 1);
+        let result = verify_typed_text(&typed, &document);
+        assert_eq!(result.matched_windows, result.sampled_windows);
+        assert!(!result.exact_contains);
         assert!(!result.proven());
     }
 

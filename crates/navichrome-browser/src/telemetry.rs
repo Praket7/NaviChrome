@@ -467,6 +467,7 @@ pub async fn record_command_purpose(method: &str, count: u64) {
         | "NaviChrome.fastType"
         | "NaviChrome.frameFill"
         | "NaviChrome.humanTypeCharacter"
+        | "NaviChrome.canvasHumanBatch"
         | "NaviChrome.securePasswordFill" => "mutation",
         "Page.setFileInputFiles"
         | "NaviChrome.upload"

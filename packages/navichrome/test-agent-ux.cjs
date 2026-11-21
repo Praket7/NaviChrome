@@ -56,7 +56,11 @@ function fakeTools() {
 }
 
 test('headless guidance keeps browser lifecycle mode separate from page tools', () => {
-  for (const content of [browserSkill, advancedBrowserSkill]) {
+  assert.match(browserSkill, /action=task.*mode=.*headless/s);
+  assert.match(browserSkill, /no `session_id` or `chrome_tab_id`|no session or tab IDs/);
+  assert.match(browserSkill, /Background is the default/);
+  assert.match(browserSkill, /foreground only when the task requires visible Chrome/);
+  for (const content of [advancedBrowserSkill]) {
     assert.match(content, /action=task.*mode=.*headless/s);
     assert.match(content, /no `session_id` or `chrome_tab_id`|no session or tab IDs/);
     assert.match(content, /launches.*navigates.*verifies.*releases/s);

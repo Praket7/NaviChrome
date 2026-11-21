@@ -43,7 +43,7 @@ pub(super) async fn verify_canvas_document_text(
     if sampled == 0 {
         return unavailable("too_short_for_text_match");
     }
-    let cutoff = deadline.min(tokio::time::Instant::now() + Duration::from_secs(8));
+    let cutoff = (deadline - Duration::from_secs(1)).min(tokio::time::Instant::now() + Duration::from_secs(8));
     // Chrome withholds the document copy path from a hidden tab: the selection
     // never reaches the editor, so every readback would compare the user's
     // untouched clipboard against the document and call a successful insert a
@@ -58,15 +58,19 @@ pub(super) async fn verify_canvas_document_text(
         });
     }
     let modifiers = if cfg!(target_os = "macos") { 4 } else { 2 };
-    let _ = press_shortcut(
+    if !press_shortcut(
         connection, registry, handle, tab_id, cutoff, "a", "KeyA", 65, modifiers,
     )
-    .await;
+    .await
+    {
+        return unavailable("selection_dispatch_unconfirmed");
+    }
     // A background tab can swallow the OS copy shortcut, but the document can
     // still answer the copy event itself: dispatching `copy` with a writable
     // DataTransfer lets the editor write the selection into our own buffer.
     let mut copy_event_characters = 0_usize;
     let mut last_match = None;
+    let mut copy_event_hash = String::new();
     for attempt in 0..6 {
         if tokio::time::Instant::now() >= cutoff {
             break;
@@ -86,36 +90,43 @@ pub(super) async fn verify_canvas_document_text(
         {
             copy_event_characters = document.chars().count();
             let result = document_text::verify_typed_text(typed, &document);
-            if result.proven() {
-                return json!({
-                    "status": "verified",
-                    "verification": "document_copy_event",
-                    "document_text": {
-                        "characters": document.chars().count(),
-                        "hash": document_text::text_hash(&document),
-                        "matched_windows": result.matched_windows,
-                        "sampled_windows": result.sampled_windows,
-                        "exact_contains": result.exact_contains,
-                        "attempts": attempt + 1
-                    }
-                });
-            }
+            let exact = result.proven() && result.exact_contains;
             last_match = Some(result);
+            if exact {
+                copy_event_hash = document_text::text_hash(&document);
+                break;
+            }
         }
     }
-    // Collapse the select-all selection even when proof failed.
-    let _ = press_shortcut(
+    // Clear the selection before returning on either outcome. Leave the
+    // caller enough time for cleanup even when copy consumed the read budget.
+    let collapsed = press_shortcut(
         connection,
         registry,
         handle,
         tab_id,
-        cutoff,
+        deadline.min(tokio::time::Instant::now() + Duration::from_secs(1)),
         "ArrowRight",
         "ArrowRight",
         39,
         0,
     )
     .await;
+    if !collapsed {
+        return unavailable("selection_cleanup_unconfirmed");
+    }
+    if let Some(result) = last_match.as_ref().filter(|result| result.proven() && result.exact_contains) {
+        return json!({
+            "status":"verified","verification":"document_copy_event",
+            "document_text": {
+                "characters":copy_event_characters,
+                "hash":copy_event_hash,
+                "matched_windows":result.matched_windows,
+                "sampled_windows":result.sampled_windows,
+                "exact_contains":true
+            }
+        });
+    }
     let mut receipt = unavailable(if copy_event_characters == 0 {
         "copy_event_unavailable"
     } else {

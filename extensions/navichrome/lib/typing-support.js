@@ -84,3 +84,77 @@ export function landedPrefix(typed, pageBefore, pageAfter, maxChecks = 8) {
   }
   return null;
 }
+
+// Keep the guard/key loop on the extension side of the native bridge. The
+// retained renderer function carries the editor and collapsed caret binding.
+export async function canvasHumanBatch(tabId, params, { send, isAuthorized, now = () => performance.now(), sleep = delay }) {
+  const { object_id: objectId, text, delay_ms: pace, more, budget_ms: budget } = params ?? {};
+  const characters = typeof text === "string" ? Array.from(text) : [];
+  let completed = 0, keys = 0, commands = 0, attempted = false;
+  const receipt = (status, reason) => ({
+    status, reason_code: reason, completed_chars: completed, key_events: keys,
+    cdp_commands: commands, dispatch_may_have_occurred: attempted,
+  });
+  if (typeof objectId !== "string" || !objectId || objectId.length > 1024 ||
+      characters.length < 1 || characters.length > 32 ||
+      /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\ud800-\udfff]/u.test(text) ||
+      !Number.isInteger(pace) || pace < 0 || pace > 600 || typeof more !== "boolean" ||
+      !Number.isInteger(budget) || budget < 1 || budget > 8000) {
+    return receipt("not_dispatched", "canvas_batch_invalid");
+  }
+  const deadline = now() + budget;
+  const current = () => isAuthorized(tabId) && now() < deadline;
+  const call = async (method, args) => {
+    if (!current()) throw new Error("canvas batch no longer authorized or within deadline");
+    commands++;
+    return send({ tabId }, method, args, Math.max(1, Math.ceil(deadline - now())));
+  };
+  const guard = async (phase, fallback) => {
+    const value = (await call("Runtime.callFunctionOn", {
+      objectId, functionDeclaration: "function(phase){return this(phase)}",
+      arguments: [{ value: phase }], returnByValue: true,
+    })).result?.value;
+    return value === true ? null : typeof value === "string" ? value : fallback;
+  };
+  const sendKey = async event => {
+    if (!current()) throw new Error("canvas batch authorization changed");
+    attempted = true;
+    await call("Input.dispatchKeyEvent", event);
+    keys++;
+  };
+  try {
+    for (const [index, character] of characters.entries()) {
+      const started = now();
+      const before = await guard("check", "canvas_caret_changed");
+      if (before) return receipt(attempted ? "unknown" : "not_dispatched", before);
+      const enter = character === "\n";
+      const identity = enter ? { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 36 } : { key: character };
+      const up = { ...identity, type: "keyUp" };
+      try {
+        await sendKey({ ...identity, type: "keyDown", ...(enter ? { text: "\r", unmodifiedText: "\r" } : {}) });
+        if (!enter) {
+          const afterDown = await guard("check", "canvas_focus_changed");
+          if (afterDown) return receipt("unknown", afterDown);
+          await sendKey({ ...identity, type: "char", text: character, unmodifiedText: character });
+        }
+        const beforeUp = await guard("focus", "canvas_focus_changed");
+        if (beforeUp) return receipt("unknown", beforeUp);
+      } catch {
+        if (attempted && await guard("focus", "canvas_focus_changed").catch(() => "canvas_focus_changed") === null) await sendKey(up).catch(() => {});
+        return receipt(attempted ? "unknown" : "not_dispatched", "canvas_key_delivery_unknown");
+      }
+      await sendKey(up);
+      const after = await guard("stamp", "canvas_caret_changed");
+      if (after) return receipt("unknown", after);
+      completed++;
+      if (index + 1 < characters.length || more) {
+        const spacing = /[.!?\n]/u.test(character) ? pace * 2 : pace;
+        const wait = started + spacing - now();
+        if (wait > 0) await sleep(Math.min(wait, Math.max(0, deadline - now())));
+      }
+    }
+    return receipt("delivered");
+  } catch {
+    return receipt(attempted ? "unknown" : "not_dispatched", "canvas_batch_interrupted");
+  }
+}

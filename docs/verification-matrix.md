@@ -1,5 +1,30 @@
 # Verification matrix
 
+## Click and editor reliability — 2026-11-21
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Background open, exact find, click | pass, installed Chrome and Hotload | A page with 430 distractor controls went from an ambiguous 17-command refusal (1.949 s) to a verified one-call run (15 browser commands, 0.612 s). The tab stayed inactive. One matched pair of runs. |
+| Partially visible control | pass, installed Chrome and Hotload | Former `outside_viewport` refusal reproduced; clipped visible point produced exact page text (one call, 15 browser commands, 0.431 s). Overlay and protected-target refusals remain covered. |
+| Foreground guarded pointer click | pass, installed Chrome and Hotload | The old oversized guard produced an unknown delivery (63 browser commands, 3.561 s). The same workflow verified the page effect on the first verification attempt (22 browser commands, 0.472 s). One matched pair of runs. |
+| Private headless | pass, Hotload and installed Chrome | Standard installation launched in 0.613 s, the dense-page workflow verified in 0.276 s, and release succeeded. Role-filtered lookup found one button. The same label with no role found ambiguity and dispatched no click. |
+| Canvas input and interruption | pass, installed Chrome and separate Chrome fixture | The inactive-tab artifact received 21 paced characters over two chunks and exact selector readback passed. An independent trusted click invalidated the guard at the same hidden selection offset; mouse movement preserved it. |
+| Small background click | pass, installed Chrome and Hotload | One public call and 15 browser commands before and after the first rebuild. This workload showed no command count reduction. |
+| Workspace and agent guidance | pass, local | 1,108 Rust tests passed with two test threads and 28 ignored. Two lease tests failed in the initial default-parallel run. The background-action, canvas-batch, snapshot-efficiency, agent-guidance, extension and provenance checks passed. |
+
+## Editor workflows and canvas batching — 2026-11-21
+
+| Check | Result | Evidence and boundary |
+|---|---|---|
+| Paced canvas typing | pass, installed Chrome and Hotload | Exact Unicode and newline readback over two 49-character passages. Bridge commands 703 → 33 across comparable probes. Underlying DevTools count 703 and paced duration 28.60 s. |
+| Focus change during keydown | pass, installed Chrome and Hotload | Stopped with `canvas_focus_changed`, one keydown and zero characters. Both editor contents checked afterward. |
+| Personal Google Docs and Slides | pass, independent fresh visual readback | Both created scratch projects, saved edits, and showed them when reopened. The correct account was verified before editing. |
+| Canvas verification status | pass, installed Chrome and Hotload | The rebuilt verifier returned `incomplete / canvas_text_not_in_dom` on Google Docs and `failed` for an absent phrase on a complete ordinary page. |
+| Creative Studio document and slide | pass, installed Chrome and Hotload | Exact preview digest and saved revision checked against state on disk. Document suggestion and slide geometry/notes verified. |
+| Creative Studio video | pass, installed Chrome and Hotload | Source uploaded through NaviChrome. Restored revision 2 after server restart. Decoded 54-frame MP4 had the expected clip order, audio and caption timing. Both the same-origin artifact and the native file on disk matched the render SHA-256. The native receipt timed out. |
+| Workspace Rust and extension checks | pass, local | 1,108 Rust tests passed, 28 ignored. App checks, six editor/batch tests, documentation/provenance checks, and the extension harness passed. |
+| Canva and CapCut | blocked, live vendor editing | The Canva account available in Chrome was outside the requested account scope. CapCut stopped at sign-in. No vendor project was created there. |
+
 ## Build storage and client contracts — 2026-11-08
 
 | Check | Result | Evidence and boundary |
@@ -1264,3 +1289,21 @@ The isolated simulated-extension shared-download fixture passed with identity/ep
 | ESPN Bills live read | pass, read-only via NaviChrome | The Bills page showed 6–1 and a Vikings game listed for Nov. 9 at 8:15 pm. The newest Bills-specific visible story was labeled `2d`; exact publication time and article body were not checked. |
 | Google Form completion | submit dispatched, persistence unverified | On the `praketg1@gmail.com` account, NaviChrome filled the form and returned a verified Submit navigation receipt to `/formResponse`. The page lacked Google's normal response-recorded confirmation. The attachment was visibly selected before Submit, but its tool receipt was `unknown` after `SyntaxError: Identifier 'topSites' has already been declared`; source is unassigned. No retry was made. |
 | Full Phase 11 matrix and speed target | open | No 30-repetition full-matrix cohort, exact-HEAD hosted CI, or live account qualification is established by this fixture fix. |
+
+### Installed Chrome input probes, 2026-11-20
+
+| Surface | Gate state | Evidence |
+| --- | --- | --- |
+| Canvas proxy paced continuation and focus fence | Pass on installed Chrome through Hotload | Exact two-chunk readback, unchanged activation/focus, and independent field checks after forced interference. |
+| Same-process, cross-site, and nested frame input | Pass on installed Chrome through Hotload | Accepted click text, exact typed value, and pre-press refusals for hover shift, label mismatch, and preexisting outcomes. |
+| Single-tab owned closure | Pass on installed Chrome through Hotload | Exact native closure receipt and zero fixture tabs in final discovery. |
+| Google Docs with a personal account | Pending | The local canvas proxy does not prove Docs input, autosave, or reopen persistence. |
+
+### Background scroll targeting, 2026-11-21
+
+| Surface | Gate state | Evidence |
+| --- | --- | --- |
+| Nested editor/root/semantic/frame scroll targeting | Pass, local browser fixtures | `npm run check:background-dom`: 44/44 passed; a visual point or exact semantic descriptor selects the nearest movable scroller, frame refs fail closed, stale targets do not dispatch, and only signed movement verifies. |
+| Live Google Docs scroll | Pass, read-only via Hotload NaviChrome | After reloading the native bridge/extension and refreshing Hotload NaviChrome to revision 7, a fresh visual point scroll returned `verified`; a follow-up screenshot showed the prior text in view and `Saved to Drive`. No document text changed. The older direct MCP process initially refused before dispatch. |
+
+[Probe timings and limits](audit-2026-11-20-input-reliability.md#installed-chrome-evidence)

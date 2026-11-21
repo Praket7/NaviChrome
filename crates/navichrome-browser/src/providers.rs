@@ -39,7 +39,7 @@ fn cdp_command_count_is_partial(method: &str, response_received: bool) -> bool {
     method.starts_with("NaviChrome.")
         && (!matches!(
             method,
-            "NaviChrome.fastType" | "NaviChrome.humanTypeCharacter"
+            "NaviChrome.fastType" | "NaviChrome.humanTypeCharacter" | "NaviChrome.canvasHumanBatch"
         ) || !response_received)
 }
 #[cfg(all(test, unix))]
@@ -1076,6 +1076,11 @@ impl SharedExtensionSession {
         let response_timeout = shared_command_timeout(method, &params);
         let cdp_budget_charge = if method == "NaviChrome.fastType" {
             fast_type_cdp_bound(&params)
+        } else if method == "NaviChrome.canvasHumanBatch" {
+            let chars = params["text"]
+                .as_str()
+                .map_or(0, |text| text.chars().count().min(32));
+            (chars as u64) * 7 + 2
         } else if method == "NaviChrome.humanTypeCharacter" {
             // One character reserves preflight, keydown, character, keyup and
             // all retained-target guards before the bridge dispatches anything.
@@ -1083,7 +1088,7 @@ impl SharedExtensionSession {
         } else {
             1
         };
-        if method.starts_with("NaviChrome.") && method != "NaviChrome.fastType" {
+        if cdp_command_count_is_partial(method, true) {
             crate::scheduler::telemetry::mark_cdp_commands_partial().await;
         }
         let id = self.next_command_id.fetch_add(1, Ordering::Relaxed);
@@ -1190,9 +1195,15 @@ impl SharedExtensionSession {
         pending_guard.disarm();
         crate::scheduler::telemetry::record_browser_command(
             1,
-            if method == "NaviChrome.fastType" || method == "NaviChrome.humanTypeCharacter" {
+            if matches!(
+                method,
+                "NaviChrome.fastType"
+                    | "NaviChrome.humanTypeCharacter"
+                    | "NaviChrome.canvasHumanBatch"
+            ) {
                 result
-                    .get("cdp_commands")
+                    .pointer("/result/cdp_commands")
+                    .or_else(|| result.get("cdp_commands"))
                     .and_then(Value::as_u64)
                     .unwrap_or(cdp_budget_charge)
             } else {

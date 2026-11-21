@@ -47,13 +47,14 @@ function(index, outcome, opts) {
   if (e.querySelector('[data-requires-trusted]') || trusted && (trusted !== e || !preScrollTrustedText || outcome?.kind !== 'focused')) {
     return fail('trusted_boundary', {self: trusted === e});
   }
-  if (__UNSAFE__) return fail('unsupported_renderer_surface', {tag:e.tagName.toLowerCase(), type:e.type || null});
+  const unsafeSurface = () => __UNSAFE__;
+  if (unsafeSurface()) return fail('unsupported_renderer_surface', {tag:e.tagName.toLowerCase(), type:e.type || null});
   if (align !== 'none') e.scrollIntoView({block: align, inline: 'nearest'});
   if (frame && align !== 'none') frame.scrollIntoView({block:align, inline:'nearest'});
   const s = e.ownerDocument.defaultView.getComputedStyle(e), b = e.getBoundingClientRect();
   const fb = frame?.getBoundingClientRect();
   const x = b.left + b.width / 2 + (fb?.left || 0), y = b.top + b.height / 2 + (fb?.top || 0);
-  const unsafe = __UNSAFE__;
+  const unsafe = unsafeSurface();
   const trustedText = e.hasAttribute('data-requires-trusted') && (e instanceof HTMLTextAreaElement || e instanceof HTMLInputElement && ['text','search','email','url','tel'].includes(t));
   const trustedBoundary = composedClosest(e, '[data-requires-trusted]');
   const deepHit = () => {
@@ -78,21 +79,18 @@ function(index, outcome, opts) {
       || (typeof n?.value === 'string' ? n.value : '')
       || n?.getAttribute?.('title')
   ).toLowerCase();
-  const labelUnderPointer = () => {
+  const matchesLabel = name => name && (name === wantedLabel || name.includes(wantedLabel));
+  const labelUnderPointer = (hit, onTarget) => {
     if (!wantedLabel) return null;
-    if (!deepHit()) return fail('label_not_under_pointer', {match: 'no_hit_target'});
+    // A deeply nested icon still belongs to the retained control. Use the
+    // same live name that was checked against the snapshot above.
+    if (onTarget && matchesLabel(normText(this.name(e)).toLowerCase())) return null;
     // Walk only control-sized ancestry. Climbing into <body> would match text
     // from anywhere on the page and turn this check into a no-op.
-    for (let n = deepHit(), depth = 0; n && depth < 4 && n !== document.body && n !== document.documentElement; n = n.parentElement || n.getRootNode()?.host, depth++) {
-      const name = nameOfNode(n);
-      if (name && (name === wantedLabel || name.includes(wantedLabel))) return null;
+    for (let n = hit, depth = 0; n && depth < 4 && n !== n.ownerDocument.body && n !== n.ownerDocument.documentElement; n = n.parentElement || n.getRootNode()?.host, depth++) {
+      if (matchesLabel(nameOfNode(n))) return null;
     }
     return fail('label_not_under_pointer', {match: 'absent'});
-  };
-  let labelChecked = false, labelMiss = null;
-  const labelResult = () => {
-    if (!labelChecked) { labelMiss = labelUnderPointer(); labelChecked = true; }
-    return labelMiss;
   };
   const authorityFailure = () => {
     const action = (wantedLabel || this.name(e).replace(/\s+/g, ' ').trim().toLowerCase()).split(/\s+/)[0];
@@ -126,16 +124,17 @@ function(index, outcome, opts) {
     // picker/button from being clicked. Fill/select guards still honor it.
     () => s.pointerEvents === 'none' ? fail('pointer_events_none') : null,
     () => (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) ? fail('outside_viewport', {rect: rectOf(b), viewport: {w: innerWidth, h: innerHeight}, scroll: align}) : null,
-    () => !deepHit() ? fail('no_hit_target', {rect: rectOf(b)}) : null,
     () => {
       const h = deepHit();
-      if (h === e || e.contains(h)) return labelResult();
+      if (!h) return fail('no_hit_target', {rect: rectOf(b)});
+      const onTarget = h === e || e.contains(h);
+      if (onTarget) return labelUnderPointer(h, true);
       // A named label that resolves under the pointer means the pointer presses
       // exactly the words the click named. An overlay the agent just opened is
       // then the intended control, not an obstruction.
-      if (wantedLabel && !labelResult()) return null;
       // Never describe a protected blocker; report only that one exists.
       if (protectedNode(h)) return fail('obscured', {blocker: {protected: true}, rect: rectOf(b)});
+      if (wantedLabel && !labelUnderPointer(h, false)) return null;
       const hs = getComputedStyle(h), hb = h.getBoundingClientRect();
       const ix = Math.max(0, Math.min(b.right, hb.right) - Math.max(b.left, hb.left)), iy = Math.max(0, Math.min(b.bottom, hb.bottom) - Math.max(b.top, hb.top));
       return fail('obscured', {blocker: {tag: h.tagName.toLowerCase(), position: hs.position, z_index: hs.zIndex, role: h.getAttribute('role'), rect: rectOf(hb), covers_percent: b.width * b.height > 0 ? Math.min(100, round(ix * iy * 100 / (b.width * b.height))) : 0}, rect: rectOf(b)});

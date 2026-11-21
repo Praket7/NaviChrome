@@ -1,0 +1,16 @@
+:root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172238; background: #eef3f8; }
+main { max-width: 760px; margin: 36px auto; padding: 0 20px; }
+nav { display: flex; gap: 18px; }
+nav a { color: #22469d; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
+h1 { margin: 20px 0; }
+section { background: #fff; padding: 18px 22px; border-radius: 10px; margin-bottom: 14px; }
+label, textarea { display: block; }
+textarea { box-sizing: border-box; width: 100%; font: 14px/1.4 ui-monospace, monospace; margin: 5px 0 12px; }
+button { font: inherit; padding: 6px 12px; margin: 4px 5px 4px 0; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #22469d; outline-offset: 2px; }
+.slide { position: relative; width: 640px; height: 360px; background: #123459; color: #fff; overflow: hidden; }
+.object { display: grid; align-items: center; position: absolute; font-size: 24px; overflow: hidden; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+video { width: min(100%, 640px); max-height: 360px; display: block; }
+[hidden] { display: none !important; }

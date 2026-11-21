@@ -1,11 +1,12 @@
+import { canvasHumanBatch } from "./lib/typing-support.js";
 import { createBoundedTransport } from "./lib/transport.js";
 import { boundedUploadUrl, createPageDiagnostics } from "./lib/page-diagnostics.js";
-import { FrameTreeRegistry } from "./lib/frame-tree.js";
+import { FrameTreeRegistry, findFrameInTree } from "./lib/frame-tree.js";
 import { DebuggerSessionManager } from "./lib/debugger-sessions.js";
 import { typeTextTransaction } from "./lib/input.js";
 import { fastTypeProgram } from "./lib/fast-type.js";
 import { selectFileInputCandidate } from "./lib/file-input-selection.js";
-import { PointerEngine } from "./lib/pointer.js";
+import { PointerEngine, dispatchFrameClick } from "./lib/pointer.js";
 import { semanticDelta, pruneSemanticItems } from "./lib/observation.js";
 import {
   findReusableOwnedBackgroundCandidate, activateReservedPresentation, findOwnedBackgroundWindow,
@@ -603,7 +604,7 @@ async function frameActionablePoint(route, objectId) {
 function frameActionableGuardFunction() {
   return `function __navichromeFrameActionable(){
     const e=this,d=e?.ownerDocument,v=d?.defaultView,r=e?.getBoundingClientRect();
-    if(!e||!d||!v||!r||!e.isConnected||!r.width||!r.height||r.left<0||r.top<0||r.right>v.innerWidth||r.bottom>v.innerHeight)return false;
+    if(!e||!d||!v||!r||!e.isConnected||!r.width||!r.height)return false;
     let root=e.getRootNode(),depth=0;
     while(root!==d&&root?.host&&depth<8){root=root.host.getRootNode();depth++}
     if(root!==d)return false;
@@ -611,7 +612,9 @@ function frameActionableGuardFunction() {
       const s=v.getComputedStyle(n);
       if(n.disabled||n.getAttribute('aria-disabled')==='true'||n.hasAttribute('inert')||n.hasAttribute('hidden')||s.display==='none'||s.visibility!=='visible'||s.pointerEvents==='none'||Number.parseFloat(s.opacity||'1')<=0)return false
     }
-    const x=r.left+r.width/2,y=r.top+r.height/2;
+    const left=Math.max(0,r.left),top=Math.max(0,r.top),right=Math.min(v.innerWidth,r.right),bottom=Math.min(v.innerHeight,r.bottom);
+    if(right<=left||bottom<=top)return false;
+    const x=(left+right)/2,y=(top+bottom)/2;
     let h=d.elementFromPoint(x,y);
     for(let i=0;h&&i<8;i++){
       if(h===e||e.contains(h))return {x,y,viewport:{width:v.innerWidth,height:v.innerHeight}};
@@ -622,8 +625,43 @@ function frameActionableGuardFunction() {
     return false
   }`;
 }
+// Chrome's root Page.getFrameTree omits out-of-process iframes. Merge
+// only child trees backed by a currently attached session and a known parent.
+async function frameTreeWithChildren(tabId, wantedFrameId) {
+  const root = { tabId };
+  const result = await sendCdpCommand(root, "Page.getFrameTree", {});
+  if (wantedFrameId && findFrameInTree(result.frameTree, wantedFrameId)) return result;
+  await debuggerSessions.ensureAutoAttach(tabId);
+  const indexed = new Map();
+  const index = node => {
+    if (!node?.frame?.id) return;
+    indexed.set(node.frame.id, node);
+    for (const child of node.childFrames || []) index(child);
+  };
+  index(result.frameTree);
+  const routes = frameTreeRegistry.frames(tabId)
+    .filter(frame => frame.session_id && !indexed.has(frame.frame_id)).slice(0, 8);
+  const pending = (await Promise.all(routes.map(async frame => {
+    const child = await sendCdpCommand({ tabId, sessionId: frame.session_id }, "Page.getFrameTree", {}).catch(() => null);
+    const node = child?.frameTree;
+    if (node?.frame?.id !== frame.frame_id || frameTreeRegistry.sessionForFrame(tabId, frame.frame_id) !== frame.session_id) return null;
+    const parent = node.frame.parentId ?? frame.parent_frame_id;
+    return parent ? { parent, node } : null;
+  }))).filter(Boolean);
+  while (pending.length) {
+    const next = pending.findIndex(({ parent }) => indexed.has(parent));
+    if (next < 0) break;
+    const [{ parent, node }] = pending.splice(next, 1);
+    if (indexed.has(node.frame.id)) continue;
+    const owner = indexed.get(parent);
+    (owner.childFrames ??= []).push(node);
+    index(node);
+  }
+  return result;
+}
+
 async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) {
-  const root = { tabId }, tree = await sendCdpCommand(root, "Page.getFrameTree", {});
+  const root = { tabId }, tree = await frameTreeWithChildren(tabId, frameId);
   const path = (node, ancestors = []) => node?.frame?.id === frameId ? [...ancestors, node.frame] : (node?.childFrames || []).map(child => path(child, [...ancestors, node.frame])).find(Boolean);
   const chain = path(tree.frameTree, []);
   if (!chain?.length || chain.length < 2 || chain.length > 9) throw new Error("Frame ancestry is unavailable or too deep.");
@@ -705,7 +743,7 @@ async function rootPointForFrame(tabId, frameId, objectId, x, y, childViewport) 
       await sendCdpCommand(root, "Runtime.releaseObject", { objectId: resolved.object.objectId }).catch(() => {});
     }
   }
-  const latestTree = await sendCdpCommand(root, "Page.getFrameTree", {});
+  const latestTree = await frameTreeWithChildren(tabId, frameId);
   const latestChain = path(latestTree.frameTree, []);
   if (!latestChain || latestChain.length !== chain.length || latestChain.some((frame, index) => frame.id !== chain[index].id || frame.loaderId !== chain[index].loaderId)) throw new Error("Frame ancestry or loader changed during owner mapping.");
   if (chain.slice(0, -1).some((frame, index) => (frameTreeRegistry.sessionForFrame(tabId, frame.id) || null) !== initialSessions[index])) throw new Error("Frame owner session changed during owner mapping.");
@@ -967,7 +1005,7 @@ async function frameHumanTypeCharacter(tabId, params, isAuthorized) {
       character === "\r" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(character)) throw new Error("frame_human_type_character requires a fresh frame/editor identity and one bounded Unicode scalar.");
   const route = { tabId }, deadline = performance.now() + Math.min(60000, Math.max(1000, Number.isSafeInteger(params.deadline_ms) ? params.deadline_ms : 30000));
   const frameLoader = async () => {
-    const tree = await sendCdpCommand(route, "Page.getFrameTree", {});
+    const tree = await frameTreeWithChildren(tabId, frameId);
     const visit = node => node?.frame?.id === frameId ? node.frame.loaderId : (node?.childFrames || []).map(visit).find(Boolean);
     return visit(tree.frameTree);
   };
@@ -975,17 +1013,16 @@ async function frameHumanTypeCharacter(tabId, params, isAuthorized) {
   let dispatchAttempted = false, keyDownAttempted = false, child = route, cleanupKey, cleanupExpected = expected, guard, objectId;
   try {
     if (!isAuthorized(tabId) || performance.now() >= deadline || await frameLoader() !== loaderId) return { status: "not_dispatched", dispatch_may_have_occurred: false, completed_chars: 0, key_events: 0, reason: "frame_identity_stale" };
-    let sessionId = frameTreeRegistry.sessionForFrame(tabId, frameId);
-    if (!sessionId) sessionId = await waitForFrameSession(tabId, frameId, 400);
+    const sessionId = frameTreeRegistry.sessionForFrame(tabId, frameId);
     child = sessionId ? { tabId, sessionId } : route;
     const ax = await sendCdpCommand(child, "Accessibility.getFullAXTree", sessionId ? {} : { frameId });
     if (!ax.nodes?.some(item => item.backendDOMNodeId === backendNodeId && ["textbox", "searchbox", "combobox"].includes(item.role?.value))) return { status: "not_dispatched", dispatch_may_have_occurred: false, completed_chars: 0, key_events: 0, reason: "frame_editor_not_accessible_textbox" };
     const resolved = await sendCdpCommand(child, "DOM.resolveNode", { backendNodeId });
     objectId = resolved.object?.objectId;
-    if (!objectId || (sessionId && frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId) || await frameLoader() !== loaderId) return { status: "not_dispatched", dispatch_may_have_occurred: false, completed_chars: 0, key_events: 0, reason: "frame_identity_stale" };
+    if (!objectId || (frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId) || await frameLoader() !== loaderId) return { status: "not_dispatched", dispatch_may_have_occurred: false, completed_chars: 0, key_events: 0, reason: "frame_identity_stale" };
     guard = "function(expected,prepare,normalize){const e=this;if(!e||!e.isConnected)return {ok:false,reason:'target_stale'};const tagOf=n=>n&&typeof n.tagName==='string'?n.tagName.toUpperCase():'',tagName=tagOf(e),rich=!!e&&e.nodeType===1&&typeof e.getAttribute==='function'&&tagName!=='INPUT'&&tagName!=='TEXTAREA'&&(e.isContentEditable===true||e.getAttribute('role')==='textbox'),plain=tagName==='TEXTAREA'||tagName==='INPUT'&&['text','search','email','url','tel'].includes(e.type),trusted=e.closest('[data-requires-trusted]');if(!rich&&!plain||e.matches(':disabled,[aria-disabled=\\\"true\\\"]')||e.readOnly||e.getAttribute('aria-readonly')==='true'||e.getAttribute('contenteditable')?.toLowerCase()==='false'||e.closest('[data-masked]')||trusted&&trusted!==e)return {ok:false,reason:'blocked'};const value=()=>{const raw=rich?(e.innerText??e.textContent??'').replace(/\\r\\n/g,'\\n').replace(/\\u00a0/g,' '):e.value;return rich?(/^\\s*$/.test(raw)?'':raw==='\\n'?'':normalize?raw.replace(/\\n{2,}/g,b=> '\\n'.repeat(Math.ceil(b.length/2))):raw):raw};if(value()!==(rich&&/^\\s*$/.test(expected)?'':expected))return {ok:false,reason:'stale_value'};if(prepare){e.focus();if(rich){const s=e.ownerDocument.getSelection(),r=e.ownerDocument.createRange();r.selectNodeContents(e);r.collapse(false);s.removeAllRanges();s.addRange(r)}else e.setSelectionRange(e.value.length,e.value.length)}const s=e.ownerDocument.getSelection(),focused=e.ownerDocument.activeElement===e,atEnd=rich?s?.isCollapsed&&s.anchorNode&&e.contains(s.anchorNode)&&(()=>{const r=e.ownerDocument.createRange();r.selectNodeContents(e);r.setStart(s.anchorNode,s.anchorOffset);return r.toString()===''})():e.selectionStart===e.selectionEnd&&e.selectionEnd===e.value.length;return focused&&atEnd?{ok:true,value:value()}:{ok:false,reason:'focus_or_selection_changed'}}";
     const check = async value => {
-      if (!isAuthorized(tabId) || performance.now() >= deadline || await frameLoader() !== loaderId || (sessionId && frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId)) return { ok: false, reason: "frame_identity_stale" };
+      if (!isAuthorized(tabId) || performance.now() >= deadline || await frameLoader() !== loaderId || (frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId)) return { ok: false, reason: "frame_identity_stale" };
       const response = await sendCdpCommand(child, "Runtime.callFunctionOn", { objectId, functionDeclaration: guard, arguments: [{ value }, { value: false }, { value: normalizeParagraphs }], returnByValue: true });
       return response.result?.value || { ok: false, reason: "guard_response_missing" };
     };
@@ -1513,7 +1550,10 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       if (!Number.isSafeInteger(ownedTabId) || ownedTabId <= 0 || String(ownedTabId) !== String(request.params?.owned_tab_id)) throw new Error("owned_tab_id must be a decimal Chrome tab ID.");
       const requesterLease = typeof request.lease_id === "string" ? request.lease_id : undefined;
       const result = await ownedTabOpener.closeOwnedTab(ownedTabId, requesterLease, nativeRoute);
-      respond({ type: "result", id: request.id, result }); return;
+      // This operation independently verifies the removal, including when the
+      // only authorized command anchor was the tab that it just closed.
+      const reply = result.topology_verified === true ? sendResponse : respond;
+      reply({ type: "result", id: request.id, result }); return;
     }
     if (request.method === "NaviChrome.manageTabs") {
       if (!nativeRoute) throw new Error("Tab management requires a native session.");
@@ -1604,6 +1644,13 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       traceSharedCommand("settled", request, tabId, startedAt, { outcome: result.status, completedChars: result.completed_chars, keyEvents: result.key_events, cdpCommands: result.cdp_commands });
       respond({ type: "result", id: request.id, result }); return;
     }
+    if (request.method === "NaviChrome.canvasHumanBatch") {
+      const result = await canvasHumanBatch(tabId, request.params, {
+        send: sendCdpCommand, isAuthorized: id => isAuthorized(id) && !navigatingTabs.has(id)
+          && pairedTabDocumentIds.get(id) === expectedDocumentId,
+      });
+      respond({ type: "result", id: request.id, result }); return;
+    }
     if (request.method === "NaviChrome.humanTypeCharacter") {
       const result = await humanTypeCharacter(tabId, request.params, isAuthorized);
       traceSharedCommand("settled", request, tabId, startedAt, { outcome: result.status, completedChars: result.completed_chars, keyEvents: result.key_events, cdpCommands: result.cdp_commands });
@@ -1664,7 +1711,10 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       if (typeof objectId !== "string" || !objectId || objectId.length > 512 || !Number.isSafeInteger(index) || index < 0 ||
           typeof guard !== "string" || !guard.startsWith("function(index,") || guard.length > 12000 ||
           !["click", "double_click", "context_click"].includes(clickKind) ||
-          (expectedViewport != null && (typeof expectedViewport !== "string" || expectedViewport.length > 256))) throw new Error("pointer click requires a bounded guarded target and supported click kind.");
+          (expectedViewport != null && (typeof expectedViewport !== "string" || expectedViewport.length > 256))) {
+        respond({ type:"result", id:request.id, result:{status:"not_dispatched",dispatch_acknowledged:false,dispatch_may_have_occurred:false,
+          reason_code:"pointer_request_invalid",reason:"Pointer click requires a bounded guarded target and supported click kind."} }); return;
+      }
       const target = await chrome.tabs.get(tabId), window = await chrome.windows.get(target.windowId);
       const wasActive = !!target.active;
       if (!wasActive) {
@@ -2382,83 +2432,12 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       return;
     }
     if (request.method === "NaviChrome.frameClick") {
-      const frameId = request.params?.frame_id, loaderId = request.params?.loader_id, backendNodeId = request.params?.backend_node_id;
-      if (typeof frameId !== "string" || !frameId || frameId.length > 256 || typeof loaderId !== "string" || !loaderId || loaderId.length > 256 || !Number.isSafeInteger(backendNodeId) || backendNodeId <= 0) throw new Error("frame click requires bounded frame, loader, and backend node identities.");
-      const outcome = request.params?.outcome, timeoutMs = request.params?.timeout_ms, inputMode = request.params?.input_mode ?? "mouse";
-      if (!(["mouse", "touch"].includes(inputMode))) throw new Error("frame click input_mode must be mouse or touch.");
-      if (!outcome || !["navigation", "focused", "visible", "text", "expanded", "selected"].includes(outcome.kind) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 10000) throw new Error("frame click requires a supported postcondition and a 250..10000ms timeout.");
-      if (["visible", "text"].includes(outcome.kind) && (typeof outcome.selector !== "string" || !outcome.selector || outcome.selector.length > 512) || outcome.kind === "text" && (typeof outcome.text !== "string" || outcome.text.length > 512) || outcome.kind === "navigation" && outcome.url != null && !isExactHttpUrl(outcome.url) || ["expanded", "selected"].includes(outcome.kind) && outcome.selector != null && (typeof outcome.selector !== "string" || !outcome.selector || outcome.selector.length > 512)) throw new Error("frame click postcondition is invalid or exceeds its bound.");
-      const route = { tabId };
-      const frameLoader = async () => {
-        const tree = await sendCdpCommand(route, "Page.getFrameTree", {});
-        const visit = node => node?.frame?.id === frameId ? node.frame.loaderId : (node?.childFrames || []).map(visit).find(Boolean);
-        return visit(tree.frameTree);
-      };
-      const frameUrl = async () => {
-        const tree = await sendCdpCommand(route, "Page.getFrameTree", {});
-        const visit = node => node?.frame?.id === frameId ? node.frame.url : (node?.childFrames || []).map(visit).find(Boolean);
-        return visit(tree.frameTree);
-      };
-      await debuggerSessions.ensureAutoAttach(tabId);
-      try {
-        if (await frameLoader() !== loaderId) throw new Error("Frame document changed since the accessibility snapshot.");
-        let sessionId = frameTreeRegistry.sessionForFrame(tabId, frameId);
-        if (!sessionId) sessionId = await waitForFrameSession(tabId, frameId, 400);
-        const child = sessionId ? { tabId, sessionId } : route;
-        const beforeUrl = await frameUrl();
-        const ax = await sendCdpCommand(child, "Accessibility.getFullAXTree", sessionId ? {} : { frameId });
-        const node = ax.nodes?.find(item => item.backendDOMNodeId === backendNodeId);
-        if (!node || !["button", "link", "checkbox", "radio", "option", "menuitem", "tab", "switch"].includes(node.role?.value)) throw new Error("Frame control is stale or is not an actionable control.");
-        const box = await sendCdpCommand(child, "DOM.getBoxModel", { backendNodeId });
-        const quad = box.model?.content;
-        if (!Array.isArray(quad) || quad.length !== 8 || (sessionId && frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId) || await frameLoader() !== loaderId) throw new Error("Frame control changed before dispatch.");
-        const resolved = await sendCdpCommand(child, "DOM.resolveNode", { backendNodeId });
-        const objectId = resolved.object?.objectId;
-        if (!objectId) throw new Error("Frame click target could not be resolved for outcome verification.");
-        const localPoint = await frameActionablePoint(child, objectId);
-        let x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
-        const initialMapping = await rootPointForFrame(tabId, frameId, objectId, localPoint.x, localPoint.y, localPoint.viewport);
-        ({ x, y } = initialMapping);
-        if (await frameLoader() !== loaderId) throw new Error("Frame control changed before dispatch.");
-        const dispatchPoint = await rootPointForFrame(tabId, frameId, objectId, localPoint.x, localPoint.y, localPoint.viewport);
-        if (Math.abs(dispatchPoint.x - x) > 0.5 || Math.abs(dispatchPoint.y - y) > 0.5 || JSON.stringify(dispatchPoint.owner_signature) !== JSON.stringify(initialMapping.owner_signature) || await frameLoader() !== loaderId) throw new Error("Frame owner geometry changed before dispatch.");
-        let pressAttempted = false;
-        try {
-          if (inputMode === "mouse") await pointerEngine.move(route, { x, y }, { button: "none" });
-          pressAttempted = true;
-          if (inputMode === "touch") {
-            await pointerEngine.touchStart(route, { x, y });
-            await pointerEngine.touchEnd(route);
-          } else {
-            await pointerEngine.press(route, { x, y });
-            await pointerEngine.release(route, { x, y });
-          }
-        } catch (error) {
-          if (pressAttempted && inputMode === "touch") await pointerEngine.touchEnd(route).catch(() => {});
-          if (pressAttempted && inputMode === "mouse") await pointerEngine.release(route, { x, y }).catch(() => {});
-          respond({ type: "result", id: request.id, result: { frame_id: frameId, backend_node_id: backendNodeId, dispatch_acknowledged: false, dispatch_may_have_occurred: pressAttempted, verified: false, reason: String(error) } });
-          return;
-        }
-        const verifyOutcome = async () => {
-          if (outcome.kind === "navigation") {
-            const currentUrl = await frameUrl();
-            return outcome.url == null ? currentUrl !== beforeUrl : new URL(currentUrl).href === new URL(outcome.url).href;
-          }
-          const result = await sendCdpCommand(child, "Runtime.callFunctionOn", {
-            objectId,
-            functionDeclaration: "function __navichromeFrameOutcome(outcome){const e=this;const q=s=>s==null?e:document.querySelector(s);switch(outcome.kind){case 'focused':return document.activeElement===e||e.contains(document.activeElement);case 'visible':{const n=q(outcome.selector);if(!n)return false;const s=getComputedStyle(n);return n.isConnected&&n.getClientRects().length>0&&s.display!=='none'&&s.visibility==='visible'&&Number.parseFloat(s.opacity||'1')>0}case 'text':{const n=q(outcome.selector);return !!n&&n.isConnected&&(n.innerText||n.textContent||'').includes(outcome.text)}case 'expanded':{const n=q(outcome.selector);return !!n&&(n.getAttribute('aria-expanded')==='true'||n.open===true)}case 'selected':{const n=q(outcome.selector);return !!n&&(n.getAttribute('aria-selected')==='true'||n.getAttribute('aria-checked')==='true'||n.checked===true||n.selected===true)}default:return false}}",
-            arguments: [{ value: outcome }], returnByValue: true,
-          });
-          return result.result?.value === true;
-        };
-        const deadline = Date.now() + timeoutMs;
-        let verified = false;
-        do { verified = await verifyOutcome().catch(() => false); if (verified || Date.now() >= deadline) break; await new Promise(resolve => setTimeout(resolve, 50)); } while (Date.now() < deadline);
-        respond({ type: "result", id: request.id, result: { frame_id: frameId, backend_node_id: backendNodeId, input_mode: inputMode, dispatch_acknowledged: true, dispatch_may_have_occurred: true, verified, reason: verified ? undefined : "requested frame click outcome was not observed before its deadline" } });
-      } finally {
-        /* auto-attach stays warm for the bound tab */
-      }
-      return;
+      const result = await dispatchFrameClick(tabId, request.params, {
+        sendCdpCommand, frameTreeWithChildren, frameActionablePoint, rootPointForFrame,
+        frames: frameTreeRegistry, ensureAutoAttach: id => debuggerSessions.ensureAutoAttach(id),
+        pointerEngine, isExactHttpUrl, isAuthorized,
+      });
+      respond({ type: "result", id: request.id, result }); return;
     }
     if (request.method === "NaviChrome.frameSwipe") {
       const p=request.params||{},frameId=p.frame_id,loaderId=p.loader_id,backendNodeId=p.backend_node_id;
@@ -2554,7 +2533,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       if (typeof expected !== "string" || typeof value !== "string" || expected.length > 16384 || value.length > 16384 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 10000) throw new Error("frame fill values or timeout exceed their bounds.");
       const route = { tabId };
       const frameLoader = async () => {
-        const tree = await sendCdpCommand(route, "Page.getFrameTree", {});
+        const tree = await frameTreeWithChildren(tabId, frameId);
         const visit = node => node?.frame?.id === frameId ? node.frame.loaderId : (node?.childFrames || []).map(visit).find(Boolean);
         return visit(tree.frameTree);
       };
@@ -2562,8 +2541,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
       let dispatchAttempted = false;
       try {
         if (await frameLoader() !== loaderId) throw new Error("Frame document changed since the accessibility snapshot.");
-        let sessionId = frameTreeRegistry.sessionForFrame(tabId, frameId);
-        if (!sessionId) sessionId = await waitForFrameSession(tabId, frameId, 400);
+        const sessionId = frameTreeRegistry.sessionForFrame(tabId, frameId);
         const child = sessionId ? { tabId, sessionId } : route;
         const ax = await sendCdpCommand(child, "Accessibility.getFullAXTree", sessionId ? {} : { frameId });
         const node = ax.nodes?.find(item => item.backendDOMNodeId === backendNodeId);
@@ -2571,7 +2549,7 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
         const resolved = await sendCdpCommand(child, "DOM.resolveNode", { backendNodeId });
         const objectId = resolved.object?.objectId;
         if (!objectId) throw new Error("Frame field could not be resolved for guarded fill.");
-        if ((sessionId && frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId) || await frameLoader() !== loaderId) throw new Error("Frame document changed before fill dispatch.");
+        if ((frameTreeRegistry.sessionForFrame(tabId, frameId) !== sessionId) || await frameLoader() !== loaderId) throw new Error("Frame document changed before fill dispatch.");
         const functionDeclaration = "function(expected,value){const e=this;const blocked=r=>({dispatch_may_have_occurred:false,verified:false,matches_requested_value:false,reason_code:r});if(!e||!e.isConnected)return blocked('target_stale');const input=e instanceof HTMLInputElement,area=e instanceof HTMLTextAreaElement;if(!input&&!area)return blocked('unsupported_control');if(input&&['password','file','hidden','checkbox','radio','submit','button','reset'].includes((e.type||'').toLowerCase()))return blocked('protected_or_nontext_control');if(e.disabled||e.readOnly||e.getAttribute('aria-disabled')==='true'||e.getAttribute('aria-readonly')==='true'||e.hasAttribute('data-masked')||e.hasAttribute('data-requires-trusted'))return blocked('field_blocked');const r=e.getBoundingClientRect(),s=getComputedStyle(e),x=Math.min(innerWidth-1,Math.max(0,r.left+r.width/2)),y=Math.min(innerHeight-1,Math.max(0,r.top+r.height/2));if(r.width<=0||r.height<=0||s.display==='none'||s.visibility!=='visible'||Number.parseFloat(s.opacity||'1')<=0||document.elementFromPoint(x,y)!==e)return blocked('field_not_actionable');if(e.value!==expected)return blocked('stale_value');try{e.focus({preventScroll:true});if(document.activeElement!==e)return blocked('focus_failed');const proto=input?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(!setter)return blocked('native_setter_unavailable');setter.call(e,value);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));e.dispatchEvent(new Event('change',{bubbles:true}));const matches=e.value===value;return {dispatch_may_have_occurred:true,verified:matches,matches_requested_value:matches,length:e.value.length,reason_code:matches?null:'readback_mismatch'}}catch(_){return {dispatch_may_have_occurred:true,verified:false,matches_requested_value:false,reason_code:'fill_delivery_uncertain'}}}";
         let result;
         try {
@@ -2666,6 +2644,12 @@ async function dispatchCommand(request, isAuthorized, respond, nativeMessage = f
           clip.scale <= 0 || clip.scale > 2 || clip.width * clip.height * clip.scale * clip.scale > 16_777_216) {
         throw new Error("Shared screenshot requires a bounded PNG crop (maximum 4096x4096 CSS pixels and 16 megapixels).");
       }
+    }
+    if (request.method === "Page.getFrameTree" && request.params?.navichrome_include_oopif === true) {
+      const result = await frameTreeWithChildren(tabId);
+      if (!isAuthorized(tabId)) throw new Error("Tab changed while reading its child frames.");
+      respond({ type: "result", id: request.id, result });
+      return;
     }
     const screenshotDocumentId = request.method === "Page.captureScreenshot" ? pairedTabDocumentIds.get(tabId) : undefined;
     const screenshotStartedAt = request.method === "Page.captureScreenshot" ? Date.now() : undefined;

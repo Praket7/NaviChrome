@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creative Studio</title>
+<link rel="stylesheet" href="/studio.css">
+<main>
+  <nav aria-label="Editors"><a href="/document">Document</a><a href="/slides">Slides</a><a href="/video">Video</a></nav>
+  <header><h1 id="editor-title">Creative Studio</h1><p id="editor-revision"></p></header>
+  <section aria-labelledby="edit-heading">
+    <h2 id="edit-heading">Edit batch</h2>
+    <label for="editor-request">Edit request</label>
+    <textarea id="editor-request" rows="5" spellcheck="false"></textarea>
+    <div class="buttons">
+      <button id="editor-preview">Preview changes</button>
+      <button id="editor-apply" disabled>Apply changes</button>
+    </div>
+    <p id="editor-status" role="status"></p>
+    <pre id="editor-preview-detail" hidden></pre>
+  </section>
+  <section id="work" aria-label="Current project"></section>
+  <section id="video-controls" hidden>
+    <label>Source ID <input id="source-id" maxlength="48"></label>
+    <input id="source-file" aria-label="Source video" type="file" accept="video/mp4,video/quicktime,video/webm" hidden>
+    <button id="choose-source">Choose source video</button>
+    <button id="import-source">Import source video</button>
+    <label>Preview frame <input id="preview-frame" type="number" min="0" value="0"></label>
+    <button id="seek">Seek preview</button>
+    <video id="player" controls playsinline hidden></video>
+    <button id="render">Render video</button>
+    <a id="download" download="creative-edit.mp4" hidden>Download MP4</a>
+    <p id="video-status" role="status"></p>
+  </section>
+</main>
+<script type="module" src="/studio.mjs"></script>
+</html>

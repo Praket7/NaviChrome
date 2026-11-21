@@ -28,3 +28,9 @@ Do not load this reference for ordinary navigation, reading, clicking, or form t
 Shared snapshot frame handles expose `target_id` only when the provider can prove that mapping. A `null` child `target_id` means Page.getFrameTree supplied ancestry but no reliable OOPIF target identity; keep routing by the explicit `frame_id` through the provided frame operation and do not substitute the root tab ID as the child's target. Session IDs and measured transforms remain unavailable unless the provider reports them.
 
 Screenshot `image_sha256` and the compatibility `visual_revision` alias identify decoded PNG bytes only. `render_revision` binds the image to the captured document and observed renderer animation-frame freshness, and `target_lifecycle="active"` means the extension observed the tab as complete and unfrozen around capture. Frozen or unknown lifecycle is refused; a freeze during capture discards the image. For chunked transfers, `base64_sha256` separately verifies the exact Base64 text delivered across the native-messaging boundary. Width and height are read from the PNG header and checked against the visual evidence.
+
+For a frame click, select the fresh frame-scoped control and specify an
+outcome that changes after the click. A result already true before dispatch
+does not verify a click. If hovering moved or covered the control, reacquire
+one fresh snapshot before retrying a `not_dispatched` result. After `unknown`,
+inspect the frame's current state before taking any further action.

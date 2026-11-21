@@ -366,12 +366,13 @@ pub fn rank_candidates(
 }
 
 pub fn workflow_find_needs_refresh(found: &Value) -> bool {
-    found["matches"].as_array().is_some_and(|matches| {
-        matches.is_empty()
-            || matches
-                .iter()
-                .any(|item| item["target_uniqueness"] == "unverified")
-    })
+    found["targeted_observation"] != true
+        && found["matches"].as_array().is_some_and(|matches| {
+            matches.is_empty()
+                || matches
+                    .iter()
+                    .any(|item| item["target_uniqueness"] == "unverified")
+        })
 }
 
 /// A single unambiguous match is actionable even when the surrounding page is
@@ -421,6 +422,9 @@ mod tests {
     #[test]
     fn workflow_refreshes_empty_or_scope_incomplete_find_results() {
         assert!(workflow_find_needs_refresh(&json!({"matches":[]})));
+        assert!(!workflow_find_needs_refresh(
+            &json!({"matches":[],"targeted_observation":true})
+        ));
         assert!(workflow_find_needs_refresh(
             &json!({"matches":[{"reference":"@c1","target_uniqueness":"unverified"}]})
         ));

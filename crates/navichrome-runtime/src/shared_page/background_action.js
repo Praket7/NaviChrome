@@ -117,11 +117,12 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg, auth
     if (mismatch) return mismatch;
     const rect = e.getBoundingClientRect(), view = e.ownerDocument.defaultView;
     const style = view.getComputedStyle(e);
-    if (rect.width <= 0 || rect.height <= 0 || rect.left < 0 || rect.top < 0
-      || rect.right > view.innerWidth || rect.bottom > view.innerHeight
+    const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+    const right = Math.min(view.innerWidth, rect.right), bottom = Math.min(view.innerHeight, rect.bottom);
+    if (right <= left || bottom <= top
       || style.display === 'none' || style.visibility !== 'visible' || Number.parseFloat(style.opacity || '1') <= 0
       || style.pointerEvents === 'none') return 'outside_viewport';
-    const hit = e.ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const hit = e.ownerDocument.elementFromPoint((left + right) / 2, (top + bottom) / 2);
     if (!hit || (hit !== e && !e.contains(hit))) return 'obscured';
     return authorityError();
   };
@@ -322,7 +323,10 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg, auth
             e.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, detail: 2, view: window }));
           }
         }
-      } finally { e.removeEventListener(eventType, mark); }
+      } finally {
+        e.removeEventListener(eventType, mark);
+        if (!eventSeen) observer?.disconnect();
+      }
       // React-style widgets apply the visible state after the click handler
       // returns. Read the postcondition for a bounded moment instead of
       // returning the pre-render state and reporting an open menu as unknown.
@@ -347,7 +351,7 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg, auth
           // A selection is only proven once the collapsed control (or the
           // option still in the list) shows the chosen name. A menu closing
           // first is not the postcondition; keep observing for it.
-          const settled = wantsSelection ? selected : changed || dialogOpened;
+          const settled = wantsSelection ? selected : wantsExpansion ? expanded || dialogOpened : changed || dialogOpened;
           if (!settled && elapsed < budget) { setTimeout(finish, 40); return; }
           if (observer) observer.disconnect();
           resolve({ ok: eventSeen, dispatched, event_seen: eventSeen, rebound,
@@ -356,7 +360,7 @@ function(index, action, expected, next, key, outcomeKind, expectedLabelArg, auth
             dialog_opened: dialogOpened, dialogs_before: dialogsBefore,
             transport: 'dom_activation', trusted_input: false });
         };
-        setTimeout(finish, 40);
+        queueMicrotask(finish);
       });
     }
     // Synthetic key events do not perform browser default actions (Enter/Tab).

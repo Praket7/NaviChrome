@@ -73,6 +73,35 @@ test('double click delivers click click dblclick in order', async () => {
   assert.deepEqual(actual.events, ['click', 'click', 'dblclick']);
   assert.equal(actual.result.dispatched, true);
 });
+test('a partially visible control can be clicked without a separate scroll', async () => {
+  const actual = await run('<button id="target" style="position:fixed;left:-20px;width:80px">Open</button>',
+    'click', null, null, 'window.events=[];document.querySelector("#target").onclick=()=>window.events.push("click")');
+  assert.equal(actual.result.dispatched, true);
+  assert.deepEqual(actual.events, ['click']);
+});
+test('Chrome mouse hover preserves the canvas caret guard and an independent click invalidates it', async () => {
+  const runtime = readFileSync(new URL('../crates/navichrome-runtime/src/mcp/v3_full.rs', import.meta.url), 'utf8');
+  const guard = runtime.match(/const CANVAS_CARET_GUARD: &str = r#"([\s\S]*?)"#;/)[1];
+  const page = await browser.newPage();
+  try {
+    await page.setContent('<canvas width=200 height=80></canvas><textarea>draft</textarea>');
+    await page.evaluate(expression => {
+      const editor = document.querySelector('textarea');
+      editor.focus();
+      editor.setSelectionRange(5, 5);
+      document.querySelector('canvas').addEventListener('pointerdown', event => event.preventDefault());
+      window.caretGuard = (0, eval)(expression);
+    }, guard);
+    await page.mouse.move(25, 25);
+    assert.equal(await page.evaluate(() => window.caretGuard('check')), true);
+    await page.mouse.click(25, 25);
+    assert.deepEqual(await page.evaluate(() => [
+      document.activeElement.tagName, document.activeElement.selectionStart, window.caretGuard('check'),
+    ]), ['TEXTAREA', 5, 'canvas_manual_input']);
+  } finally {
+    await page.close();
+  }
+});
 test('sensitive transition during input hides post-dispatch value', async () => {
   const actual = await run('<input id="target" value="old">', 'fill', 'old', 'new',
     'document.querySelector("#target").addEventListener("input", e=>{e.target.type="password";e.target.value="synthetic-secret"})');
@@ -163,11 +192,11 @@ test('consequential action uses its first verb and carried authority does not bl
   assert.equal(compose.result.dispatched, true);
 });
 
-async function runPointerGuard(html, { label = null, authority = null } = {}) {
+async function runPointerGuard(html, { label = null, authority = null, click = false } = {}) {
   const page = await browser.newPage();
   try {
     await page.setContent(html);
-    return await page.evaluate(({ source, label, authority }) => {
+    const checked = await page.evaluate(({ source, label, authority }) => {
       const target = document.querySelector('#target');
       const nameOf = n => (n?.getAttribute?.('aria-label') || n?.innerText || n?.textContent || '').replace(/\s+/g, ' ').trim();
       const retained = {
@@ -180,9 +209,30 @@ async function runPointerGuard(html, { label = null, authority = null } = {}) {
       const guard = new Function('__UNSAFE__', `return (${source})`)(false);
       return guard.call(retained, 0, { kind: 'focused' }, { label, authority });
     }, { source: guardSource, label, authority });
+    if (click && checked.ok) {
+      await page.mouse.click(checked.x, checked.y);
+      checked.readback = await page.locator('#result').textContent();
+    }
+    return checked;
   } finally { await page.close(); }
 }
 const OVERLAY = '<button id="target" style="position:absolute;left:100px;top:100px;width:120px;height:40px">Insert</button><div id="menu" role="menuitem" style="position:absolute;left:100px;top:100px;width:120px;height:40px;z-index:10">Image</div>';
+const NESTED_TOOLBAR_BUTTON = `
+  <div id="target" role="button" aria-label="Undo (⌘Z)" style="width:30px"
+    onclick="if (event.isTrusted) document.querySelector('#result').textContent = 'Undone'">
+    <div><div><div><div style="height:30px"></div></div></div></div>
+  </div>
+  <p id="result">Changed</p>`;
+test('pointer guard recognizes the retained toolbar button through four decorative descendants', async () => {
+  const checked = await runPointerGuard(NESTED_TOOLBAR_BUTTON, { label: 'Undo', click: true });
+  assert.equal(checked.ok, true, JSON.stringify(checked));
+  assert.equal(checked.readback, 'Undone');
+});
+test('pointer guard does not accept a different label on a nested toolbar button', async () => {
+  const checked = await runPointerGuard(NESTED_TOOLBAR_BUTTON, { label: 'Redo' });
+  assert.equal(checked.ok, false);
+  assert.equal(checked.reason, 'label_not_under_pointer');
+});
 test('pointer guard passes a menu the agent just opened when its words are under the pointer', async () => {
   const checked = await runPointerGuard(OVERLAY, { label: 'Image' });
   assert.equal(checked.ok, true);

@@ -2294,3 +2294,119 @@ mod tests {
         );
     }
 }
+
+/// An opt-in editor can expose this small, visible UI protocol without
+/// supplying executable code or credentials to NaviChrome.
+pub fn creative_edit_steps_v1(predicate: &Value) -> Result<Vec<Value>, &'static str> {
+    use sha2::Digest;
+
+    let exact_url = predicate["url"]
+        .as_str()
+        .filter(|value| value.len() <= 2048)
+        .ok_or("creative edit requires an exact app URL")?;
+    let url = url::Url::parse(exact_url).map_err(|_| "creative edit URL is invalid")?;
+    if !(url.scheme() == "https" || url.scheme() == "http" && url.host_str() == Some("127.0.0.1"))
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("creative edit needs an HTTPS origin or a loopback development app");
+    }
+    if predicate["version"] != 1 {
+        return Err("creative edit contract version must be 1");
+    }
+    let revision = predicate["revision"]
+        .as_u64()
+        .filter(|revision| *revision < u32::MAX as u64)
+        .ok_or("creative edit requires a bounded observed revision")?;
+    let apply = predicate["apply"]
+        .as_bool()
+        .ok_or("creative edit requires explicit apply true or false")?;
+    let resume = match predicate.get("resume_preview") {
+        Some(value) => value.as_bool().ok_or("resume_preview must be a boolean")?,
+        None => false,
+    };
+    if resume && !apply {
+        return Err("resume_preview requires apply true");
+    }
+    let edits = predicate["edits"]
+        .as_array()
+        .filter(|values| (1..=24).contains(&values.len()) && values.iter().all(Value::is_object))
+        .ok_or("creative edit needs 1–24 structured edits")?;
+    let request = json!({"version":1,"revision":revision,"edits":edits}).to_string();
+    if request.len() > 16_384 {
+        return Err("creative edit request exceeds 16 KiB");
+    }
+    let id = sha2::Sha256::digest(request.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let preview = format!("Preview revision {revision} · {id}");
+    let saved_rev = revision + 1;
+    let saved = format!("Saved revision {saved_rev} · {id}");
+    let verify_text = |scope: &str, content: &str| json!({"kind":"verify","predicate":{"kind":"text_present","scope":scope,"text":content}});
+    let mut steps = vec![
+        json!({"kind":"verify","predicate":{"kind":"url","equals":exact_url}}),
+        verify_text(
+            &format!("#editor-revision[data-revision='{revision}']"),
+            &format!("Revision {revision}"),
+        ),
+    ];
+    if !resume {
+        steps.extend([
+        json!({"kind":"find","query":"Edit request","selector":"#editor-request","match_mode":"exact","save_as":"edit_request"}),
+        json!({"kind":"fill","reference":"$edit_request","expected_value":"","value":request}),
+        json!({"kind":"find","query":"Preview changes","role":"button","match_mode":"exact","save_as":"preview_edit"}),
+        json!({"kind":"click","reference":"$preview_edit","outcome":{"kind":"text","selector":"#editor-status","text":preview}}),
+        ]);
+    }
+    if apply {
+        steps.extend([
+            json!({"kind":"find","query":"Apply changes","role":"button","match_mode":"exact","save_as":"apply_edit"}),
+            verify_text("#editor-status", &preview),
+            json!({"kind":"click","reference":"$apply_edit","outcome":{"kind":"text","selector":"#editor-status","text":saved}}),
+            verify_text(&format!("#editor-revision[data-revision='{saved_rev}']"), &format!("Revision {saved_rev}")),
+        ]);
+    }
+    Ok(steps)
+}
+
+#[cfg(test)]
+#[test]
+fn creative_edit_hash_and_revision_gate_match_the_exact_planned_request() {
+    let basic = json!({
+        "version":1,"url":"http://127.0.0.1:8080/document","revision":9,"apply":true,
+        "edits":[{"kind":"replace_text","id":"intro","expected":"Before","text":"After"}]
+    });
+    let steps = creative_edit_steps_v1(&basic).unwrap();
+    assert_eq!(steps[0]["predicate"]["equals"], basic["url"]);
+    assert_eq!(
+        steps[1]["predicate"]["scope"],
+        "#editor-revision[data-revision='9']"
+    );
+    assert_eq!(
+        steps[5]["outcome"]["text"]
+            .as_str()
+            .unwrap()
+            .split(" · ")
+            .last(),
+        steps[8]["outcome"]["text"]
+            .as_str()
+            .unwrap()
+            .split(" · ")
+            .last()
+    );
+    assert_eq!(
+        steps[9]["predicate"]["scope"],
+        "#editor-revision[data-revision='10']"
+    );
+    let mut resumed = basic.clone();
+    resumed["resume_preview"] = json!(true);
+    assert_eq!(creative_edit_steps_v1(&resumed).unwrap().len(), 6);
+    let mut preview = basic;
+    preview["apply"] = json!(false);
+    assert_eq!(creative_edit_steps_v1(&preview).unwrap().len(), 6);
+    preview["url"] = json!("http://outside.example/document");
+    assert!(creative_edit_steps_v1(&preview).is_err());
+}

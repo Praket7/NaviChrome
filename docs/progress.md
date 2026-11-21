@@ -913,3 +913,85 @@ The declared `50k-node-targeted-control` case was also miswired: its scenario us
 The `five-field-single-workflow` row also had a label only: its fixture rendered two fields and the actor/oracle rejected the declared scenario. The fixture now renders Name, Email, Company, Role, and Notes together; runner acceptance, independent persisted-state comparison, preflight, and both configured actor prompts bind to `five_fields_one_workflow`. Its local end-to-end fixture path passes, but no paired latency row is measured.
 
 The user supplied a direct Google Form URL titled `testing`, distinct from the earlier MIT application. Current Chrome inventory shows that exact viewform tab and a separate older `formResponse` tab, but NaviChrome discovery still rejects the stale inventory before dispatch and macOS reports locked. A fresh read-only identity/submission check is required before any submit. The current NaviChrome headless ESPN route is also unavailable because `NAVICHROME_CHROME_EXECUTABLE` is unset; the prior Bills feed result remains feed-level only, without article-page verification. A fresh `scripts/reinstall-local.sh` attempt rebuilt and installed the host and Chrome accepted the extension reload URL, but native inventory did not refresh within 30 seconds; the script requests the popup's **Reload bridge** recovery next.
+
+### 2026-11-20 input reliability pass
+
+Rebuilt and reloaded the installed Chrome bridge and Hotload child. Guarded
+canvas continuation preserved exactly two human-paced passages on a local
+canvas proxy. Verified frame input in same-process, cross-site, and nested
+frames plus single-tab owned closure. The same 10-character frame typing probe
+fell from 5.24 s to 1.52 s. See the [input audit](audit-2026-11-20-input-reliability.md)
+for research, failed attempts, and installed-browser boundaries.
+
+### 2026-11-21 editor workflows and canvas batching
+
+The installed extension groups paced canvas key events under a document and
+caret guard. A two-passage Chrome probe preserved all 98 characters and took
+33 browser bridge commands, down from 703 on the previous comparable fixture.
+The 703 underlying DevTools commands and deliberate pacing remain. The two
+passages took 28.60 s. A second live probe moved focus during keydown and
+observed zero characters in either editor after NaviChrome stopped.
+
+Live Google Docs and Slides edits were visible when reopened in fresh tabs
+under the authorized personal account. After a Hotload reload, the text
+predicate correctly reported incomplete evidence for canvas text hidden
+from the DOM. The same predicate still failed on a complete ordinary page
+with a genuinely absent phrase.
+
+[Creative Studio](../apps/creative-studio/README.md) now exposes a
+revision-bound workflow for documents, slide objects, and video. The live
+Chrome run persisted each revision and re-exported the video after a server
+restart. The reopened MP4 decoded to 54 frames with the expected cut order,
+audio and timed captions. The bounded same-origin download returned the
+rendered SHA-256. The separate Chrome native download saved the same bytes
+in Downloads, while its lifecycle receipt timed out.
+
+### 2026-11-21 click and editor reliability
+
+Cold exact workflow lookups begin with a compact, exhaustive semantic scan
+for the requested control. Reuse checks the original selector, frame, query,
+role and link scope. A unique goal in a clipped response preserves only the
+evidence that actually survived retention.
+
+Background activation checks a hit point in the visible intersection of a
+control and the viewport. It reads synchronous effects without waiting for a
+page timer. An unreadable delivery receipt returns unknown. Receiver recovery
+is allowed only when Chrome rejected the original command before running it,
+and its result still goes through the normal postcondition.
+
+Foreground pointer clicks sent a 12,313-character guard through a
+12,000-character limit. Sharing the predicate between its two checks brings
+the guard under the limit. The extension reports an oversized request as a
+pre-dispatch refusal. Private headless discovers a standard Chrome install on
+macOS and Linux when no explicit executable is configured.
+
+The canvas guard watches trusted pointer presses and caret-navigation input
+in the editor's document and its same-origin frame chain. Pointer movement
+alone keeps the guard armed. A trusted click in a Chrome test invalidated the
+lease while the editor and hidden selection offset remained unchanged.
+
+Design references include [Playwright actionability](https://playwright.dev/docs/actionability),
+[Chrome timer throttling](https://developer.chrome.com/blog/timer-throttling-in-chrome-88),
+[Chrome headless](https://developer.chrome.com/docs/chromium/headless),
+[BrowserGym](https://www.alphaxiv.org/abs/2412.05467), and
+[WorkArena](https://scispace.com/papers/workarena-how-capable-are-web-agents-at-solving-common-1nwoico63f).
+Fixture success is based on checking the requested page effect, not delivery
+acknowledgment alone.
+
+### 2026-11-21 background scroll targeting
+
+Background scroll previously called `window.scrollBy()` regardless of the
+requested reference, and verified only window offsets. This missed nested
+editor scrollers such as Google Docs. The route now resolves fresh semantic
+targets or a fresh visual point to the nearest axis scroller, refuses stale
+frame targets rather than scrolling the parent page, and verifies signed
+movement on that exact scroller. `npm run check:background-dom` passes 44/44
+Playwright fixtures, including nested/root/frame/stale-target and wrong-way
+readback cases; Rust schema/receipt tests, workspace tests, Clippy, and the
+release gate pass. The installed native bridge/extension reloaded and the
+Hotload NaviChrome child was refreshed to revision 7. Its read-only scroll on
+the exact authorized Docs document returned `verified` with a fresh same-
+document point binding; a follow-up screenshot showed prior document text in
+view and the Saved to Drive indicator. No document text was changed. The
+older direct MCP process first refused this action before dispatch; the live
+check passed after using the refreshed Hotload child.

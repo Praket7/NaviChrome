@@ -1,5 +1,40 @@
 # Blockers and external dependencies
 
+## Background scroll live qualification — 2026-11-21
+
+Local nested-scroll fixtures, Rust verification/schema tests, workspace tests,
+Clippy, and release checks pass. The installed bridge and unpacked extension
+were rebuilt and reloaded; Hotload NaviChrome was refreshed to revision 7.
+The read-only live Docs scroll then returned verified and the follow-up
+screenshot showed the document moved while the saved-state indicator remained
+visible. No document text changed. The older direct MCP process still has its
+old tool contract, so live proof used the refreshed Hotload child as requested.
+
+## Click and editor qualification boundaries — 2026-11-21
+
+Click and canvas probes used controlled pages in installed Chrome. This pass
+did not rerun Google Docs editing, broad cross-site workflows, or a timed
+repetition matrix. Canvas key receipts still prove delivery; site-specific
+readback must verify text and location. The private headless install discovery
+was exercised on macOS. The Linux default and custom path behavior were not
+exercised against a live installation.
+
+## Editor workflow boundaries — 2026-11-21
+
+Canva offered only the out-of-scope account in Chrome, and CapCut required
+sign-in. Neither editor has live edit verification for the personal account.
+Creative Studio verification covers its local app contract.
+
+The Creative Studio native download saved the file with the expected
+SHA-256, but the Hotload receipt timed out. The extension observer currently
+requires `DownloadItem.tabId`, which is absent from the
+[documented Chrome Downloads API](https://developer.chrome.com/docs/extensions/reference/api/downloads).
+The extension wait and native bridge also both reach their deadline at
+30 seconds. Filename alone cannot prove which tab initiated a download.
+The same-origin anchor returned a verified artifact via `page_fetch`.
+Chrome-native lifecycle verification for JavaScript-only downloads,
+including Drive viewer, remains open.
+
 ## Phase 11, Drive download, and cleanup — 2026-11-08 continuation
 
 The Drive JS-only download route now has a filename-bound observer and requires
@@ -432,3 +467,12 @@ The download path now coalesces two identity/epoch checks, but its qualification
 - The user's direct Google Form URL titled `testing` is blocked pending an unlocked Mac and fresh NaviChrome shared-tab inventory; discovery returns `native tab inventory is stale` with `dispatch_may_have_occurred=false`. Chrome shows the exact viewform tab plus an older `formResponse` tab, so inspect the target, account, and submission state before submitting.
 - The prior ESPN Bills check identified “How the Bills are planning with illnesses on the OL” at feed level, but its article link was not verified. A fresh isolated NaviChrome read is blocked because `NAVICHROME_CHROME_EXECUTABLE` is unset.
 - Hotload's separate `controlla4` child recovered after a reload at 21:55 UTC and now exposes six tools. The four-task trace contains no Controlla calls, so its earlier `Connection closed` did not cause that run's elapsed time; its startup root cause remains undiagnosed.
+
+### Input reliability follow-ups, 2026-11-20
+
+- Live Google Docs document editing and reopened persistence still need an
+  authorized personal-account probe.
+- A shared-window cold-open lease conflict can require an owned background window.
+  A newly loading nested OOPIF can require one fresh frame snapshot after attachment.
+- The matched frame timing is a fixture observation. A repeated vendor and
+  competitor benchmark is still needed before making product-wide speed claims.

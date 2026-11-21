@@ -438,7 +438,7 @@ fn substitute_predicate(
             evidence_after,
         } => BrowserPredicate::VisualRegionChanged {
             evidence_before: substitute(&evidence_before, vars)?,
-            evidence_after: substitute(&evidence_after, vars)?,
+            evidence_after: evidence_after.map(|value| substitute(&value, vars)).transpose()?,
         },
         BrowserPredicate::AppSpecific { adapter, predicate } => {
             BrowserPredicate::AppSpecific { adapter, predicate }
@@ -952,11 +952,17 @@ fn png_crc32(data: &[u8]) -> u32 {
 }
 
 fn decode_validate_png(data: &str, max_bytes: usize) -> Result<(Vec<u8>, u32, u32), &'static str> {
+    if data.len() > max_bytes.div_ceil(3).saturating_mul(4) {
+        return Err("Screenshot exceeds the requested byte limit; increase max_bytes or capture a smaller region");
+    }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|_| "Chrome returned invalid base64 screenshot data")?;
-    if bytes.len() > max_bytes || bytes.len() < 57 || bytes.get(..8) != Some(b"\x89PNG\r\n\x1a\n") {
-        return Err("Chrome returned an empty, oversized, or invalid PNG screenshot");
+    if bytes.len() > max_bytes {
+        return Err("Screenshot exceeds the requested byte limit; increase max_bytes or capture a smaller region");
+    }
+    if bytes.len() < 57 || bytes.get(..8) != Some(b"\x89PNG\r\n\x1a\n") {
+        return Err("Chrome returned an invalid PNG screenshot");
     }
     let mut cursor = 8usize;
     let mut dimensions = None;
