@@ -393,7 +393,9 @@ impl LeaseCoordinator {
             .get(key)
             .is_some_and(|held| held.generation == generation)
         {
-            map.remove(key);
+            let released = map.remove(key);
+            drop(map);
+            drop(released);
             self.changed.notify_waiters();
             true
         } else {

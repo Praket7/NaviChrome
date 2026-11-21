@@ -97,6 +97,8 @@ jobs:
         if: runner.os == 'macOS'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+        env:
+          RUST_TEST_THREADS: ${{ runner.os == 'macOS' && '2' || '4' }}
       - run: ./scripts/package-build.sh
         shell: bash
       - uses: actions/setup-node@v4
